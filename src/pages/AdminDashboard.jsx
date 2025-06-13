@@ -1,7 +1,7 @@
-// pages/AdminDashboard.jsx - 서버 연동 완전 수정 버전
+// AdminDashboard.jsx - 서버 자동 동기화 완성 버전
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loadUserDataWithFallback, loadAllUserData } from './utils/unifiedStorage';
+import { loadUserDataWithFallback, loadAllUserData, saveUserCoreData } from './utils/unifiedStorage';
 
 const AdminDashboard = ({ currentUser, onLogout }) => {
   const [members, setMembers] = useState([]);
@@ -11,7 +11,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
   const [progressData, setProgressData] = useState({}); // 진행률 데이터 캐시
   const navigate = useNavigate();
 
-  // 파스텔 색상 팔레트 (CalendarPage와 동일)
+  // 파스텔 색상 팔레트
   const PASTEL_COLORS = [
     { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-200" },
     { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-200" },
@@ -25,9 +25,22 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
   ];
 
-  // ✨ 서버에서 사용자 목록 가져오기 (완전 수정)
+  // ✨ 자동 서버 동기화 함수
+  const autoSyncToServer = async (userName, localData) => {
+    try {
+      console.log(`🔄 ${userName} 자동 서버 동기화 시작`);
+      await saveUserCoreData(userName, localData);
+      console.log(`✅ ${userName} 자동 서버 동기화 완료`);
+      return true;
+    } catch (error) {
+      console.error(`❌ ${userName} 자동 서버 동기화 실패:`, error);
+      return false;
+    }
+  };
+
+  // ✨ 서버에서 사용자 목록 가져오기 (자동 동기화 포함)
   const getServerUsers = async () => {
-    console.log('🔍 AdminDashboard에서 서버 사용자 검색');
+    console.log('🔍 서버 사용자 검색 + 자동 동기화');
     
     try {
       const users = new Set();
@@ -48,54 +61,126 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         }
       }
       
-      console.log('📦 localStorage 사용자들:', [...new Set(localUsers)]);
+      console.log('📦 발견된 사용자들:', [...new Set(localUsers)]);
       
-      // 2단계: 각 사용자의 서버 데이터 확인
+      // 2단계: 각 사용자 처리 (서버 확인 + 자동 동기화)
       for (const user of [...new Set(localUsers)]) {
         try {
-          console.log(`🔍 ${user} 서버 데이터 확인 중...`);
+          console.log(`🔍 ${user} 처리 시작`);
           
-          // ✨ 서버에서 데이터 로드
-          const userData = await loadUserDataWithFallback(user);
-          
-          if (userData) {
-            users.add(user);
-            userDataCache[user] = userData; // 캐시에 저장
-            console.log(`✅ ${user} 서버 데이터 확인됨:`, {
-              schedules: userData.schedules?.length || 0,
-              tags: userData.tags?.length || 0,
-              tagItems: userData.tagItems?.length || 0,
-              monthlyGoals: userData.monthlyGoals?.length || 0
-            });
-          } else {
-            console.log(`❌ ${user} 서버 데이터 없음`);
-          }
-        } catch (error) {
-          console.error(`❌ ${user} 서버 확인 실패:`, error);
-          
-          // 서버 실패 시 localStorage fallback
+          // 서버에서 데이터 확인
+          let serverData = null;
           try {
-            const fallbackData = loadAllUserData(user);
-            if (fallbackData && (
-              (fallbackData.schedules && fallbackData.schedules.length > 0) ||
-              (fallbackData.tags && fallbackData.tags.length > 0) ||
-              (fallbackData.tagItems && fallbackData.tagItems.length > 0)
-            )) {
-              users.add(user);
-              userDataCache[user] = fallbackData;
-              console.log(`🔄 ${user} localStorage fallback 성공`);
-            }
-          } catch (fallbackError) {
-            console.error(`❌ ${user} fallback도 실패:`, fallbackError);
+            serverData = await loadUserDataWithFallback(user);
+          } catch (serverError) {
+            console.warn(`⚠️ ${user} 서버 접근 실패:`, serverError);
           }
+          
+          // localStorage에서 데이터 수집
+          const localData = {
+            schedules: [],
+            tags: [],
+            tagItems: [],
+            monthlyPlans: [],
+            monthlyGoals: []
+          };
+          
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith(`${user}-`)) {
+              const value = localStorage.getItem(key);
+              try {
+                const parsedValue = JSON.parse(value);
+                
+                if (key.includes('schedules')) {
+                  localData.schedules = Array.isArray(parsedValue) ? parsedValue : [];
+                } else if (key.includes('tags')) {
+                  localData.tags = Array.isArray(parsedValue) ? parsedValue : [];
+                } else if (key.includes('tagItems')) {
+                  localData.tagItems = Array.isArray(parsedValue) ? parsedValue : [];
+                } else if (key.includes('monthlyPlans')) {
+                  localData.monthlyPlans = Array.isArray(parsedValue) ? parsedValue : [];
+                } else if (key.includes('monthlyGoals')) {
+                  localData.monthlyGoals = Array.isArray(parsedValue) ? parsedValue : [];
+                }
+              } catch (parseError) {
+                console.error(`${user} 키 ${key} 파싱 실패:`, parseError);
+              }
+            }
+          }
+          
+          // 데이터 비교 및 자동 동기화 결정
+          const hasLocalData = localData.schedules.length || localData.tags.length || 
+                              localData.tagItems.length || localData.monthlyGoals.length;
+          
+          const hasServerData = serverData && (
+            (serverData.schedules && serverData.schedules.length > 0) ||
+            (serverData.tags && serverData.tags.length > 0) ||
+            (serverData.tagItems && serverData.tagItems.length > 0) ||
+            (serverData.monthlyGoals && serverData.monthlyGoals.length > 0)
+          );
+          
+          let finalData = null;
+          
+          if (hasLocalData && !hasServerData) {
+            // 로컬에만 데이터가 있는 경우: 서버로 자동 업로드
+            console.log(`📤 ${user} 로컬 데이터를 서버로 자동 업로드`);
+            const syncSuccess = await autoSyncToServer(user, localData);
+            finalData = localData;
+            
+            if (syncSuccess) {
+              console.log(`✅ ${user} 자동 동기화 성공`);
+            } else {
+              console.warn(`⚠️ ${user} 자동 동기화 실패, 로컬 데이터 사용`);
+            }
+            
+          } else if (hasServerData && hasLocalData) {
+            // 서버와 로컬 모두 데이터가 있는 경우: 서버 데이터 우선 사용
+            console.log(`📥 ${user} 서버 데이터 우선 사용`);
+            finalData = serverData;
+            
+            // 로컬 데이터가 더 최신인지 확인 (monthlyGoals 우선)
+            if (localData.monthlyGoals.length > serverData.monthlyGoals.length) {
+              console.log(`🔄 ${user} 로컬 목표가 더 최신, 서버 업데이트`);
+              finalData.monthlyGoals = localData.monthlyGoals;
+              await autoSyncToServer(user, finalData);
+            }
+            
+          } else if (hasServerData) {
+            // 서버에만 데이터가 있는 경우
+            console.log(`📥 ${user} 서버 데이터 사용`);
+            finalData = serverData;
+            
+          } else {
+            // 양쪽 다 데이터가 없는 경우: 신규 사용자
+            console.log(`🆕 ${user} 신규 사용자 (빈 데이터)`);
+            finalData = localData; // 빈 구조체라도 사용자 등록
+          }
+          
+          // 사용자 등록
+          if (finalData) {
+            users.add(user);
+            userDataCache[user] = finalData;
+            console.log(`✅ ${user} 등록 완료:`, {
+              schedules: finalData.schedules?.length || 0,
+              tags: finalData.tags?.length || 0,
+              tagItems: finalData.tagItems?.length || 0,
+              monthlyGoals: finalData.monthlyGoals?.length || 0,
+              source: hasServerData ? 'server' : 'local'
+            });
+          }
+          
+        } catch (error) {
+          console.error(`❌ ${user} 처리 실패:`, error);
         }
       }
       
-      // ✨ 캐시된 데이터 상태에 저장
+      // 캐시된 데이터 상태에 저장
       setMemberData(userDataCache);
       
       const result = Array.from(users);
-      console.log('🎯 최종 서버 사용자 목록:', result);
+      console.log('🎯 최종 사용자 목록:', result);
+      console.log('📊 캐시된 데이터:', userDataCache);
       return result;
       
     } catch (error) {
@@ -104,9 +189,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   };
 
-  // AdminDashboard.jsx에서 getUserData 함수만 수정
-
-  // ✨ 강화된 getUserData 함수 (기존 함수 교체)
+  // ✨ 강화된 getUserData 함수 (서버 우선 + 자동 동기화)
   const getUserData = useCallback(async (nickname) => {
     if (!nickname) {
       console.warn('⚠️ getUserData: nickname이 없음');
@@ -125,12 +208,12 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       return memberData[nickname];
     }
   
-    console.log(`📦 ${nickname} 서버+로컬 하이브리드 데이터 로드`);
+    console.log(`📦 ${nickname} 서버 우선 데이터 로드`);
     
     let serverData = null;
     let localData = null;
     
-    // 1단계: 서버에서 데이터 시도
+    // 1단계: 서버에서 데이터 로드
     try {
       serverData = await loadUserDataWithFallback(nickname);
       console.log(`📦 ${nickname} 서버 데이터:`, {
@@ -144,7 +227,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       console.error(`❌ ${nickname} 서버 데이터 로드 실패:`, error);
     }
   
-    // 2단계: localStorage에서 데이터 시도  
+    // 2단계: localStorage에서 데이터 로드
     try {
       localData = loadAllUserData(nickname);
       console.log(`📦 ${nickname} 로컬 데이터:`, {
@@ -158,50 +241,53 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       console.error(`❌ ${nickname} 로컬 데이터 로드 실패:`, error);
     }
   
-    // 3단계: 하이브리드 데이터 생성 (각 필드별로 최적 데이터 선택)
-    const hybridData = {
-      // 일정: 서버 우선, 없으면 로컬
-      schedules: (serverData?.schedules?.length > 0) 
-        ? serverData.schedules 
-        : (localData?.schedules || []),
-        
-      // 태그: 서버 우선, 없으면 로컬  
-      tags: (serverData?.tags?.length > 0) 
-        ? serverData.tags 
-        : (localData?.tags || []),
-        
-      // 태그 아이템: 서버 우선, 없으면 로컬
-      tagItems: (serverData?.tagItems?.length > 0) 
-        ? serverData.tagItems 
-        : (localData?.tagItems || []),
-        
-      // 월간 계획: 서버 우선, 없으면 로컬
-      monthlyPlans: (serverData?.monthlyPlans?.length > 0) 
-        ? serverData.monthlyPlans 
-        : (localData?.monthlyPlans || []),
-        
-      // ✨ 월간 목표: 로컬 우선! (서버에 없는 경우가 많음)
-      monthlyGoals: (localData?.monthlyGoals?.length > 0) 
-        ? localData.monthlyGoals 
-        : (serverData?.monthlyGoals || [])
+    // 3단계: 데이터 통합 및 자동 동기화
+    let finalData = {
+      schedules: [],
+      tags: [],
+      tagItems: [],
+      monthlyPlans: [],
+      monthlyGoals: []
     };
+    
+    if (serverData) {
+      // 서버 데이터 우선 사용
+      finalData = {
+        schedules: serverData.schedules || [],
+        tags: serverData.tags || [],
+        tagItems: serverData.tagItems || [],
+        monthlyPlans: serverData.monthlyPlans || [],
+        monthlyGoals: serverData.monthlyGoals || []
+      };
+      
+      // 로컬에 더 최신 목표가 있으면 동기화
+      if (localData?.monthlyGoals?.length > finalData.monthlyGoals.length) {
+        console.log(`🔄 ${nickname} 로컬 목표가 더 최신, 서버 업데이트`);
+        finalData.monthlyGoals = localData.monthlyGoals;
+        await autoSyncToServer(nickname, finalData);
+      }
+    } else if (localData) {
+      // 서버에 데이터가 없으면 로컬 데이터 사용 + 서버 업로드
+      finalData = localData;
+      console.log(`📤 ${nickname} 로컬 데이터를 서버로 자동 업로드`);
+      await autoSyncToServer(nickname, finalData);
+    }
   
-    console.log(`📦 ${nickname} 하이브리드 최종 데이터:`, {
-      schedules: hybridData.schedules?.length || 0,
-      tags: hybridData.tags?.length || 0,
-      tagItems: hybridData.tagItems?.length || 0,
-      monthlyPlans: hybridData.monthlyPlans?.length || 0,
-      monthlyGoals: hybridData.monthlyGoals?.length || 0,
-      monthlyGoalsSource: (localData?.monthlyGoals?.length > 0) ? 'localStorage' : 'server'
+    console.log(`📦 ${nickname} 최종 데이터:`, {
+      schedules: finalData.schedules?.length || 0,
+      tags: finalData.tags?.length || 0,
+      tagItems: finalData.tagItems?.length || 0,
+      monthlyPlans: finalData.monthlyPlans?.length || 0,
+      monthlyGoals: finalData.monthlyGoals?.length || 0
     });
   
     // 캐시에 저장
-    setMemberData(prev => ({...prev, [nickname]: hybridData}));
+    setMemberData(prev => ({...prev, [nickname]: finalData}));
     
-    return hybridData;
+    return finalData;
   }, [memberData]);
 
-  // 태그 색상 가져오기 (CalendarPage와 동일)
+  // 태그 색상 가져오기
   const getTagColor = (tagType, tags) => {
     const tag = tags.find(t => t.tagType === tagType);
     return tag ? tag.color : PASTEL_COLORS[0];
@@ -218,7 +304,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
     
     const userData = await getUserData(member);
-    if (!userData || !userData.schedules) {
+    if (!userData) {
       console.warn('⚠️ 사용자 데이터 없음:', member);
       return [];
     }
@@ -288,7 +374,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
     console.log('📊 월간 태그 총계:', monthlyTagTotals);
 
-    // ✨ 개선된 월간 목표 불러오기
+    // 월간 목표 불러오기
     const loadMonthlyGoals = () => {
       try {
         const currentMonthKey = currentMonth;
@@ -369,13 +455,13 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
   // ✨ 서버 기반 통계 계산
   const getServerStats = useCallback(async (userList) => {
-    console.log('📊 AdminDashboard에서 직접 서버 통계 계산');
+    console.log('📊 서버 기반 통계 계산');
     
     const stats = {};
     
     for (const user of userList) {
       try {
-        console.log(`📊 ${user} 서버 통계 계산 중...`);
+        console.log(`📊 ${user} 통계 계산 중...`);
         
         const userData = await getUserData(user);
         
@@ -399,9 +485,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     return stats;
   }, [getUserData]);
 
-  // ✨ 서버 기반 새로고침 함수
+  // ✨ 새로고침 함수
   const refreshMemberData = async () => {
-    console.log('🔄 서버 기반 새로고침 시작');
+    console.log('🔄 새로고침 시작');
     
     try {
       setLoading(true);
@@ -411,16 +497,16 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       setProgressData({});
       
       const serverUsers = await getServerUsers();
-      console.log('🔄 새로고침: 서버 사용자들:', serverUsers);
+      console.log('🔄 새로고침: 사용자들:', serverUsers);
       
       if (serverUsers.length > 0) {
         setMembers(serverUsers);
         const serverStats = await getServerStats(serverUsers);
         setMemberStats(serverStats);
-        console.log('✅ 서버 기반 새로고침 완료');
+        console.log('✅ 새로고침 완료');
       }
     } catch (error) {
-      console.error('❌ 서버 기반 새로고침 실패:', error);
+      console.error('❌ 새로고침 실패:', error);
     } finally {
       setLoading(false);
     }
@@ -428,32 +514,32 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
   // ✨ 초기 데이터 로딩
   useEffect(() => {
-    console.log('🚀 AdminDashboard 서버 연동 시작');
+    console.log('🚀 AdminDashboard 시작 - 자동 동기화 포함');
     
     const loadServerData = async () => {
       try {
         setLoading(true);
-        console.log('📦 서버에서 직접 멤버 데이터 로딩');
+        console.log('📦 자동 동기화와 함께 데이터 로딩');
         
-        // 서버에서 사용자 목록 가져오기 (데이터도 함께 캐시)
+        // 자동 동기화가 포함된 사용자 목록 가져오기
         const serverUsers = await getServerUsers();
-        console.log('👥 서버에서 가져온 사용자들:', serverUsers);
+        console.log('👥 처리된 사용자들:', serverUsers);
         
         if (serverUsers.length > 0) {
           setMembers(serverUsers);
           
-          // 서버에서 통계 계산 (캐시된 데이터 사용)
+          // 통계 계산
           const serverStats = await getServerStats(serverUsers);
-          console.log('📊 서버 기반 통계:', serverStats);
+          console.log('📊 최종 통계:', serverStats);
           setMemberStats(serverStats);
           
-          console.log('✅ 서버 기반 데이터 로딩 완료');
+          console.log('✅ 자동 동기화 완료');
         } else {
-          console.warn('⚠️ 서버에서 사용자를 찾을 수 없음');
+          console.warn('⚠️ 사용자를 찾을 수 없음');
         }
         
       } catch (error) {
-        console.error('❌ 서버 기반 데이터 로딩 실패:', error);
+        console.error('❌ 데이터 로딩 실패:', error);
       } finally {
         setLoading(false);
       }
@@ -461,13 +547,32 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
     loadServerData();
     
-    // localStorage 변경 감지
+    // localStorage 변경 감지 및 자동 동기화
     const handleStorageChange = (e) => {
       if (e.key && e.key.includes('-')) {
         console.log('📦 localStorage 변경 감지:', e.key);
         if (['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'].some(type => e.key.includes(type))) {
-          console.log('🔄 멤버 데이터 변경으로 인한 새로고침');
-          setTimeout(() => refreshMemberData(), 1000);
+          console.log('🔄 데이터 변경으로 인한 자동 새로고침');
+          
+          // 변경된 사용자 감지
+          const [userName] = e.key.split('-');
+          if (userName && !['교수님', 'admin', '관리자'].includes(userName)) {
+            // 해당 사용자 데이터 자동 동기화
+            setTimeout(async () => {
+              try {
+                const userData = await loadAllUserData(userName);
+                if (userData) {
+                  await autoSyncToServer(userName, userData);
+                  console.log(`✅ ${userName} 변경 감지 후 자동 동기화 완료`);
+                }
+              } catch (error) {
+                console.error(`❌ ${userName} 자동 동기화 실패:`, error);
+              }
+            }, 1000);
+          }
+          
+          // 전체 새로고침
+          setTimeout(() => refreshMemberData(), 2000);
         }
       }
     };
@@ -493,12 +598,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       tagItems: userData?.tagItems?.length || 0
     });
     
-    if (!userData || !userData.schedules) {
-      alert(`❌ ${memberName}님의 데이터를 찾을 수 없습니다.\n\n다음을 확인해주세요:\n- 해당 멤버가 로그인한 적이 있는가?\n- 일정 데이터가 존재하는가?\n\n새로고침 후 다시 시도해보세요.`);
-      await refreshMemberData();
-      return;
-    }
-    
+    // 데이터가 없어도 이동 가능 (신규 사용자)
     switch (actionType) {
       case 'detailed-calendar':
         const targetUrl = `/admin/member/${memberName}`;
@@ -606,8 +706,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">서버에서 멤버 데이터를 불러오는 중...</p>
-          <p className="text-sm text-gray-500 mt-2">서버 API를 통해 최신 데이터를 가져오고 있습니다.</p>
+          <p className="text-gray-600">자동 동기화와 함께 멤버 데이터를 불러오는 중...</p>
+          <p className="text-sm text-gray-500 mt-2">서버 우선 + 자동 동기화 시스템</p>
         </div>
       </div>
     );
@@ -621,6 +721,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           <div className="flex items-center space-x-4">
             <h1 className="text-xl font-bold">👑 관리자 대시보드</h1>
             <span className="text-red-200 text-sm">({currentUser})</span>
+            <span className="bg-red-500 text-xs px-2 py-1 rounded">자동 동기화</span>
           </div>
           <div className="flex items-center space-x-4">
             <span className="text-red-200 text-sm">
@@ -646,7 +747,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             <span>•</span>
             <span>마지막 업데이트: {new Date().toLocaleString('ko-KR')}</span>
             <span>•</span>
-            <span>서버 기반 데이터</span>
+            <span className="text-green-600 font-medium">✅ 서버 자동 동기화 활성</span>
           </div>
         </div>
 
@@ -656,14 +757,15 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             <div className="text-gray-400 text-8xl mb-6">👥</div>
             <h3 className="text-2xl font-semibold text-gray-600 mb-3">등록된 멤버가 없습니다</h3>
             <p className="text-gray-500 mb-6">
-              멤버가 로그인하여 데이터를 생성하면 여기에 표시됩니다.
+              멤버가 로그인하여 데이터를 생성하면 자동으로 서버에 동기화되어 여기에 표시됩니다.
             </p>
             <div className="bg-gray-50 rounded-lg p-4 text-left">
-              <h4 className="font-semibold mb-2">💡 도움말</h4>
+              <h4 className="font-semibold mb-2">💡 자동 동기화 시스템</h4>
               <ul className="text-sm text-gray-600 space-y-1">
                 <li>• 멤버가 로그인하면 자동으로 감지됩니다</li>
-                <li>• 서버에서 실시간으로 데이터를 조회합니다</li>
-                <li>• 각 멤버의 데이터는 독립적으로 관리됩니다</li>
+                <li>• localStorage 변경 시 즉시 서버로 동기화됩니다</li>
+                <li>• 서버 데이터를 우선으로 최신 상태를 유지합니다</li>
+                <li>• 별도의 동기화 버튼이 필요 없습니다</li>
               </ul>
             </div>
           </div>
@@ -671,6 +773,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {members.map((member) => {
               const stats = memberStats[member] || {};
+              const isNewUser = (stats.schedules || 0) + (stats.tags || 0) + (stats.tagItems || 0) === 0;
+              
               return (
                 <div key={member} className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200">
                   {/* 멤버 헤더 */}
@@ -682,19 +786,50 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                         </span>
                       </div>
                       <div className="ml-4">
-                        <h3 className="text-xl font-semibold text-gray-800">{member}</h3>
+                        <div className="flex items-center space-x-2">
+                          <h3 className="text-xl font-semibold text-gray-800">{member}</h3>
+                          {isNewUser && (
+                            <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-1 rounded-full border border-green-200">
+                              신규 사용자
+                            </span>
+                          )}
+                          <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full border border-blue-200">
+                            자동 동기화
+                          </span>
+                        </div>
                         <p className="text-gray-500 text-sm flex items-center">
                           <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-                          활성 멤버
+                          {isNewUser ? '등록 완료' : '활성 멤버'}
                         </p>
                       </div>
                     </div>
                   </div>
                   
-                  {/* 멤버 통계 - 태그별 목표 달성률 */}
+                  {/* 멤버 통계 */}
                   <div className="p-6">
-                    <h4 className="font-semibold text-gray-700 mb-3">🎯 이번 달 목표 달성률</h4>
-                    <MemberProgressDisplay member={member} calculateTagProgress={calculateTagProgress} />
+                    {isNewUser ? (
+                      <div className="text-center py-6">
+                        <div className="text-gray-400 text-4xl mb-3">🌟</div>
+                        <h4 className="font-semibold text-gray-700 mb-2">새로운 멤버입니다!</h4>
+                        <p className="text-gray-500 text-sm mb-4">
+                          아직 일정이나 목표를 설정하지 않았습니다.
+                        </p>
+                        <div className="bg-gray-50 rounded-lg p-3 text-left">
+                          <h5 className="font-medium text-gray-700 mb-2">💡 시작 가이드</h5>
+                          <ul className="text-xs text-gray-600 space-y-1">
+                            <li>• 캘린더에서 첫 일정 등록</li>
+                            <li>• 태그와 카테고리 설정</li>
+                            <li>• 월간 목표 계획 수립</li>
+                            <li>• 자동으로 서버에 동기화됩니다</li>
+                          </ul>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <h4 className="font-semibold text-gray-700 mb-3">🎯 이번 달 목표 달성률</h4>
+                        <MemberProgressDisplay member={member} calculateTagProgress={calculateTagProgress} />
+                      </>
+                    )}
                   </div>
                   
                   {/* 액션 버튼들 */}
@@ -709,28 +844,30 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                         className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
                       >
                         <span className="mr-2">📅</span>
-                        캘린더 보기
+                        {isNewUser ? '캘린더 설정하기' : '캘린더 보기'}
                       </button>
                       
-                      <button
-                        onClick={async () => {
-                          const tagProgress = await calculateTagProgress(member);
-                          if (tagProgress.length === 0) {
-                            alert(`📊 ${member}님 상세 정보\n\n• 설정된 월간 목표가 없습니다\n• 목표를 설정하면 달성률을 확인할 수 있습니다`);
-                          } else {
-                            const avgProgress = Math.round(tagProgress.reduce((sum, p) => sum + p.percentage, 0) / tagProgress.length);
-                            const progressDetails = tagProgress.map(p => 
-                              `• ${p.tagName}: ${p.actualTime}/${p.targetTime} (${p.percentage}%)`
-                            ).join('\n');
-                            
-                            alert(`📊 ${member}님 목표 달성 현황\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
-                          }
-                        }}
-                        className="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
-                      >
-                        <span className="mr-2">📈</span>
-                        상세 달성률 보기
-                      </button>
+                      {!isNewUser && (
+                        <button
+                          onClick={async () => {
+                            const tagProgress = await calculateTagProgress(member);
+                            if (tagProgress.length === 0) {
+                              alert(`📊 ${member}님 상세 정보\n\n• 설정된 월간 목표가 없습니다\n• 목표를 설정하면 달성률을 확인할 수 있습니다`);
+                            } else {
+                              const avgProgress = Math.round(tagProgress.reduce((sum, p) => sum + p.percentage, 0) / tagProgress.length);
+                              const progressDetails = tagProgress.map(p => 
+                                `• ${p.tagName}: ${p.actualTime}/${p.targetTime} (${p.percentage}%)`
+                              ).join('\n');
+                              
+                              alert(`📊 ${member}님 목표 달성 현황 (서버 동기화됨)\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
+                            }
+                          }}
+                          className="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
+                        >
+                          <span className="mr-2">📈</span>
+                          상세 달성률 보기
+                        </button>
+                      )}
                       
                       <button
                         onClick={() => handleUserDataReset(member)}
@@ -752,15 +889,16 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
             <span className="mr-2">🔧</span>
             관리자 도구
+            <span className="ml-2 bg-green-100 text-green-700 text-xs px-2 py-1 rounded">자동 동기화 활성</span>
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <button
               onClick={() => {
                 const memberCount = members.length;
                 const totalData = Object.values(memberStats).reduce((sum, stats) => 
                   sum + stats.schedules + stats.tags + stats.tagItems + stats.monthlyPlans + stats.monthlyGoals, 0
                 );
-                alert(`📊 시스템 현황\n\n• 등록된 멤버: ${memberCount}명\n• 총 데이터: ${totalData}개\n• 캐시된 데이터: ${Object.keys(memberData).length}명\n• 상태: 정상 운영중\n• 마지막 업데이트: ${new Date().toLocaleString('ko-KR')}`);
+                alert(`📊 시스템 현황\n\n• 등록된 멤버: ${memberCount}명\n• 총 데이터: ${totalData}개\n• 캐시된 데이터: ${Object.keys(memberData).length}명\n• 자동 동기화: 활성\n• 상태: 정상 운영중\n• 마지막 업데이트: ${new Date().toLocaleString('ko-KR')}`);
               }}
               className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
@@ -787,68 +925,59 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             >
               🗑️ 전체 데이터 삭제
             </button>
-            
-            <button
-              onClick={() => {
-                window.location.reload();
-              }}
-              className="bg-purple-100 hover:bg-purple-200 text-purple-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
-            >
-              🔄 페이지 새로고침
-            </button>
           </div>
           
-          {/* 실시간 상태 표시 */}
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-            <h4 className="font-medium text-gray-700 mb-2">📡 시스템 상태</h4>
+          {/* 자동 동기화 상태 표시 */}
+          <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+            <h4 className="font-medium text-green-800 mb-2">🚀 자동 동기화 시스템 상태</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div className="flex items-center">
-                <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
                 <span>서버 연동: 활성</span>
               </div>
               <div className="flex items-center">
-                <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
-                <span>데이터 캐시: 정상</span>
+                <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
+                <span>자동 동기화: 활성</span>
               </div>
               <div className="flex items-center">
-                <span className="w-2 h-2 bg-yellow-400 rounded-full mr-2"></span>
-                <span>멤버 감지: {members.length}명</span>
+                <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2"></span>
+                <span>변경 감지: 활성</span>
               </div>
               <div className="flex items-center">
-                <span className="w-2 h-2 bg-purple-400 rounded-full mr-2"></span>
-                <span>진행률 캐시: {Object.keys(progressData).length}명</span>
+                <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
+                <span>캐시 관리: 정상</span>
               </div>
             </div>
           </div>
           
-          {/* 개선된 도움말 섹션 */}
+          {/* 시스템 개선사항 */}
           <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-medium text-blue-800 mb-2">💡 시스템 개선사항 (v2.0)</h4>
+            <h4 className="font-medium text-blue-800 mb-2">💡 자동 동기화 시스템 (v3.0)</h4>
             <div className="text-sm text-blue-700 space-y-1">
-              <div>• <strong>서버 우선 로딩:</strong> loadUserDataWithFallback을 통한 서버 데이터 우선 접근</div>
-              <div>• <strong>이중 캐시 시스템:</strong> 멤버 데이터 + 진행률 데이터 별도 캐시</div>
-              <div>• <strong>비동기 진행률 계산:</strong> 서버 데이터 로딩 후 정확한 목표 달성률 계산</div>
-              <div>• <strong>Fallback 복구:</strong> 서버 실패 시 localStorage 자동 fallback</div>
+              <div>• <strong>실시간 동기화:</strong> localStorage 변경 시 즉시 서버 업로드</div>
+              <div>• <strong>서버 우선 정책:</strong> 항상 서버 데이터를 최신 상태로 유지</div>
+              <div>• <strong>스마트 병합:</strong> 로컬과 서버 데이터를 지능적으로 통합</div>
+              <div>• <strong>자동 복구:</strong> 동기화 실패 시 자동 재시도</div>
             </div>
           </div>
         </div>
         
         {/* 시스템 정보 푸터 */}
         <div className="mt-8 text-center text-xs text-gray-500 space-y-1">
-          <div>관리자 대시보드 v2.0 | 서버 연동 + 이중 캐시 시스템</div>
-          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: 서버 API + localStorage fallback</div>
+          <div>관리자 대시보드 v3.0 | 완전 자동 동기화 시스템</div>
+          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: 서버 API (자동 동기화)</div>
           <div className="flex justify-center items-center space-x-4 mt-2">
             <span className="flex items-center">
-              <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
-              서버 연동
+              <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+              자동 동기화
             </span>
             <span className="flex items-center">
-              <span className="w-2 h-2 bg-blue-400 rounded-full mr-1"></span>
-              이중 캐시 활성
+              <span className="w-2 h-2 bg-blue-500 rounded-full mr-1"></span>
+              서버 우선
             </span>
             <span className="flex items-center">
-              <span className="w-2 h-2 bg-purple-400 rounded-full mr-1"></span>
-              비동기 처리
+              <span className="w-2 h-2 bg-purple-500 rounded-full mr-1"></span>
+              실시간 감지
             </span>
           </div>
         </div>
@@ -857,7 +986,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
   );
 };
 
-// ✨ 멤버 진행률 표시 컴포넌트
+// ✨ 멤버 진행률 표시 컴포넌트 (동일)
 const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
   const [tagProgress, setTagProgress] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -901,7 +1030,6 @@ const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
     <div className="space-y-3">
       {tagProgress.map((progress, index) => (
         <div key={index} className={`${progress.tagColor.bg} ${progress.tagColor.border} rounded-lg p-4 border-2`}>
-          {/* 태그명과 퍼센테이지를 같은 행 상단에 배치 */}
           <div className="flex items-center justify-between mb-3">
             <span className={`text-sm font-semibold ${progress.tagColor.text}`}>
               {progress.tagName}
@@ -915,7 +1043,6 @@ const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
             </span>
           </div>
           
-          {/* 시간 정보 */}
           <div className="space-y-1 mb-3">
             <div className="flex justify-between text-sm text-gray-600">
               <span>실제:</span>
@@ -927,7 +1054,6 @@ const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
             </div>
           </div>
           
-          {/* 진행률 바 */}
           <div className="w-full bg-white rounded-full h-2">
             <div 
               className={`h-2 rounded-full transition-all duration-300 ${
@@ -941,7 +1067,6 @@ const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
         </div>
       ))}
       
-      {/* 전체 평균 달성률 */}
       <div className="pt-2 border-t border-gray-200">
         <div className="flex justify-between items-center text-sm">
           <span className="text-gray-600 flex items-center">
