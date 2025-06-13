@@ -208,10 +208,43 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
     
     const loadMemberData = () => {
       try {
-        // props로 전달받은 함수들을 사용하여 멤버 데이터 로드
         console.log('📦 getAllUsers 함수 호출');
+        
+        // ✨ localStorage 전체 상태 먼저 확인
+        console.log('🔍 localStorage 전체 상태:');
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          const value = localStorage.getItem(key);
+          if (key && key.includes('-')) {
+            console.log(`  ${key}: ${value?.length || 0} chars`);
+          }
+        }
+        
         const foundMembers = getAllUsers();
-        console.log('👥 발견된 멤버들:', foundMembers);
+        console.log('👥 getAllUsers 결과:', foundMembers);
+        
+        if (foundMembers.length === 0) {
+          console.warn('⚠️ 멤버가 감지되지 않았습니다. localStorage 상태를 확인하세요.');
+          
+          // 강제로 모든 사용자 키 스캔
+          const allKeys = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            allKeys.push(localStorage.key(i));
+          }
+          console.log('🔍 모든 localStorage 키:', allKeys);
+          
+          // 사용자명으로 보이는 키들 찾기
+          const potentialUsers = new Set();
+          allKeys.forEach(key => {
+            if (key && key.includes('-')) {
+              const [nickname] = key.split('-');
+              if (nickname && nickname !== 'nickname' && nickname !== 'userType') {
+                potentialUsers.add(nickname);
+              }
+            }
+          });
+          console.log('🔍 잠재적 사용자들:', Array.from(potentialUsers));
+        }
         
         // 멤버별 데이터 상세 로그
         foundMembers.forEach(member => {
@@ -592,7 +625,7 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
             <span className="mr-2">🔧</span>
             관리자 도구
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
             <button
               onClick={() => {
                 const memberCount = members.length;
@@ -604,6 +637,34 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
               className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
               📊 시스템 현황
+            </button>
+            
+            {/* ✨ 긴급 디버그 버튼 추가 */}
+            <button
+              onClick={() => {
+                console.log('🚨 긴급 디버그 실행');
+                
+                // localStorage 전체 스캔
+                const allKeys = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                  allKeys.push(localStorage.key(i));
+                }
+                
+                console.log('🔍 모든 localStorage 키:', allKeys);
+                
+                // 사용자 데이터로 보이는 키들
+                const userKeys = allKeys.filter(key => key && key.includes('-'));
+                console.log('👤 사용자 데이터 키들:', userKeys);
+                
+                // getAllUsers 함수 직접 실행
+                const detectedUsers = getAllUsers();
+                console.log('👥 감지된 사용자들:', detectedUsers);
+                
+                alert(`🚨 긴급 디버그 결과\n\n• 전체 키: ${allKeys.length}개\n• 사용자 키: ${userKeys.length}개\n• 감지된 멤버: ${detectedUsers.length}명\n\n콘솔을 확인하세요!`);
+              }}
+              className="bg-red-100 hover:bg-red-200 text-red-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
+            >
+              🚨 긴급 디버그
             </button>
             
             <button
