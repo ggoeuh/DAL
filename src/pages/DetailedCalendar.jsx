@@ -1,6 +1,7 @@
-// pages/DetailedCalendar.jsx - 멤버별 상세 캘린더 컴포넌트 (AdminMemberView에서 사용) - 완전 버전
+// pages/DetailedCalendar.jsx - 서버 연동 강화 버전
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { loadUserDataWithFallback, loadAllUserData } from './utils/unifiedStorage';
 
 // 파스텔 색상 팔레트
 const PASTEL_COLORS = [
@@ -164,17 +165,72 @@ const ScheduleDetailModal = ({ isOpen, onClose, schedule, tagColor }) => {
   );
 };
 
-// 메인 DetailedCalendar 컴포넌트 (멤버별 데이터를 props로 받음)
+// ✨ 서버 데이터 새로고침 컴포넌트
+const ServerDataRefresher = ({ currentUser, onDataRefresh, isAdminView }) => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(new Date());
+
+  const handleRefresh = async () => {
+    if (isRefreshing || !currentUser || !onDataRefresh) return;
+
+    try {
+      setIsRefreshing(true);
+      console.log('🔄 서버 데이터 새로고침 시작:', currentUser);
+
+      // 서버에서 최신 데이터 로드
+      const freshData = await loadUserDataWithFallback(currentUser);
+      if (freshData) {
+        onDataRefresh(freshData);
+        setLastRefresh(new Date());
+        console.log('✅ 서버 데이터 새로고침 완료');
+      }
+    } catch (error) {
+      console.error('❌ 서버 데이터 새로고침 실패:', error);
+      alert('데이터 새로고침에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  if (!isAdminView) return null;
+
+  return (
+    <div className="flex items-center gap-2 text-sm text-gray-600">
+      <span>마지막 새로고침: {lastRefresh.toLocaleTimeString('ko-KR')}</span>
+      <button
+        onClick={handleRefresh}
+        disabled={isRefreshing}
+        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+          isRefreshing 
+            ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+            : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+        }`}
+      >
+        {isRefreshing ? '새로고침 중...' : '🔄 새로고침'}
+      </button>
+    </div>
+  );
+};
+
+// 메인 DetailedCalendar 컴포넌트
 const DetailedCalendar = ({ 
-  schedules = [], 
-  tags = [], 
-  tagItems = [], 
-  monthlyGoals = [],
+  schedules: initialSchedules = [], 
+  tags: initialTags = [], 
+  tagItems: initialTagItems = [], 
+  monthlyGoals: initialMonthlyGoals = [],
+  monthlyPlans: initialMonthlyPlans = [],
   currentUser = 'demo-user',
   isAdminView = false,
   onLogout = () => {},
   onBackToDashboard = null
 }) => {
+  // ✨ 서버 동기화를 위한 로컬 상태
+  const [schedules, setSchedules] = useState(initialSchedules);
+  const [tags, setTags] = useState(initialTags);
+  const [tagItems, setTagItems] = useState(initialTagItems);
+  const [monthlyGoals, setMonthlyGoals] = useState(initialMonthlyGoals);
+  const [monthlyPlans, setMonthlyPlans] = useState(initialMonthlyPlans);
+  
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedSchedule, setSelectedSchedule] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -186,20 +242,38 @@ const DetailedCalendar = ({
   });
   const navigate = useNavigate();
 
-  // ✨ 데이터 안전성 검증 및 로깅
+  // ✨ props 변경 시 로컬 상태 업데이트
   useEffect(() => {
-    console.log('📊 DetailedCalendar 데이터 확인:', {
+    console.log('📊 DetailedCalendar props 업데이트:', {
       currentUser,
       isAdminView,
-      schedules: schedules?.length || 0,
-      tags: tags?.length || 0,
-      tagItems: tagItems?.length || 0,
-      monthlyGoals: monthlyGoals?.length || 0
+      schedules: initialSchedules?.length || 0,
+      tags: initialTags?.length || 0,
+      tagItems: initialTagItems?.length || 0,
+      monthlyGoals: initialMonthlyGoals?.length || 0
     });
 
-    // 데이터 통계 계산
+    setSchedules(initialSchedules);
+    setTags(initialTags);
+    setTagItems(initialTagItems);
+    setMonthlyGoals(initialMonthlyGoals);
+    setMonthlyPlans(initialMonthlyPlans);
+  }, [initialSchedules, initialTags, initialTagItems, initialMonthlyGoals, initialMonthlyPlans]);
+
+  // ✨ 서버 데이터 새로고침 핸들러
+  const handleDataRefresh = (freshData) => {
+    console.log('🔄 새로운 데이터 적용:', freshData);
+    setSchedules(freshData.schedules || []);
+    setTags(freshData.tags || []);
+    setTagItems(freshData.tagItems || []);
+    setMonthlyGoals(freshData.monthlyGoals || []);
+    setMonthlyPlans(freshData.monthlyPlans || []);
+  };
+
+  // 데이터 통계 계산
+  useEffect(() => {
     const currentMonth = formatDate(currentDate, 'yyyy-MM').substring(0, 7);
-    const currentMonthSchedules = safeSchedules.filter(schedule => {
+    const currentMonthSchedules = schedules.filter(schedule => {
       const scheduleDate = new Date(schedule.date);
       const scheduleMonth = formatDate(scheduleDate, 'yyyy-MM').substring(0, 7);
       return scheduleMonth === currentMonth;
@@ -214,18 +288,18 @@ const DetailedCalendar = ({
 
     // 사용된 태그 타입 수 계산
     const usedTagTypes = new Set(currentMonthSchedules.map(schedule => {
-      const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
+      const tagItem = tagItems.find(item => item.tagName === schedule.tag);
       return tagItem ? tagItem.tagType : (schedule.tagType || "기타");
     }));
 
     setDataStats({
-      totalSchedules: safeSchedules.length,
+      totalSchedules: schedules.length,
       currentMonthSchedules: currentMonthSchedules.length,
       tagTypes: usedTagTypes.size,
       totalTime: minutesToTimeString(totalMinutes)
     });
 
-  }, [schedules, tags, tagItems, monthlyGoals, currentDate, currentUser]);
+  }, [schedules, tags, tagItems, monthlyGoals, currentDate]);
 
   // 안전한 배열 보장
   const safeSchedules = Array.isArray(schedules) ? schedules : [];
@@ -233,7 +307,7 @@ const DetailedCalendar = ({
   const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
   const safeMonthlyGoals = Array.isArray(monthlyGoals) ? monthlyGoals : [];
 
-  // ✨ 데이터 없음 상태 처리
+  // ✨ 데이터 없음 상태 처리 개선
   if (safeSchedules.length === 0 && safeTags.length === 0 && safeTagItems.length === 0) {
     return (
       <div className="min-h-screen bg-gray-100">
@@ -255,10 +329,15 @@ const DetailedCalendar = ({
                   <h1 className="text-xl font-bold">
                     👑 {currentUser}님의 상세 캘린더
                   </h1>
-                  <p className="text-red-200 text-sm">관리자 모드</p>
+                  <p className="text-red-200 text-sm">관리자 모드 - 데이터 없음</p>
                 </div>
               </div>
               <div className="flex items-center space-x-4">
+                <ServerDataRefresher 
+                  currentUser={currentUser}
+                  onDataRefresh={handleDataRefresh}
+                  isAdminView={isAdminView}
+                />
                 <span className="text-red-200 text-sm">
                   {new Date().toLocaleDateString('ko-KR')}
                 </span>
@@ -290,17 +369,38 @@ const DetailedCalendar = ({
               <ul className="text-sm text-gray-600 space-y-1">
                 <li>• 해당 멤버가 로그인한 적이 있는지 확인</li>
                 <li>• 일정을 등록한 적이 있는지 확인</li>
+                <li>• 서버 연결 상태 확인</li>
                 <li>• 브라우저 데이터가 삭제되지 않았는지 확인</li>
               </ul>
             </div>
-            {onBackToDashboard && (
-              <button
-                onClick={onBackToDashboard}
-                className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-              >
-                관리자 대시보드로 돌아가기
-              </button>
-            )}
+            <div className="flex gap-2">
+              {isAdminView && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const freshData = await loadUserDataWithFallback(currentUser);
+                      if (freshData) {
+                        handleDataRefresh(freshData);
+                      }
+                    } catch (error) {
+                      console.error('새로고침 실패:', error);
+                      alert('데이터 새로고침에 실패했습니다.');
+                    }
+                  }}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium transition-colors"
+                >
+                  🔄 데이터 새로고침
+                </button>
+              )}
+              {onBackToDashboard && (
+                <button
+                  onClick={onBackToDashboard}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg font-medium transition-colors"
+                >
+                  관리자 대시보드로 돌아가기
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -313,17 +413,16 @@ const DetailedCalendar = ({
   // 현재 월의 일정들만 필터링
   const currentMonthSchedules = safeSchedules.filter(schedule => {
     const scheduleDate = new Date(schedule.date);
-    const currentMonth = formatDate(currentDate, 'yyyy-MM').substring(0, 7); // yyyy-MM
+    const currentMonth = formatDate(currentDate, 'yyyy-MM').substring(0, 7);
     const scheduleMonth = formatDate(scheduleDate, 'yyyy-MM').substring(0, 7);
     return scheduleMonth === currentMonth;
   });
 
-  // 태그별 총 시간 계산 (실제 사용 시간) - CalendarPage와 동일한 로직
+  // 태그별 총 시간 계산
   const calculateMonthlyTagTotals = () => {
     const totals = {};
     
     currentMonthSchedules.forEach(schedule => {
-      // 태그 항목에서 tagType 찾기
       const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
       const tagType = tagItem ? tagItem.tagType : (schedule.tagType || "기타");
       
@@ -338,10 +437,10 @@ const DetailedCalendar = ({
       totals[tagType] += duration;
     });
     
-    return totals; // 분 단위로 반환
+    return totals;
   };
 
-  // 월간 목표 불러오기 - CalendarPage와 동일한 로직
+  // 월간 목표 불러오기
   const getCurrentMonthGoals = () => {
     const currentMonthKey = formatDate(currentDate, 'yyyy-MM').substring(0, 7);
     const found = safeMonthlyGoals.find(goal => goal.month === currentMonthKey);
@@ -367,7 +466,7 @@ const DetailedCalendar = ({
       .sort((a, b) => parseTimeToMinutes(a.start) - parseTimeToMinutes(b.start));
   };
 
-  // 일정 클릭 핸들러 (상세보기)
+  // 일정 클릭 핸들러
   const handleScheduleClick = (schedule, e) => {
     e.stopPropagation();
     console.log('📅 일정 클릭:', schedule);
@@ -391,7 +490,7 @@ const DetailedCalendar = ({
   const monthlyTagTotals = calculateMonthlyTagTotals();
   const currentMonthGoalsData = getCurrentMonthGoals();
   
-  // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시 - CalendarPage와 동일한 로직
+  // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
   const goalTagTypes = currentMonthGoalsData.map(goal => goal.tagType);
   const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => {
     const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
@@ -402,7 +501,7 @@ const DetailedCalendar = ({
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* 관리자 네비게이션 바 (isAdminView일 때만) */}
+      {/* 관리자 네비게이션 바 */}
       {isAdminView && (
         <nav className="bg-red-600 text-white p-4 shadow-lg">
           <div className="container mx-auto flex justify-between items-center">
@@ -420,10 +519,15 @@ const DetailedCalendar = ({
                 <h1 className="text-xl font-bold">
                   👑 {currentUser}님의 상세 캘린더 (읽기 전용)
                 </h1>
-                <p className="text-red-200 text-sm">관리자 모드</p>
+                <p className="text-red-200 text-sm">관리자 모드 - 서버 연동</p>
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              <ServerDataRefresher 
+                currentUser={currentUser}
+                onDataRefresh={handleDataRefresh}
+                isAdminView={isAdminView}
+              />
               <span className="text-red-200 text-sm">
                 {new Date().toLocaleDateString('ko-KR')}
               </span>
@@ -451,7 +555,7 @@ const DetailedCalendar = ({
               <h3 className="text-sm font-medium text-red-800">관리자 모드 (읽기 전용)</h3>
               <div className="mt-1 text-sm text-red-700">
                 <p>
-                  <strong>{currentUser}님</strong>의 상세한 일정 정보를 읽기 전용으로 조회하고 있습니다. 
+                  <strong>{currentUser}님</strong>의 상세한 일정 정보를 서버에서 실시간으로 조회하고 있습니다. 
                   <strong> 일정을 클릭하면 상세 정보를 확인할 수 있습니다.</strong>
                 </p>
               </div>
@@ -497,7 +601,7 @@ const DetailedCalendar = ({
           </div>
         </div>
 
-        {/* ✨ 데이터 요약 카드 추가 */}
+        {/* 데이터 요약 카드 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-lg shadow p-4">
             <div className="flex items-center">
@@ -593,7 +697,6 @@ const DetailedCalendar = ({
                   {/* 일정 목록 */}
                   <div className="space-y-1">
                     {daySchedules.map((schedule) => {
-                      // 실제 멤버 데이터 구조에 맞춰 tagType 찾기
                       const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
                       const tagType = tagItem ? tagItem.tagType : (schedule.tagType || "기타");
                       const tagColor = getTagColor(tagType);
@@ -609,18 +712,18 @@ const DetailedCalendar = ({
                           title={`${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}`}
                         >
                           <div className="space-y-1">
-                            {/* 1줄: 시작시간-마감시간 */}
+                            {/* 시간 */}
                             <div className={`font-bold ${tagColor.text} text-left`}>
                               {schedule.start} - {schedule.end}
                             </div>
-                            {/* 2줄: 태그-일정명 */}
+                            {/* 태그와 제목 */}
                             <div className="flex items-center gap-1">
                               <div className={`w-2 h-2 rounded-full ${tagColor.bg.replace('100', '500')} flex-shrink-0`}></div>
                               <div className={`font-medium ${tagColor.text} truncate flex-1`}>
                                 {schedule.tag} | {schedule.title}
                               </div>
                             </div>
-                            {/* 3줄: 설명 (있을 경우만) */}
+                            {/* 설명 */}
                             {schedule.description && (
                               <div className="text-gray-600 truncate text-[10px] italic">
                                 {schedule.description}
@@ -649,34 +752,15 @@ const DetailedCalendar = ({
           })() : PASTEL_COLORS[0]}
         />
         
-        {/* ✨ 개선된 안내 메시지 */}
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-medium text-blue-800 mb-2">💡 사용법</h4>
-            <p className="text-blue-700 text-sm">
-              {isAdminView 
-                ? '일정을 클릭하면 상세 정보를 확인할 수 있습니다. 관리자 모드로 모든 편집 기능이 비활성화되어 있습니다.'
-                : '일정을 클릭하면 상세 정보를 확인할 수 있습니다.'
-              }
-            </p>
-          </div>
-          
-          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <h4 className="font-medium text-green-800 mb-2">📊 이번 달 통계</h4>
-            <div className="text-green-700 text-sm space-y-1">
-              <div>총 일정: {dataStats.currentMonthSchedules}개</div>
-              <div>활동 시간: {dataStats.totalTime}</div>
-              <div>활동 유형: {dataStats.tagTypes}개</div>
-            </div>
-          </div>
-        </div>
-
-        {/* ✨ 월간 목표 달성률 표시 (데이터가 있을 때만) */}
+        {/* 월간 목표 달성률 표시 */}
         {allTagTypes.length > 0 && (
           <div className="mt-6 bg-white rounded-lg shadow-lg p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
               <span className="mr-2">🎯</span>
               {formatDate(currentDate, 'yyyy년 M월')} 목표 달성률
+              {isAdminView && (
+                <span className="ml-2 text-sm text-gray-500">(서버 데이터 기반)</span>
+              )}
             </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -685,20 +769,16 @@ const DetailedCalendar = ({
                 const actualMinutes = monthlyTagTotals[tagType] || 0;
                 const actualTime = minutesToTimeString(actualMinutes);
                 
-                // 목표 시간 찾기
                 const goal = currentMonthGoalsData.find(g => g.tagType === tagType);
                 const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
                 const goalTime = goal ? goal.targetHours : "00:00";
                 
-                // 퍼센테이지 계산
                 const percentage = calculatePercentage(actualMinutes, goalMinutes);
                 
-                // 목표가 설정되었거나 실제 시간이 있는 것만 표시
                 if (goalTime === "00:00" && actualTime === "00:00") return null;
                 
                 return (
                   <div key={tagType} className={`${tagColor.bg} ${tagColor.border} rounded-lg p-4 border-2`}>
-                    {/* 태그명과 퍼센테이지 */}
                     <div className="flex items-center justify-between mb-3">
                       <span className={`text-sm font-semibold ${tagColor.text}`}>
                         {tagType}
@@ -712,7 +792,6 @@ const DetailedCalendar = ({
                       </span>
                     </div>
                     
-                    {/* 시간 정보 */}
                     <div className="space-y-1 mb-3">
                       <div className="flex justify-between text-sm text-gray-600">
                         <span>실제:</span>
@@ -724,7 +803,6 @@ const DetailedCalendar = ({
                       </div>
                     </div>
                     
-                    {/* 진행률 바 */}
                     <div className="w-full bg-white rounded-full h-2">
                       <div 
                         className={`h-2 rounded-full transition-all duration-300 ${
@@ -740,7 +818,6 @@ const DetailedCalendar = ({
               })}
             </div>
             
-            {/* 전체 평균 달성률 */}
             {allTagTypes.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="flex justify-between items-center">
@@ -762,9 +839,31 @@ const DetailedCalendar = ({
             )}
           </div>
         )}
+
+        {/* 안내 메시지 */}
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <h4 className="font-medium text-blue-800 mb-2">💡 사용법</h4>
+            <p className="text-blue-700 text-sm">
+              {isAdminView 
+                ? '일정을 클릭하면 상세 정보를 확인할 수 있습니다. 관리자 모드로 모든 편집 기능이 비활성화되어 있으며, 서버에서 실시간 데이터를 조회합니다.'
+                : '일정을 클릭하면 상세 정보를 확인할 수 있습니다.'
+              }
+            </p>
+          </div>
+          
+          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+            <h4 className="font-medium text-green-800 mb-2">📊 이번 달 통계 {isAdminView && '(서버 기반)'}</h4>
+            <div className="text-green-700 text-sm space-y-1">
+              <div>총 일정: {dataStats.currentMonthSchedules}개</div>
+              <div>활동 시간: {dataStats.totalTime}</div>
+              <div>활동 유형: {dataStats.tagTypes}개</div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* 관리자 플로팅 도구 (isAdminView일 때만) */}
+      {/* 관리자 플로팅 도구 */}
       {isAdminView && onBackToDashboard && (
         <div className="fixed bottom-6 right-6 flex flex-col space-y-2">
           <button
@@ -779,7 +878,7 @@ const DetailedCalendar = ({
               const totalMinutes = Object.values(monthlyTagTotals).reduce((sum, minutes) => sum + minutes, 0);
               const totalTime = minutesToTimeString(totalMinutes);
               
-              alert(`📊 ${currentUser}님 ${formatDate(currentDate, 'yyyy년 M월')} 요약\n\n` +
+              alert(`📊 ${currentUser}님 ${formatDate(currentDate, 'yyyy년 M월')} 요약 (서버 데이터)\n\n` +
                 `• 총 일정: ${safeSchedules.length}개\n` +
                 `• 이번 달 일정: ${currentMonthSchedules.length}개\n` +
                 `• 총 활동 시간: ${totalTime}\n` +
@@ -798,6 +897,24 @@ const DetailedCalendar = ({
             title="월별 통계 보기"
           >
             <span className="text-lg">📊</span>
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const freshData = await loadUserDataWithFallback(currentUser);
+                if (freshData) {
+                  handleDataRefresh(freshData);
+                  alert('✅ 서버에서 최신 데이터를 가져왔습니다!');
+                }
+              } catch (error) {
+                console.error('서버 새로고침 실패:', error);
+                alert('❌ 서버 데이터 새로고침에 실패했습니다.');
+              }
+            }}
+            className="bg-green-600 hover:bg-green-700 text-white p-3 rounded-full shadow-lg transition duration-200"
+            title="서버 데이터 새로고침"
+          >
+            <span className="text-lg">🔄</span>
           </button>
         </div>
       )}
