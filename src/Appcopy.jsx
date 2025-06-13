@@ -1,4 +1,4 @@
-// Appcopy.jsx - 응급 수정 버전 (기본 기능 복구 우선)
+// Appcopy.jsx - 라우팅 문제 해결 버전
 import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
@@ -8,7 +8,7 @@ import MonthlyPlanPage from './pages/MonthlyPlanPage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminMemberView from './pages/AdminMemberView';
 
-// 기존 저장 시스템만 사용 (Supabase는 일단 제외)
+// 기존 저장 시스템
 import {
   loadAllUserData,
   saveUserCoreData,
@@ -17,10 +17,17 @@ import {
   saveTagItemsToStorage,
   saveMonthlyPlansToStorage,
   saveMonthlyGoalsToStorage,
-  loadUserDataWithFallback
+  backupToServer,
+  restoreFromServer,
+  loadUserDataWithFallback,
+  getUserKeys,
+  debugStorage
 } from './pages/utils/unifiedStorage';
 
-// 관리자 목록
+// ✨ Supabase DAL 기능 추가
+import './pages/utils/supabaseStorage.js';
+
+// ✨ 관리자 목록 상수 (LogInPage와 동일하게 유지)
 const ADMIN_USERS = ['교수님', 'admin', '관리자'];
 
 // 보호된 라우트 컴포넌트
@@ -29,16 +36,21 @@ const ProtectedRoute = ({ children }) => {
   return nickname ? children : <Navigate to="/login" replace />;
 };
 
-// 관리자 전용 라우트 컴포넌트
+// ✨ 수정된 관리자 전용 라우트 컴포넌트
 const AdminRoute = ({ children }) => {
   const nickname = localStorage.getItem('nickname');
   const userType = localStorage.getItem('userType');
+  
+  // 더블 체크: userType이 admin이거나 nickname이 관리자 목록에 있는 경우
   const isAdmin = userType === 'admin' || ADMIN_USERS.includes(nickname);
+  
+  console.log('🔍 AdminRoute 체크:', { nickname, userType, isAdmin });
+  
   return isAdmin ? children : <Navigate to="/calendar" replace />;
 };
 
 function Appcopy() {
-  // 기본 상태들
+  // 기존 상태들
   const [schedules, setSchedules] = useState([]);
   const [tags, setTags] = useState([]);
   const [tagItems, setTagItems] = useState([]);
@@ -47,121 +59,181 @@ function Appcopy() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState('');
+  
+  // ✨ 새로 추가: 관리자 여부 상태
   const [isAdmin, setIsAdmin] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  // 관리자 여부 확인
+  // 🔧 중복 저장 방지용 플래그들
+  const isSavingRef = useRef(false);
+  const saveTimeoutRef = useRef(null);
+  const lastSaveDataRef = useRef('');
+
+  // ✨ 수정된 관리자 여부 확인 함수
   const checkIsAdmin = (nickname) => {
     const userType = localStorage.getItem('userType');
-    return userType === 'admin' || ADMIN_USERS.includes(nickname);
-  };
-
-  // ✅ 단순화된 상태 업데이트 함수들 (즉시 저장)
-  const updateSchedules = (newSchedules) => {
-    console.log('📅 일정 업데이트:', newSchedules.length, '개');
-    setSchedules(newSchedules);
     
-    // 즉시 로컬 저장 (관리자가 아닌 경우만)
-    if (currentUser && !checkIsAdmin(currentUser)) {
-      try {
-        saveSchedulesToStorage(currentUser, newSchedules);
-        console.log('✅ 일정 로컬 저장 성공:', newSchedules.length, '개');
-      } catch (error) {
-        console.error('❌ 일정 저장 실패:', error);
-      }
-    }
-  };
-
-  const updateTags = (newTags) => {
-    console.log('🏷️ 태그 업데이트:', newTags.length, '개');
-    setTags(newTags);
+    // userType이 admin이거나 nickname이 관리자 목록에 있는 경우
+    const isAdminByType = userType === 'admin';
+    const isAdminByName = ADMIN_USERS.includes(nickname);
     
-    if (currentUser && !checkIsAdmin(currentUser)) {
-      try {
-        saveTagsToStorage(currentUser, newTags);
-        console.log('✅ 태그 로컬 저장 성공');
-      } catch (error) {
-        console.error('❌ 태그 저장 실패:', error);
-      }
-    }
-  };
-
-  const updateTagItems = (newTagItems) => {
-    console.log('🔖 태그아이템 업데이트:', newTagItems.length, '개');
-    setTagItems(newTagItems);
+    console.log('🔍 관리자 체크:', {
+      nickname,
+      userType,
+      isAdminByType,
+      isAdminByName,
+      ADMIN_USERS,
+      result: isAdminByType || isAdminByName
+    });
     
-    if (currentUser && !checkIsAdmin(currentUser)) {
-      try {
-        saveTagItemsToStorage(currentUser, newTagItems);
-        console.log('✅ 태그아이템 로컬 저장 성공');
-      } catch (error) {
-        console.error('❌ 태그아이템 저장 실패:', error);
-      }
-    }
+    return isAdminByType || isAdminByName;
   };
 
-  const updateMonthlyPlans = (newPlans) => {
-    console.log('📋 월간계획 업데이트:', newPlans.length, '개');
-    setMonthlyPlans(newPlans);
-    
-    if (currentUser && !checkIsAdmin(currentUser)) {
-      try {
-        saveMonthlyPlansToStorage(currentUser, newPlans);
-        console.log('✅ 월간계획 로컬 저장 성공');
-      } catch (error) {
-        console.error('❌ 월간계획 저장 실패:', error);
-      }
-    }
+  // 🔧 데이터 해시 생성 (변경 감지용)
+  const generateDataHash = (schedules, tags, tagItems, monthlyPlans, monthlyGoals) => {
+    return JSON.stringify({
+      s: schedules.length,
+      t: tags.length, 
+      ti: tagItems.length,
+      mp: monthlyPlans.length,
+      mg: monthlyGoals.length
+    });
   };
 
-  const updateMonthlyGoals = (newGoals) => {
-    console.log('🎯 월간목표 업데이트:', newGoals.length, '개');
-    setMonthlyGoals(newGoals);
-    
-    if (currentUser && !checkIsAdmin(currentUser)) {
-      try {
-        saveMonthlyGoalsToStorage(currentUser, newGoals);
-        console.log('✅ 월간목표 로컬 저장 성공');
-      } catch (error) {
-        console.error('❌ 월간목표 저장 실패:', error);
-      }
-    }
-  };
+  // 🔧 안전한 서버 저장 (중복 실행 완전 차단)
+  const safeServerSave = async () => {
+    if (!currentUser || isLoading || isSavingRef.current || isAdmin) return;
 
-  // 사용자 데이터 로드
-  const loadCurrentUserData = async (nickname) => {
-    if (!nickname) {
-      setIsLoading(false);
-      setDataLoaded(true);
+    // 관리자는 데이터 저장 안 함
+    if (checkIsAdmin(currentUser)) {
+      console.log('⚠️ 관리자는 데이터 저장하지 않음');
       return;
     }
+
+    // 데이터 변경 여부 확인
+    const currentDataHash = generateDataHash(schedules, tags, tagItems, monthlyPlans, monthlyGoals);
+    if (currentDataHash === lastSaveDataRef.current) {
+      console.log('⚠️ 데이터 변경 없음 - 서버 저장 스킵');
+      return;
+    }
+
+    isSavingRef.current = true;
+    lastSaveDataRef.current = currentDataHash;
+
+    try {
+      console.log('🌐 서버 저장 시작:', currentUser);
+      
+      await saveUserCoreData(currentUser, {
+        schedules, tags, tagItems, monthlyPlans, monthlyGoals
+      });
+      
+      console.log('✅ 서버 저장 완료:', currentUser);
+    } catch (error) {
+      console.warn('⚠️ 서버 저장 실패 (로컬은 저장됨):', error);
+    } finally {
+      isSavingRef.current = false;
+    }
+  };
+
+  // 기존 함수들
+  const getAllUsers = () => {
+    const users = new Set();
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.includes('-')) {
+        const [nickname] = key.split('-');
+        // ✨ 관리자 목록 제외 시 새로운 ADMIN_USERS 상수 사용
+        if (nickname && !ADMIN_USERS.includes(nickname)) {
+          users.add(nickname);
+        }
+      }
+    }
+    return Array.from(users);
+  };
+
+  const getUserData = (nickname) => {
+    if (!nickname) return {
+      schedules: [],
+      tags: [],
+      tagItems: [],
+      monthlyPlans: [],
+      monthlyGoals: []
+    };
+    return loadAllUserData(nickname);
+  };
+
+  const getUserStats = () => {
+    const users = getAllUsers();
+    const stats = {};
+    users.forEach(user => {
+      const userData = loadAllUserData(user);
+      stats[user] = {
+        schedules: userData.schedules?.length || 0,
+        tags: userData.tags?.length || 0,
+        tagItems: userData.tagItems?.length || 0,
+        monthlyPlans: userData.monthlyPlans?.length || 0,
+        monthlyGoals: userData.monthlyGoals?.length || 0,
+        lastActivity: '오늘'
+      };
+    });
+    return stats;
+  };
+
+  // 수동 동기화
+  const handleManualServerSync = async (showConfirm = true) => {
+    if (!currentUser || isAdmin) return false;
+
+    if (showConfirm && !window.confirm('수동으로 서버와 동기화하시겠습니까?')) {
+      return false;
+    }
+
+    try {
+      console.log('🔧 수동 서버 동기화 시작:', currentUser);
+      await safeServerSave();
+      alert('✅ 서버 동기화가 완료되었습니다!');
+      return true;
+    } catch (error) {
+      console.error('❌ 수동 서버 동기화 실패:', error);
+      alert('❌ 서버 동기화 실패');
+      return false;
+    }
+  };
+
+  // ✨ 개선된 사용자 데이터 로드 함수 (상태 업데이트 동기화)
+  const loadCurrentUserData = async (nickname) => {
+    if (!nickname) return;
     
     console.log('📦 데이터 로딩 시작:', nickname);
     
+    // ✨ 먼저 관리자 여부를 확인하고 상태를 설정
     const isUserAdmin = checkIsAdmin(nickname);
+    console.log('👑 관리자 체크 결과:', { nickname, isUserAdmin });
     
+    // 관리자인 경우 데이터 로딩 스킵
     if (isUserAdmin) {
-      console.log('👑 관리자 로그인');
+      console.log('👑 관리자 로그인 - 데이터 로딩 스킵');
+      
+      // ✨ 모든 상태를 한 번에 설정 (동기화)
       setIsAdmin(true);
-      setSchedules([]);
-      setTags([]);
-      setTagItems([]);
-      setMonthlyPlans([]);
-      setMonthlyGoals([]);
       setDataLoaded(true);
       setIsLoading(false);
+      
       return;
     }
     
     try {
+      // ✨ 일반 사용자 상태 설정
       setIsAdmin(false);
-      console.log('📦 일반 사용자 데이터 로딩:', nickname);
+      console.log('📦 일반 사용자 데이터 로딩 시작:', nickname);
       
       let userData = await loadUserDataWithFallback(nickname);
       
-      // 기본 데이터가 없으면 생성
-      if (!userData || !userData.tags || userData.tags.length === 0) {
-        console.log('🆕 기본 데이터 생성');
+      if (!userData || 
+          !userData.tags || userData.tags.length === 0 ||
+          !userData.tagItems || userData.tagItems.length === 0) {
+        
+        console.log('🆕 새 사용자 또는 빈 데이터 감지, 기본 데이터 생성 중...');
+        
         userData = {
           schedules: userData?.schedules || [],
           tags: [
@@ -173,104 +245,160 @@ function Appcopy() {
           tagItems: [
             { tagType: '공부', tagName: '독서' },
             { tagType: '공부', tagName: '강의 수강' },
+            { tagType: '공부', tagName: '과제' },
             { tagType: '운동', tagName: '조깅' },
+            { tagType: '운동', tagName: '헬스장' },
             { tagType: '취미', tagName: '음악 감상' },
-            { tagType: '업무', tagName: '회의' }
+            { tagType: '취미', tagName: '영화 관람' },
+            { tagType: '업무', tagName: '회의' },
+            { tagType: '업무', tagName: '프로젝트' }
           ],
           monthlyPlans: userData?.monthlyPlans || [],
           monthlyGoals: userData?.monthlyGoals || []
         };
       }
       
-      // 상태 설정
+      // 상태 설정 (한 번에)
       setSchedules(userData.schedules || []);
       setTags(userData.tags || []);
       setTagItems(userData.tagItems || []);
       setMonthlyPlans(userData.monthlyPlans || []);
       setMonthlyGoals(userData.monthlyGoals || []);
       
-      console.log('✅ 데이터 로딩 완료:', {
+      // 초기 데이터 해시 설정
+      lastSaveDataRef.current = generateDataHash(
+        userData.schedules || [],
+        userData.tags || [],
+        userData.tagItems || [],
+        userData.monthlyPlans || [],
+        userData.monthlyGoals || []
+      );
+      
+      console.log('✅ 일반 사용자 데이터 로딩 완료:', {
         nickname,
-        schedules: userData.schedules?.length || 0,
-        tags: userData.tags?.length || 0,
-        tagItems: userData.tagItems?.length || 0
+        schedulesCount: userData.schedules?.length || 0,
+        tagsCount: userData.tags?.length || 0,
+        tagItemsCount: userData.tagItems?.length || 0,
+        monthlyPlansCount: userData.monthlyPlans?.length || 0,
+        monthlyGoalsCount: userData.monthlyGoals?.length || 0
       });
       
     } catch (error) {
-      console.error('❌ 데이터 로딩 실패:', error);
+      console.error('❌ 사용자 데이터 로딩 실패:', error);
+      
       setSchedules([]);
       setTags([]);
       setTagItems([]);
       setMonthlyPlans([]);
       setMonthlyGoals([]);
+      
     } finally {
+      // ✨ 마지막에 로딩 완료 상태 설정
       setDataLoaded(true);
       setIsLoading(false);
     }
   };
 
-  // 로그인 상태 확인
+  // ✨ 개선된 로그인 상태 확인 (데이터 로딩 완료 후 라우팅)
   useEffect(() => {
     const checkLoginStatus = async () => {
       const nickname = localStorage.getItem('nickname');
       const userType = localStorage.getItem('userType');
       
-      console.log('🔐 로그인 정보:', { nickname, userType });
+      console.log('🔐 저장된 로그인 정보 확인:', { nickname, userType });
       
       if (nickname) {
         setIsLoggedIn(true);
         setCurrentUser(nickname);
+        
+        // 데이터 로딩 완료까지 대기
         await loadCurrentUserData(nickname);
       } else {
         setIsLoading(false);
         setDataLoaded(true);
       }
     };
-    
     checkLoginStatus();
   }, []);
 
-  // 관리자용 함수들
-  const getAllUsers = () => {
-    const users = new Set();
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.includes('-')) {
-        const [nickname] = key.split('-');
-        if (nickname && !ADMIN_USERS.includes(nickname)) {
-          users.add(nickname);
-        }
-      }
+  // 🔧 일반 사용자만 자동 저장 (1초 디바운싱)
+  useEffect(() => {
+    if (!currentUser || isLoading || isAdmin || !dataLoaded) return;
+
+    // 기존 타이머 취소
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
-    return Array.from(users);
+
+    // 1초 디바운싱
+    saveTimeoutRef.current = setTimeout(() => {
+      safeServerSave();
+    }, 1000);
+
+    // 클린업
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading, isAdmin, dataLoaded]);
+
+  // 🔧 상태 업데이트 함수들 (관리자는 저장 안 함)
+  const updateSchedules = (newSchedules) => {
+    setSchedules(newSchedules);
+    // 일반 사용자만 로컬 저장
+    if (currentUser && !isAdmin) {
+      saveSchedulesToStorage(currentUser, newSchedules);
+      console.log('💾 일정 즉시 로컬 저장:', newSchedules.length, '개');
+    }
   };
 
-  const getUserData = (nickname) => {
-    if (!nickname) return { schedules: [], tags: [], tagItems: [], monthlyPlans: [], monthlyGoals: [] };
-    return loadAllUserData(nickname);
+  const updateTags = (newTags) => {
+    setTags(newTags);
+    if (currentUser && !isAdmin) {
+      saveTagsToStorage(currentUser, newTags);
+      console.log('💾 태그 즉시 로컬 저장:', newTags.length, '개');
+    }
   };
 
-  const getUserStats = () => {
-    const users = getAllUsers();
-    const stats = {};
-    users.forEach(user => {
-      const userData = getUserData(user);
-      stats[user] = {
-        schedules: userData.schedules?.length || 0,
-        tags: userData.tags?.length || 0,
-        tagItems: userData.tagItems?.length || 0,
-        monthlyPlans: userData.monthlyPlans?.length || 0,
-        monthlyGoals: userData.monthlyGoals?.length || 0
-      };
-    });
-    return stats;
+  const updateTagItems = (newTagItems) => {
+    setTagItems(newTagItems);
+    if (currentUser && !isAdmin) {
+      saveTagItemsToStorage(currentUser, newTagItems);
+      console.log('💾 태그아이템 즉시 로컬 저장:', newTagItems.length, '개');
+    }
   };
 
-  // 로그아웃
+  const updateMonthlyPlans = (newPlans) => {
+    setMonthlyPlans(newPlans);
+    if (currentUser && !isAdmin) {
+      saveMonthlyPlansToStorage(currentUser, newPlans);
+      console.log('💾 월간계획 즉시 로컬 저장:', newPlans.length, '개');
+    }
+  };
+
+  const updateMonthlyGoals = (newGoals) => {
+    setMonthlyGoals(newGoals);
+    if (currentUser && !isAdmin) {
+      saveMonthlyGoalsToStorage(currentUser, newGoals);
+      console.log('💾 월간목표 즉시 로컬 저장:', newGoals.length, '개');
+    }
+  };
+
+  // ✨ 수정된 로그아웃 함수 (강제 페이지 이동 추가)
   const handleLogout = () => {
-    console.log('🚪 로그아웃');
+    console.log('🚪 로그아웃 시작');
+    
+    // 타이머 정리
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    // localStorage 정리
     localStorage.removeItem('nickname');
     localStorage.removeItem('userType');
+    
+    // 상태 초기화
     setIsLoggedIn(false);
     setCurrentUser('');
     setSchedules([]);
@@ -279,25 +407,45 @@ function Appcopy() {
     setMonthlyPlans([]);
     setMonthlyGoals([]);
     setIsAdmin(false);
-    setDataLoaded(true);
+    setDataLoaded(false);
     setIsLoading(false);
     
-    setTimeout(() => {
-      window.location.href = '#/login';
-    }, 100);
+    // 플래그 초기화
+    isSavingRef.current = false;
+    lastSaveDataRef.current = '';
+    
+    console.log('🚪 로그아웃 완료 - 로그인 페이지로 이동');
+    
+    // ✨ 강제 페이지 이동
+    window.location.href = '#/login';
   };
 
   const handleAdminLogout = () => {
+    console.log('👑 관리자 로그아웃');
     handleLogout();
   };
 
-  // 로딩 화면
-  if (isLoading && !dataLoaded) {
+  // 컴포넌트 언마운트 시 정리
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // ✨ 개선된 로딩 화면 (더 구체적인 상태 표시)
+  if (isLoading || !dataLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">데이터를 불러오는 중...</p>
+          <p className="text-gray-600">
+            {checkIsAdmin(currentUser) ? '관리자 권한 확인 중...' : '사용자 데이터를 불러오는 중...'}
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            {currentUser ? `${currentUser}님의 데이터 로딩 중...` : '로그인 정보 확인 중...'}
+          </p>
         </div>
       </div>
     );
@@ -308,17 +456,27 @@ function Appcopy() {
       <Routes>
         <Route path="/login" element={<LogInPage />} />
         
+        {/* ✨ 개선된 루트 라우팅 - localStorage 직접 체크로 즉시 판단 */}
         <Route
           path="/"
           element={(() => {
-            const nickname = localStorage.getItem('nickname');
-            const userType = localStorage.getItem('userType');
-            
-            if (!nickname || !isLoggedIn) {
+            if (!isLoggedIn || !dataLoaded) {
               return <Navigate to="/login" replace />;
             }
             
+            // ✨ localStorage에서 직접 체크 (상태 업데이트 지연 방지)
+            const nickname = localStorage.getItem('nickname');
+            const userType = localStorage.getItem('userType');
             const isDirectAdmin = userType === 'admin' || ADMIN_USERS.includes(nickname);
+            
+            console.log('🏠 루트 라우팅 판단:', {
+              nickname,
+              userType,
+              isDirectAdmin,
+              isAdmin,
+              isLoggedIn,
+              dataLoaded
+            });
             
             return isDirectAdmin ? 
               <Navigate to="/admin" replace /> : 
