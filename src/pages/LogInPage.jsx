@@ -1,9 +1,9 @@
-// pages/LogInPage.jsx - 완전 방탄 버전
+// pages/LogInPage.jsx - 완전 수정 버전
 import React, { useState } from 'react';
 
 const ALLOWED_USERS = {
   members: ['고은', '소윤', '예진', '도훈', '신아', '수진'],
-  admins: ['교수님']
+  admins: ['교수님'] // 기존 그대로 유지
 };
 
 const USER_TYPE_COLORS = {
@@ -45,11 +45,20 @@ function LogInPage() {
     setIsLoggingIn(true);
     setError('');
 
-    // 사용자 검증
+    // ✨ 수정된 사용자 검증 로직
     const allowedList = ALLOWED_USERS[userType + 's']; // members 또는 admins
+    
+    // 정확한 문자열 매칭 (대소문자 구분 없이)
     const isValidUser = allowedList.some(user => 
-      user.toLowerCase() === trimmedNickname.toLowerCase()
+      user.toLowerCase().trim() === trimmedNickname.toLowerCase().trim()
     );
+
+    console.log('🔍 사용자 검증:', {
+      userType,
+      allowedList,
+      trimmedNickname,
+      isValidUser
+    });
 
     if (!isValidUser) {
       setError(`허용되지 않은 ${userType === 'admin' ? '관리자' : '멤버'}입니다.`);
@@ -61,18 +70,23 @@ function LogInPage() {
     try {
       console.log('✅ 로그인 성공');
       
-      // localStorage에 저장
+      // ✨ localStorage에 저장 (userType도 함께 저장)
       localStorage.setItem('nickname', trimmedNickname);
-      localStorage.setItem('userType', userType);
+      localStorage.setItem('userType', userType); // 중요: userType 저장
       
-      console.log('💾 localStorage 저장 완료');
+      console.log('💾 localStorage 저장 완료:', {
+        nickname: trimmedNickname,
+        userType: userType
+      });
       
       // 즉시 페이지 이동
       const targetUrl = userType === 'admin' ? '/admin' : '/calendar';
       console.log(`🚀 ${targetUrl}로 이동`);
       
-      // 강제 페이지 이동 (React 상태와 무관)
-      window.location.href = targetUrl === '/admin' ? '#/admin' : '#/calendar';
+      // ✨ 상태 업데이트 후 페이지 이동 (약간의 지연)
+      setTimeout(() => {
+        window.location.href = targetUrl === '/admin' ? '#/admin' : '#/calendar';
+      }, 100);
       
     } catch (error) {
       console.error('❌ 로그인 처리 실패:', error);
@@ -222,6 +236,7 @@ function LogInPage() {
           <div className="text-center text-xs text-gray-400 space-y-1">
             <p>현재 경로: <span className="font-mono">{window.location.pathname}</span></p>
             <p>저장된 사용자: <span className="font-mono">{localStorage.getItem('nickname') || '없음'}</span></p>
+            <p>사용자 타입: <span className="font-mono">{localStorage.getItem('userType') || '없음'}</span></p>
           </div>
           <div className="flex justify-center mt-3">
             <button
