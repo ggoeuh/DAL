@@ -3,7 +3,8 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { 
   saveUserDataToDAL, 
-  loadUserDataFromDAL 
+  loadUserDataFromDAL,
+  supabase
 } from './utils/supabaseStorage.js';
 
 // 파스텔 색상 팔레트
@@ -33,134 +34,61 @@ const minutesToTimeString = (totalMinutes) => {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
-// 데이터 초기화 버튼 컴포넌트
-const DataResetButton = ({ currentUser, className = "" }) => {
+// 서버 데이터 리셋 버튼 컴포넌트
+const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) => {
   const [showModal, setShowModal] = useState(false);
-  const [resetType, setResetType] = useState('cleanup');
+  const [resetType, setResetType] = useState('user');
   const [isResetting, setIsResetting] = useState(false);
 
-  const resetFunctions = {
-    cleanup: (nickname) => {
-      if (!nickname) return;
-      
-      if (window.confirm(`${nickname} 사용자의 불일치 데이터를 정리하시겠습니까?`)) {
-        console.log(`🧹 ${nickname} 사용자의 고아 데이터 정리 시작`);
-        
-        const schedules = JSON.parse(localStorage.getItem(`${nickname}-schedules`) || '[]');
-        const tags = JSON.parse(localStorage.getItem(`${nickname}-tags`) || '[]');
-        const tagItems = JSON.parse(localStorage.getItem(`${nickname}-tagItems`) || '[]');
-        const monthlyGoals = JSON.parse(localStorage.getItem(`${nickname}-monthlyGoals`) || '[]');
-        
-        // 실제 사용되지 않는 태그 타입 찾기
-        const usedTagTypes = [...new Set(tagItems.map(item => item.tagType))];
-        const unusedTags = tags.filter(tag => !usedTagTypes.includes(tag.tagType));
-        
-        if (unusedTags.length > 0) {
-          const cleanedTags = tags.filter(tag => usedTagTypes.includes(tag.tagType));
-          localStorage.setItem(`${nickname}-tags`, JSON.stringify(cleanedTags));
-          console.log(`  🗑️ 사용되지 않는 태그 타입 ${unusedTags.length}개 삭제`);
-        }
-        
-        // 실제 태그 항목이 없는 월간 목표 찾기
-        const validTagTypes = [...new Set(tagItems.map(item => item.tagType))];
-        const validGoals = monthlyGoals.map(monthGoal => ({
-          ...monthGoal,
-          goals: monthGoal.goals.filter(goal => validTagTypes.includes(goal.tagType))
-        })).filter(monthGoal => monthGoal.goals.length > 0);
-        
-        if (JSON.stringify(validGoals) !== JSON.stringify(monthlyGoals)) {
-          localStorage.setItem(`${nickname}-monthlyGoals`, JSON.stringify(validGoals));
-          console.log(`  🗑️ 유효하지 않은 월간 목표 정리 완료`);
-        }
-        
-        console.log(`🧹 ${nickname} 사용자 고아 데이터 정리 완료`);
-        alert('✅ 데이터 정리가 완료되었습니다.');
-        window.location.reload();
-      }
-    },
-
-    userComplete: (nickname) => {
-      if (!nickname) return;
-      
-      if (window.confirm(
-        `⚠️ ${nickname} 사용자의 모든 데이터를 완전히 삭제하시겠습니까?\n` +
-        `- 모든 일정\n` +
-        `- 모든 태그\n` +
-        `- 모든 월간 계획\n` +
-        `- 모든 월간 목표\n\n` +
-        `이 작업은 되돌릴 수 없습니다.`
-      )) {
-        const keysToDelete = [
-          `${nickname}-schedules`,
-          `${nickname}-tags`,
-          `${nickname}-tagItems`,
-          `${nickname}-monthlyPlans`,
-          `${nickname}-monthlyGoals`,
-          `${nickname}-tagTotals`
-        ];
-        
-        keysToDelete.forEach(key => {
-          if (localStorage.getItem(key)) {
-            localStorage.removeItem(key);
-            console.log(`  ✅ 삭제됨: ${key}`);
-          }
-        });
-        
-        alert(`✅ ${nickname} 사용자의 모든 데이터가 완전히 삭제되었습니다.`);
-        window.location.reload();
-      }
-    },
-
-    calendar: () => {
-      if (window.confirm('⚠️ 모든 사용자의 캘린더 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
-        const calendarKeys = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && (
-            key.includes('schedules') ||
-            key.includes('tags') ||
-            key.includes('tagItems') ||
-            key.includes('monthlyPlans') ||
-            key.includes('monthlyGoals')
-          )) {
-            calendarKeys.push(key);
-          }
-        }
-        
-        calendarKeys.forEach(key => {
-          localStorage.removeItem(key);
-        });
-        
-        alert(`✅ 모든 캘린더 데이터가 초기화되었습니다. (${calendarKeys.length}개 항목 삭제)`);
-        window.location.reload();
-      }
-    },
-
-    all: () => {
-      if (window.confirm('⚠️ 경고: 모든 localStorage 데이터가 삭제됩니다.\n이 작업은 되돌릴 수 없습니다.\n정말로 진행하시겠습니까?')) {
-        localStorage.clear();
-        alert('✅ 모든 데이터가 완전히 초기화되었습니다.');
-        window.location.reload();
-      }
-    }
-  };
-
   const handleReset = async () => {
+    if (!supabase || !currentUser) {
+      alert('❌ Supabase 연결 또는 사용자 정보가 없습니다.');
+      return;
+    }
+
     setIsResetting(true);
     
     try {
-      if (resetType === 'cleanup' && currentUser) {
-        resetFunctions.cleanup(currentUser);
-      } else if (resetType === 'user' && currentUser) {
-        resetFunctions.userComplete(currentUser);
+      if (resetType === 'user') {
+        if (window.confirm(
+          `⚠️ ${currentUser} 사용자의 모든 서버 데이터를 삭제하시겠습니까?\n` +
+          `- 모든 일정\n` +
+          `- 모든 월간 목표\n\n` +
+          `이 작업은 되돌릴 수 없습니다.`
+        )) {
+          const { error } = await supabase
+            .from('DAL')
+            .delete()
+            .eq('user_name', currentUser);
+          
+          if (error) {
+            throw error;
+          }
+          
+          alert(`✅ ${currentUser} 사용자의 모든 서버 데이터가 삭제되었습니다.`);
+          if (onDataChanged) onDataChanged();
+        }
       } else if (resetType === 'all') {
-        resetFunctions.calendar();
-      } else if (resetType === 'complete') {
-        resetFunctions.all();
+        if (window.confirm(
+          '⚠️ 모든 사용자의 서버 데이터를 삭제하시겠습니까?\n' +
+          '이 작업은 되돌릴 수 없습니다.'
+        )) {
+          const { error } = await supabase
+            .from('DAL')
+            .delete()
+            .neq('id', 0); // 모든 레코드 삭제
+          
+          if (error) {
+            throw error;
+          }
+          
+          alert('✅ 모든 서버 데이터가 삭제되었습니다.');
+          if (onDataChanged) onDataChanged();
+        }
       }
     } catch (error) {
-      console.error('초기화 중 오류:', error);
-      alert('❌ 초기화 중 오류가 발생했습니다.');
+      console.error('서버 데이터 삭제 실패:', error);
+      alert('❌ 서버 데이터 삭제 실패: ' + error.message);
     }
     
     setIsResetting(false);
@@ -172,57 +100,36 @@ const DataResetButton = ({ currentUser, className = "" }) => {
       <button
         onClick={() => setShowModal(true)}
         className={`bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded-lg text-sm font-medium transition-colors ${className}`}
-        title="데이터 초기화"
+        title="서버 데이터 삭제"
       >
-        🗑️ 초기화
+        🗑️ 서버 삭제
       </button>
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-            <h3 className="text-lg font-bold mb-4 text-red-600">⚠️ 데이터 초기화</h3>
+            <h3 className="text-lg font-bold mb-4 text-red-600">⚠️ 서버 데이터 삭제</h3>
             
             <div className="mb-4">
-              <p className="text-gray-600 mb-3">초기화할 범위를 선택해주세요:</p>
+              <p className="text-gray-600 mb-3">삭제할 범위를 선택해주세요:</p>
               
               <div className="space-y-3">
-                {currentUser && (
-                  <>
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="resetType"
-                        value="cleanup"
-                        checked={resetType === 'cleanup'}
-                        onChange={(e) => setResetType(e.target.value)}
-                        className="mr-2"
-                      />
-                      <div>
-                        <div className="font-medium text-blue-600">불일치 데이터 정리</div>
-                        <div className="text-sm text-gray-500">
-                          {currentUser} 사용자의 고아 데이터만 정리 (추천)
-                        </div>
-                      </div>
-                    </label>
-                    
-                    <label className="flex items-center">
-                      <input
-                        type="radio"
-                        name="resetType"
-                        value="user"
-                        checked={resetType === 'user'}
-                        onChange={(e) => setResetType(e.target.value)}
-                        className="mr-2"
-                      />
-                      <div>
-                        <div className="font-medium">내 모든 데이터 삭제</div>
-                        <div className="text-sm text-gray-500">
-                          {currentUser} 사용자의 일정, 태그, 월간계획, 월간목표 모두 삭제
-                        </div>
-                      </div>
-                    </label>
-                  </>
-                )}
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="resetType"
+                    value="user"
+                    checked={resetType === 'user'}
+                    onChange={(e) => setResetType(e.target.value)}
+                    className="mr-2"
+                  />
+                  <div>
+                    <div className="font-medium">내 모든 서버 데이터 삭제</div>
+                    <div className="text-sm text-gray-500">
+                      {currentUser} 사용자의 모든 일정과 월간목표 삭제
+                    </div>
+                  </div>
+                </label>
                 
                 <label className="flex items-center">
                   <input
@@ -234,26 +141,9 @@ const DataResetButton = ({ currentUser, className = "" }) => {
                     className="mr-2"
                   />
                   <div>
-                    <div className="font-medium">모든 캘린더 데이터 초기화</div>
-                    <div className="text-sm text-gray-500">
-                      모든 사용자의 일정, 태그, 월간계획 삭제
-                    </div>
-                  </div>
-                </label>
-                
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="resetType"
-                    value="complete"
-                    checked={resetType === 'complete'}
-                    onChange={(e) => setResetType(e.target.value)}
-                    className="mr-2"
-                  />
-                  <div>
-                    <div className="font-medium text-red-600">완전 초기화</div>
+                    <div className="font-medium text-red-600">모든 서버 데이터 삭제</div>
                     <div className="text-sm text-red-500">
-                      모든 localStorage 데이터 삭제 (복구 불가능)
+                      모든 사용자의 서버 데이터 삭제 (복구 불가능)
                     </div>
                   </div>
                 </label>
@@ -262,8 +152,8 @@ const DataResetButton = ({ currentUser, className = "" }) => {
             
             <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
               <p className="text-yellow-800 text-sm">
-                <strong>주의:</strong> "불일치 데이터 정리"를 먼저 시도해보세요. 
-                문제가 해결되지 않으면 더 강한 옵션을 선택하세요.
+                <strong>주의:</strong> 서버 데이터는 한번 삭제되면 복구할 수 없습니다.
+                신중하게 선택하세요.
               </p>
             </div>
             
@@ -280,7 +170,7 @@ const DataResetButton = ({ currentUser, className = "" }) => {
                 disabled={isResetting}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
               >
-                {isResetting ? '처리 중...' : '실행'}
+                {isResetting ? '삭제 중...' : '삭제 실행'}
               </button>
             </div>
           </div>
@@ -290,28 +180,88 @@ const DataResetButton = ({ currentUser, className = "" }) => {
   );
 };
 
-const CalendarPage = ({ 
-  schedules = [], 
-  tags = [], 
-  tagItems = [], 
-  currentUser, 
-  onLogout
-}) => {
+const CalendarPage = ({ currentUser, onLogout }) => {
   const currentDate = new Date();
   const navigate = useNavigate();
 
-  // 안전한 배열 보장
-  const safeSchedules = Array.isArray(schedules) ? schedules : [];
-  const safeTags = Array.isArray(tags) ? tags : [];
-  const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
-
-  // 서버 백업/복원 상태 (제거)
-  // const [isBackingUp, setIsBackingUp] = useState(false);
-  // const [isRestoring, setIsRestoring] = useState(false);
-
-  // 간단한 월간 목표 상태
+  // 서버에서 불러온 데이터 상태
+  const [schedules, setSchedules] = useState([]);
   const [monthlyGoals, setMonthlyGoals] = useState([]);
-  
+  const [tags, setTags] = useState([]);
+  const [tagItems, setTagItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+
+  // 서버에서 데이터 불러오기
+  const loadDataFromServer = async () => {
+    if (!currentUser) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      console.log('🔄 서버에서 사용자 데이터 불러오기 시작:', currentUser);
+
+      const result = await loadUserDataFromDAL(currentUser);
+      
+      if (result.success && result.data) {
+        setSchedules(result.data.schedules || []);
+        setMonthlyGoals(result.data.monthlyGoals || []);
+        setTags(result.data.tags || []);
+        setTagItems(result.data.tagItems || []);
+        setLastSyncTime(new Date());
+        
+        console.log('✅ 서버 데이터 로드 성공:', {
+          schedules: result.data.schedules?.length || 0,
+          monthlyGoals: result.data.monthlyGoals?.length || 0,
+          tags: result.data.tags?.length || 0,
+          tagItems: result.data.tagItems?.length || 0
+        });
+      } else {
+        console.warn('⚠️ 서버 데이터 로드 실패 또는 빈 데이터:', result.error);
+        // 서버에 데이터가 없는 경우 빈 배열로 초기화
+        setSchedules([]);
+        setMonthlyGoals([]);
+        setTags([]);
+        setTagItems([]);
+        setLastSyncTime(new Date());
+      }
+    } catch (error) {
+      console.error('❌ 서버 데이터 로드 중 오류:', error);
+      alert('서버 데이터를 불러오는 중 오류가 발생했습니다: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 컴포넌트 마운트시 데이터 로드
+  useEffect(() => {
+    loadDataFromServer();
+  }, [currentUser]);
+
+  // 페이지 포커스시 데이터 새로고침
+  useEffect(() => {
+    const handleFocus = () => {
+      console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
+      loadDataFromServer();
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        handleFocus();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentUser]);
+
   // 현재 월의 날짜들
   const days = eachDayOfInterval({
     start: startOfMonth(currentDate),
@@ -319,24 +269,22 @@ const CalendarPage = ({
   });
   
   // 현재 월의 일정들만 필터링
-  const currentMonthSchedules = safeSchedules.filter(schedule => {
+  const currentMonthSchedules = schedules.filter(schedule => {
     const scheduleDate = new Date(schedule.date);
     const currentMonth = format(currentDate, 'yyyy-MM');
     const scheduleMonth = format(scheduleDate, 'yyyy-MM');
     return scheduleMonth === currentMonth;
   });
-  
-  // 서버 백업/복원 함수들 (자동화로 인해 제거)
-  // 모든 저장/로딩은 Appcopy.jsx에서 자동으로 처리됩니다.
+
+  // 현재 월의 월간 목표 가져오기
+  const currentMonthGoals = monthlyGoals.find(mg => mg.month === format(currentDate, 'yyyy-MM'))?.goals || [];
 
   // 태그별 총 시간 계산 (실제 사용 시간)
   const calculateMonthlyTagTotals = () => {
     const totals = {};
     
     currentMonthSchedules.forEach(schedule => {
-      // 태그 항목에서 tagType 찾기
-      const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
-      const tagType = tagItem ? tagItem.tagType : (schedule.tagType || "기타");
+      const tagType = schedule.tagType || "기타";
       
       if (!totals[tagType]) {
         totals[tagType] = 0;
@@ -352,82 +300,10 @@ const CalendarPage = ({
     return totals; // 분 단위로 반환
   };
 
-  // 간단한 월간 목표 불러오기 (로컬스토리지에서 직접)
-  const loadMonthlyGoals = () => {
-    if (!currentUser) return [];
-    
-    try {
-      const currentMonthKey = format(currentDate, 'yyyy-MM');
-      const key = `${currentUser}-monthlyGoals`;
-      const data = localStorage.getItem(key);
-      
-      if (data) {
-        const allGoals = JSON.parse(data);
-        const found = allGoals.find(goal => goal.month === currentMonthKey);
-        return found?.goals || [];
-      }
-    } catch (error) {
-      console.error('월간 목표 불러오기 실패:', error);
-    }
-    
-    return [];
-  };
-
-  // 페이지 로드시 한 번만 목표 불러오기 + 포커스 이벤트로 새로고침
-  useEffect(() => {
-    const loadGoals = () => {
-      const goals = loadMonthlyGoals();
-      setMonthlyGoals(goals);
-      console.log('캘린더 목표 로드:', { currentUser, goalsCount: goals.length });
-    };
-
-    loadGoals();
-
-    // 페이지 포커스시 목표 새로고침 (MonthlyPlan에서 돌아올 때)
-    const handleFocus = () => {
-      console.log('페이지 포커스 - 목표 새로고침');
-      loadGoals();
-    };
-
-    // storage 변화 감지
-    const handleStorageChange = (e) => {
-      if (e.key && e.key.includes('monthlyGoals') && e.key.includes(currentUser)) {
-        console.log('storage 변화 감지 - 목표 새로고침');
-        setTimeout(() => loadGoals(), 100);
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('storage', handleStorageChange);
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) {
-        handleFocus();
-      }
-    });
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('storage', handleStorageChange);
-      document.removeEventListener('visibilitychange', handleFocus);
-    };
-  }, [currentUser]);
-
   // 퍼센테이지 계산
   const calculatePercentage = (actual, goal) => {
     if (goal === 0) return 0;
     return Math.round((actual / goal) * 100);
-  };
-  
-  // 특정 날짜에 일정이 있는지 확인
-  const hasScheduleOnDate = (date) => {
-    const dateString = format(date, 'yyyy-MM-dd');
-    return currentMonthSchedules.some(schedule => schedule.date === dateString);
-  };
-  
-  // 특정 날짜의 일정 개수 반환
-  const getScheduleCountOnDate = (date) => {
-    const dateString = format(date, 'yyyy-MM-dd');
-    return currentMonthSchedules.filter(schedule => schedule.date === dateString).length;
   };
 
   // 특정 날짜의 총 시간 계산
@@ -450,52 +326,35 @@ const CalendarPage = ({
     return `${hours}h${minutes}m`;
   };
 
-  // 특정 날짜의 태그 목록 가져오기
-  const getDayTags = (date) => {
-    const dateString = format(date, 'yyyy-MM-dd');
-    const daySchedules = currentMonthSchedules.filter(schedule => schedule.date === dateString);
-    
-    const tagCounts = {};
-    daySchedules.forEach(schedule => {
-      const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
-      const tagType = tagItem ? tagItem.tagType : (schedule.tagType || "기타");
-      tagCounts[tagType] = (tagCounts[tagType] || 0) + 1;
-    });
-    
-    return Object.entries(tagCounts).map(([tagType, count]) => ({
-      tagType,
-      count,
-      color: getTagColor(tagType)
-    }));
-  };
-  
-  // 태그 색상 가져오기
+  // 태그 색상 가져오기 (기본 색상 사용)
   const getTagColor = (tagType) => {
-    const tag = safeTags.find(t => t.tagType === tagType);
-    return tag ? tag.color : PASTEL_COLORS[0];
+    const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+    return PASTEL_COLORS[index];
   };
   
   const monthlyTagTotals = calculateMonthlyTagTotals();
   
-  // 고유한 태그 타입들 가져오기 (목표가 있는 것만!)
-  const usedTagTypes = [...new Set(safeTagItems.map(item => item.tagType))];
-  const goalTagTypes = monthlyGoals.map(goal => goal.tagType);
+  // 목표가 있는 태그 타입들
+  const goalTagTypes = currentMonthGoals.map(goal => goal.tagType);
   
-  // 실제로 이번 달에 사용된 태그 타입들
-  const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => {
-    const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
-    return tagItem ? tagItem.tagType : (schedule.tagType || "기타");
-  }))];
+  // 이번 달에 실제 사용된 태그 타입들
+  const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"))];
   
   // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
   const allTagTypes = [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
   
-  console.log('태그 타입 디버깅:', {
-    goalTagTypes,
-    currentMonthUsedTagTypes, 
-    allTagTypes,
-    monthlyGoalsLength: monthlyGoals.length
-  });
+  if (isLoading) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p className="text-gray-600">서버에서 데이터를 불러오는 중...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -515,23 +374,29 @@ const CalendarPage = ({
                 로그아웃
               </button>
               <button
-                onClick={() => {
-                  const goals = loadMonthlyGoals();
-                  setMonthlyGoals(goals);
-                  console.log('수동 새로고침 완료');
-                }}
+                onClick={() => loadDataFromServer()}
                 className="bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded text-sm"
-                title="월간 목표 새로고침"
+                title="서버에서 새로고침"
+                disabled={isLoading}
               >
-                🔄 새로고침
+                {isLoading ? '🔄 로딩...' : '🔄 새로고침'}
               </button>
               
-              {/* 자동 저장 상태 표시 */}
-              <div className="bg-green-100 text-green-700 px-2 py-1 rounded text-sm">
-                🌐 자동 저장 활성
+              {/* 서버 연동 상태 표시 */}
+              <div className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-sm">
+                🌐 서버 연동
               </div>
               
-              <DataResetButton currentUser={currentUser} />
+              {lastSyncTime && (
+                <div className="text-xs text-gray-500">
+                  마지막 동기화: {format(lastSyncTime, 'HH:mm:ss')}
+                </div>
+              )}
+              
+              <ServerDataResetButton 
+                currentUser={currentUser} 
+                onDataChanged={loadDataFromServer}
+              />
             </div>
           )}
         </div>
@@ -555,7 +420,7 @@ const CalendarPage = ({
               const actualTime = minutesToTimeString(actualMinutes);
               
               // 목표 시간 찾기
-              const goal = monthlyGoals.find(g => g.tagType === tagType);
+              const goal = currentMonthGoals.find(g => g.tagType === tagType);
               const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
               const goalTime = goal ? goal.targetHours : "00:00";
               
@@ -678,9 +543,7 @@ const CalendarPage = ({
                 {/* 일정 목록 */}
                 <div className="space-y-1">
                   {daySchedules.map((schedule) => {
-                    // 실제 멤버 데이터 구조에 맞춰 tagType 찾기
-                    const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
-                    const tagType = tagItem ? tagItem.tagType : (schedule.tagType || "기타");
+                    const tagType = schedule.tagType || "기타";
                     const tagColor = getTagColor(tagType);
                     return (
                       <div
@@ -729,9 +592,14 @@ const CalendarPage = ({
         
         {/* 서버 연동 상태 표시 */}
         <div className="mt-2 text-xs text-blue-600">
-          <span className="font-medium">🌐 자동 저장 활성:</span> 
-          데이터가 자동으로 로컬과 서버에 저장됩니다. 
-          별도의 저장 버튼 없이도 모든 변경사항이 실시간으로 백업됩니다.
+          <span className="font-medium">🌐 서버 연동:</span> 
+          모든 데이터가 Supabase 서버에 저장됩니다. 
+          페이지를 새로고침하거나 다시 접속해도 데이터가 유지됩니다.
+          {lastSyncTime && (
+            <span className="ml-2 text-gray-500">
+              (마지막 동기화: {format(lastSyncTime, 'yyyy-MM-dd HH:mm:ss')})
+            </span>
+          )}
         </div>
       </div>
     </div>
