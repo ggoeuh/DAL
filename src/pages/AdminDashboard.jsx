@@ -1,11 +1,12 @@
-// pages/AdminDashboard.jsx - 서버 직접 연동 버전
-import React, { useState, useEffect } from 'react';
+// pages/AdminDashboard.jsx - 데이터 로딩 문제 해결 버전
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadUserDataWithFallback, loadAllUserData } from './utils/unifiedStorage';
 
 const AdminDashboard = ({ currentUser, onLogout }) => {
   const [members, setMembers] = useState([]);
   const [memberStats, setMemberStats] = useState({});
+  const [memberData, setMemberData] = useState({}); // ✨ 멤버별 실제 데이터 캐시
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -23,7 +24,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
   ];
 
-  // ✨ AdminDashboard 내부에서 직접 서버 데이터 불러오기
+  // ✨ 서버에서 사용자 목록 가져오기 (개선된 버전)
   const getServerUsers = async () => {
     console.log('🔍 AdminDashboard에서 직접 서버 사용자 검색');
     
@@ -47,7 +48,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       
       console.log('📦 localStorage 사용자들:', [...new Set(localUsers)]);
       
-      // 2단계: 각 사용자의 서버 데이터 확인
+      // 2단계: 각 사용자의 서버 데이터 확인 및 캐시
+      const userDataCache = {};
+      
       for (const user of [...new Set(localUsers)]) {
         try {
           console.log(`🔍 ${user} 서버 데이터 확인 중...`);
@@ -59,6 +62,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             (userData.tagItems && userData.tagItems.length > 0)
           )) {
             users.add(user);
+            userDataCache[user] = userData; // ✨ 데이터 캐시
             console.log(`✅ ${user} 서버 데이터 확인됨:`, {
               schedules: userData.schedules?.length || 0,
               tags: userData.tags?.length || 0,
@@ -72,6 +76,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         }
       }
       
+      // ✨ 캐시된 데이터 상태에 저장
+      setMemberData(userDataCache);
+      
       const result = Array.from(users);
       console.log('🎯 최종 서버 사용자 목록:', result);
       return result;
@@ -82,40 +89,10 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   };
 
-  // ✨ AdminDashboard 내부에서 직접 서버 통계 계산
-  const getServerStats = async (userList) => {
-    console.log('📊 AdminDashboard에서 직접 서버 통계 계산');
-    
-    const stats = {};
-    
-    for (const user of userList) {
-      try {
-        console.log(`📊 ${user} 서버 통계 계산 중...`);
-        const userData = await loadUserDataWithFallback(user);
-        
-        if (userData) {
-          stats[user] = {
-            schedules: userData.schedules?.length || 0,
-            tags: userData.tags?.length || 0,
-            tagItems: userData.tagItems?.length || 0,
-            monthlyPlans: userData.monthlyPlans?.length || 0,
-            monthlyGoals: userData.monthlyGoals?.length || 0,
-            lastActivity: '오늘'
-          };
-          console.log(`✅ ${user} 통계 완료:`, stats[user]);
-        }
-      } catch (error) {
-        console.error(`❌ ${user} 통계 계산 실패:`, error);
-      }
-    }
-    
-    console.log('📊 최종 서버 통계:', stats);
-    return stats;
-  };
-
-  // ✨ getUserData도 내부에서 직접 처리
-  const getUserData = async (nickname) => {
+  // ✨ 캐시된 데이터를 사용하는 getUserData 함수
+  const getUserData = useCallback((nickname) => {
     if (!nickname) {
+      console.warn('⚠️ getUserData: nickname이 없음');
       return {
         schedules: [],
         tags: [],
@@ -125,20 +102,27 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       };
     }
 
+    // 캐시된 데이터 먼저 확인
+    if (memberData[nickname]) {
+      console.log(`📦 ${nickname} 캐시된 데이터 사용`);
+      return memberData[nickname];
+    }
+
+    // 캐시에 없으면 localStorage에서 시도
+    console.log(`📦 ${nickname} localStorage에서 데이터 로드`);
     try {
-      console.log(`📦 ${nickname} 서버 데이터 로드`);
-      const userData = await loadUserDataWithFallback(nickname);
-      console.log(`📦 ${nickname} 데이터:`, {
-        schedules: userData?.schedules?.length || 0,
-        tags: userData?.tags?.length || 0,
-        tagItems: userData?.tagItems?.length || 0
-      });
-      return userData;
+      return loadAllUserData(nickname);
     } catch (error) {
       console.error(`❌ ${nickname} 데이터 로드 실패:`, error);
-      return loadAllUserData(nickname);
+      return {
+        schedules: [],
+        tags: [],
+        tagItems: [],
+        monthlyPlans: [],
+        monthlyGoals: []
+      };
     }
-  };
+  }, [memberData]);
 
   // 태그 색상 가져오기 (CalendarPage와 동일)
   const getTagColor = (tagType, tags) => {
@@ -146,12 +130,12 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     return tag ? tag.color : PASTEL_COLORS[0];
   };
 
-  // CalendarPage와 정확히 동일한 태그별 목표 달성률 계산 함수
-  const calculateTagProgress = (member) => {
+  // ✨ 개선된 태그별 목표 달성률 계산 함수 (동기식)
+  const calculateTagProgress = useCallback((member) => {
     console.log('📊 태그 진행률 계산 시작:', member);
     
-    const userData = getUserData(member);
-    if (!userData) {
+    const userData = getUserData(member); // ✨ 이제 동기식으로 호출
+    if (!userData || !userData.schedules) {
       console.warn('⚠️ 사용자 데이터 없음:', member);
       return [];
     }
@@ -200,7 +184,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       currentMonthSchedules: currentMonthSchedules.length
     });
 
-    // 태그별 총 시간 계산 (실제 사용 시간) - CalendarPage와 정확히 동일
+    // 태그별 총 시간 계산 (실제 사용 시간)
     const monthlyTagTotals = {};
     
     currentMonthSchedules.forEach(schedule => {
@@ -221,7 +205,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
     console.log('📊 월간 태그 총계:', monthlyTagTotals);
 
-    // 월간 목표 불러오기 - CalendarPage와 정확히 동일한 방식
+    // 월간 목표 불러오기
     const loadMonthlyGoals = () => {
       try {
         const currentMonthKey = currentMonth;
@@ -252,9 +236,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       allTagTypes
     });
 
-    // CalendarPage와 정확히 동일한 로직으로 결과 생성
+    // 결과 생성
     const result = allTagTypes.map((tagType) => {
-      // 태그 색상 가져오기 (CalendarPage와 동일)
+      // 태그 색상 가져오기
       const tagColor = getTagColor(tagType, tags);
       
       const actualMinutes = monthlyTagTotals[tagType] || 0;
@@ -282,14 +266,48 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
     console.log('📊 최종 진행률 결과:', result);
     return result;
-  };
+  }, [getUserData, getTagColor]);
+
+  // ✨ 서버 기반 통계 계산 (캐시 사용)
+  const getServerStats = useCallback(async (userList) => {
+    console.log('📊 AdminDashboard에서 직접 서버 통계 계산');
+    
+    const stats = {};
+    
+    for (const user of userList) {
+      try {
+        console.log(`📊 ${user} 서버 통계 계산 중...`);
+        
+        // 캐시된 데이터 또는 getUserData 사용
+        const userData = getUserData(user);
+        
+        if (userData) {
+          stats[user] = {
+            schedules: userData.schedules?.length || 0,
+            tags: userData.tags?.length || 0,
+            tagItems: userData.tagItems?.length || 0,
+            monthlyPlans: userData.monthlyPlans?.length || 0,
+            monthlyGoals: userData.monthlyGoals?.length || 0,
+            lastActivity: '오늘'
+          };
+          console.log(`✅ ${user} 통계 완료:`, stats[user]);
+        }
+      } catch (error) {
+        console.error(`❌ ${user} 통계 계산 실패:`, error);
+      }
+    }
+    
+    console.log('📊 최종 서버 통계:', stats);
+    return stats;
+  }, [getUserData]);
 
   // ✨ 서버 기반 새로고침 함수
   const refreshMemberData = async () => {
     console.log('🔄 서버 기반 새로고침 시작');
     
     try {
-      const serverUsers = await getServerUsers();
+      setLoading(true);
+      const serverUsers = await getServerUsers(); // ✨ 이미 데이터 캐시됨
       console.log('🔄 새로고침: 서버 사용자들:', serverUsers);
       
       if (serverUsers.length > 0) {
@@ -300,9 +318,12 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       }
     } catch (error) {
       console.error('❌ 서버 기반 새로고침 실패:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
+  // ✨ 초기 데이터 로딩 개선
   useEffect(() => {
     console.log('🚀 AdminDashboard 직접 서버 연동 시작');
     
@@ -311,7 +332,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         setLoading(true);
         console.log('📦 서버에서 직접 멤버 데이터 로딩');
         
-        // 1단계: 서버에서 사용자 목록 가져오기
+        // 1단계: 서버에서 사용자 목록 가져오기 (데이터도 함께 캐시)
         const serverUsers = await getServerUsers();
         console.log('👥 서버에서 가져온 사용자들:', serverUsers);
         
@@ -319,7 +340,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           // 즉시 상태 업데이트
           setMembers(serverUsers);
           
-          // 2단계: 서버에서 통계 계산
+          // 2단계: 서버에서 통계 계산 (캐시된 데이터 사용)
           const serverStats = await getServerStats(serverUsers);
           console.log('📊 서버 기반 통계:', serverStats);
           setMemberStats(serverStats);
@@ -347,9 +368,11 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             
             // 강제 통계 생성
             const forceStats = {};
+            const forceDataCache = {};
             for (const user of forceUsers) {
               const userData = loadAllUserData(user);
               if (userData) {
+                forceDataCache[user] = userData; // ✨ 캐시 추가
                 forceStats[user] = {
                   schedules: userData.schedules?.length || 0,
                   tags: userData.tags?.length || 0,
@@ -360,6 +383,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                 };
               }
             }
+            setMemberData(forceDataCache); // ✨ 캐시 설정
             setMemberStats(forceStats);
             console.log('🔧 강제 통계 완료:', forceStats);
           }
@@ -391,7 +415,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     return () => {
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, []); // 의존성 제거 - 내부 함수만 사용
+  }, []); // 의존성 제거
 
   const handleMemberAction = (memberName, actionType) => {
     console.log('🔍 멤버 액션 시작:', { memberName, actionType });
@@ -438,6 +462,11 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           console.log(`${key}:`, value);
         }
       }
+      
+      // ✨ 캐시된 데이터도 출력
+      console.log('=== 캐시된 멤버 데이터 ===');
+      console.log(memberData);
+      
       alert('✅ 콘솔에 데이터가 출력되었습니다. 개발자 도구를 확인하세요.');
     }
   };
@@ -457,6 +486,13 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       keysToDelete.forEach(key => {
         localStorage.removeItem(key);
         console.log(`삭제됨: ${key}`);
+      });
+      
+      // ✨ 캐시에서도 제거
+      setMemberData(prev => {
+        const newData = { ...prev };
+        delete newData[memberName];
+        return newData;
       });
       
       alert(`✅ ${memberName}님의 데이터가 삭제되었습니다. (${keysToDelete.length}개 항목)`);
@@ -486,6 +522,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       keysToDelete.forEach(key => {
         localStorage.removeItem(key);
       });
+      
+      // ✨ 캐시 초기화
+      setMemberData({});
       
       alert(`✅ 모든 캘린더 데이터가 삭제되었습니다. (${keysToDelete.length}개 항목)`);
       window.location.reload();
@@ -536,6 +575,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             <span>총 {members.length}명의 멤버</span>
             <span>•</span>
             <span>마지막 업데이트: {new Date().toLocaleString('ko-KR')}</span>
+            <span>•</span>
+            <span>캐시된 데이터: {Object.keys(memberData).length}명</span>
           </div>
         </div>
 
@@ -707,7 +748,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                         상세 달성률 보기
                       </button>
                       
-                      {/* ✨ 개별 사용자 데이터 삭제 버튼 추가 */}
+                      {/* 개별 사용자 데이터 삭제 버튼 */}
                       <button
                         onClick={() => handleUserDataReset(member)}
                         className="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
@@ -736,7 +777,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                 const totalData = Object.values(memberStats).reduce((sum, stats) => 
                   sum + stats.schedules + stats.tags + stats.tagItems + stats.monthlyPlans + stats.monthlyGoals, 0
                 );
-                alert(`📊 시스템 현황\n\n• 등록된 멤버: ${memberCount}명\n• 총 데이터: ${totalData}개\n• 상태: 정상 운영중\n• 마지막 업데이트: ${new Date().toLocaleString('ko-KR')}`);
+                alert(`📊 시스템 현황\n\n• 등록된 멤버: ${memberCount}명\n• 총 데이터: ${totalData}개\n• 캐시된 데이터: ${Object.keys(memberData).length}명\n• 상태: 정상 운영중\n• 마지막 업데이트: ${new Date().toLocaleString('ko-KR')}`);
               }}
               className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
@@ -774,13 +815,13 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             </button>
           </div>
           
-          {/* ✨ 실시간 상태 표시 수정 */}
+          {/* 실시간 상태 표시 */}
           <div className="mt-4 p-4 bg-gray-50 rounded-lg">
             <h4 className="font-medium text-gray-700 mb-2">📡 시스템 상태</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-                <span>이벤트 기반 업데이트</span>
+                <span>데이터 캐시: 활성</span>
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
@@ -792,27 +833,27 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-purple-400 rounded-full mr-2"></span>
-                <span>서버 호출: 0회/분</span>
+                <span>캐시 상태: {Object.keys(memberData).length}/{members.length}</span>
               </div>
             </div>
           </div>
           
-          {/* ✨ 업데이트된 도움말 섹션 */}
+          {/* 개선된 도움말 섹션 */}
           <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-medium text-blue-800 mb-2">💡 시스템 특징</h4>
+            <h4 className="font-medium text-blue-800 mb-2">💡 시스템 개선사항</h4>
             <div className="text-sm text-blue-700 space-y-1">
-              <div>• <strong>이벤트 기반:</strong> localStorage 변경 시에만 자동 업데이트</div>
-              <div>• <strong>실시간 감지:</strong> 멤버 활동을 즉시 반영 (폴링 없음)</div>
-              <div>• <strong>자동 복구:</strong> 데이터 로딩 실패 시 자동으로 복구</div>
-              <div>• <strong>성능 최적화:</strong> 불필요한 서버 호출 제거</div>
+              <div>• <strong>데이터 캐시:</strong> 멤버 데이터를 메모리에 캐시하여 빠른 접근</div>
+              <div>• <strong>동기식 처리:</strong> calculateTagProgress 함수 비동기 문제 해결</div>
+              <div>• <strong>실시간 감지:</strong> localStorage 변경 시 자동 업데이트</div>
+              <div>• <strong>오류 복구:</strong> 데이터 로딩 실패 시 자동 fallback</div>
             </div>
           </div>
         </div>
         
-        {/* ✨ 시스템 정보 푸터 */}
+        {/* 시스템 정보 푸터 */}
         <div className="mt-8 text-center text-xs text-gray-500 space-y-1">
-          <div>관리자 대시보드 v1.0 | 실시간 멤버 모니터링 시스템</div>
-          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: localStorage</div>
+          <div>관리자 대시보드 v1.1 | 데이터 캐시 시스템 적용</div>
+          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: localStorage + 메모리 캐시</div>
           <div className="flex justify-center items-center space-x-4 mt-2">
             <span className="flex items-center">
               <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
@@ -820,11 +861,11 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             </span>
             <span className="flex items-center">
               <span className="w-2 h-2 bg-blue-400 rounded-full mr-1"></span>
-              실시간 동기화
+              데이터 캐시 활성
             </span>
             <span className="flex items-center">
               <span className="w-2 h-2 bg-purple-400 rounded-full mr-1"></span>
-              데이터 보호 활성
+              실시간 동기화
             </span>
           </div>
         </div>
