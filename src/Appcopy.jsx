@@ -1,4 +1,4 @@
-// Appcopy.jsx - 긴급 수정: 무한루프 완전 해결, 서버 에러 처리
+// Appcopy.jsx - 로그인 라우팅 문제 해결 버전
 import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
@@ -50,11 +50,20 @@ function Appcopy() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState('');
+  
+  // ✨ 새로 추가: 관리자 여부 상태
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   // 🔧 중복 저장 방지용 플래그들
   const isSavingRef = useRef(false);
   const saveTimeoutRef = useRef(null);
   const lastSaveDataRef = useRef('');
+
+  // 🔧 관리자 여부 확인 함수
+  const checkIsAdmin = (nickname) => {
+    return nickname === 'admin' || nickname === '관리자';
+  };
 
   // 🔧 데이터 해시 생성 (변경 감지용)
   const generateDataHash = (schedules, tags, tagItems, monthlyPlans, monthlyGoals) => {
@@ -69,7 +78,13 @@ function Appcopy() {
 
   // 🔧 안전한 서버 저장 (중복 실행 완전 차단)
   const safeServerSave = async () => {
-    if (!currentUser || isLoading || isSavingRef.current) return;
+    if (!currentUser || isLoading || isSavingRef.current || isAdmin) return;
+
+    // 관리자는 데이터 저장 안 함
+    if (checkIsAdmin(currentUser)) {
+      console.log('⚠️ 관리자는 데이터 저장하지 않음');
+      return;
+    }
 
     // 데이터 변경 여부 확인
     const currentDataHash = generateDataHash(schedules, tags, tagItems, monthlyPlans, monthlyGoals);
@@ -141,7 +156,7 @@ function Appcopy() {
 
   // 수동 동기화
   const handleManualServerSync = async (showConfirm = true) => {
-    if (!currentUser) return false;
+    if (!currentUser || isAdmin) return false;
 
     if (showConfirm && !window.confirm('수동으로 서버와 동기화하시겠습니까?')) {
       return false;
@@ -159,13 +174,23 @@ function Appcopy() {
     }
   };
 
-  // 사용자 데이터 로드 함수
+  // ✨ 개선된 사용자 데이터 로드 함수 (관리자 구분)
   const loadCurrentUserData = async (nickname) => {
     if (!nickname) return;
     
+    // 관리자인 경우 데이터 로딩 스킵
+    if (checkIsAdmin(nickname)) {
+      console.log('👑 관리자 로그인 - 데이터 로딩 스킵:', nickname);
+      setIsAdmin(true);
+      setDataLoaded(true);
+      setIsLoading(false);
+      return;
+    }
+    
     try {
       setIsLoading(true);
-      console.log('📦 사용자 데이터 로딩 시작:', nickname);
+      setIsAdmin(false);
+      console.log('📦 일반 사용자 데이터 로딩 시작:', nickname);
       
       let userData = await loadUserDataWithFallback(nickname);
       
@@ -215,7 +240,7 @@ function Appcopy() {
         userData.monthlyGoals || []
       );
       
-      console.log('✅ 사용자 데이터 로딩 완료:', {
+      console.log('✅ 일반 사용자 데이터 로딩 완료:', {
         nickname,
         schedulesCount: userData.schedules?.length || 0,
         tagsCount: userData.tags?.length || 0,
@@ -223,6 +248,8 @@ function Appcopy() {
         monthlyPlansCount: userData.monthlyPlans?.length || 0,
         monthlyGoalsCount: userData.monthlyGoals?.length || 0
       });
+      
+      setDataLoaded(true);
       
     } catch (error) {
       console.error('❌ 사용자 데이터 로딩 실패:', error);
@@ -232,30 +259,35 @@ function Appcopy() {
       setTagItems([]);
       setMonthlyPlans([]);
       setMonthlyGoals([]);
+      setDataLoaded(true);
       
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 컴포넌트 마운트 시 로그인 상태 확인
+  // ✨ 개선된 로그인 상태 확인 (데이터 로딩 완료 후 라우팅)
   useEffect(() => {
     const checkLoginStatus = async () => {
       const nickname = localStorage.getItem('nickname');
       if (nickname) {
+        console.log('🔐 저장된 로그인 정보 확인:', nickname);
         setIsLoggedIn(true);
         setCurrentUser(nickname);
+        
+        // 데이터 로딩 완료까지 대기
         await loadCurrentUserData(nickname);
       } else {
         setIsLoading(false);
+        setDataLoaded(true);
       }
     };
     checkLoginStatus();
   }, []);
 
-  // 🔧 최종 안전한 자동 저장 (1초 디바운싱)
+  // 🔧 일반 사용자만 자동 저장 (1초 디바운싱)
   useEffect(() => {
-    if (!currentUser || isLoading) return;
+    if (!currentUser || isLoading || isAdmin || !dataLoaded) return;
 
     // 기존 타이머 취소
     if (saveTimeoutRef.current) {
@@ -273,13 +305,13 @@ function Appcopy() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading]);
+  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading, isAdmin, dataLoaded]);
 
-  // 🔧 상태 업데이트 함수들 (즉시 로컬 저장만)
+  // 🔧 상태 업데이트 함수들 (관리자는 저장 안 함)
   const updateSchedules = (newSchedules) => {
     setSchedules(newSchedules);
-    // 즉시 로컬 저장만 (서버는 useEffect에서)
-    if (currentUser) {
+    // 일반 사용자만 로컬 저장
+    if (currentUser && !isAdmin) {
       saveSchedulesToStorage(currentUser, newSchedules);
       console.log('💾 일정 즉시 로컬 저장:', newSchedules.length, '개');
     }
@@ -287,7 +319,7 @@ function Appcopy() {
 
   const updateTags = (newTags) => {
     setTags(newTags);
-    if (currentUser) {
+    if (currentUser && !isAdmin) {
       saveTagsToStorage(currentUser, newTags);
       console.log('💾 태그 즉시 로컬 저장:', newTags.length, '개');
     }
@@ -295,7 +327,7 @@ function Appcopy() {
 
   const updateTagItems = (newTagItems) => {
     setTagItems(newTagItems);
-    if (currentUser) {
+    if (currentUser && !isAdmin) {
       saveTagItemsToStorage(currentUser, newTagItems);
       console.log('💾 태그아이템 즉시 로컬 저장:', newTagItems.length, '개');
     }
@@ -303,7 +335,7 @@ function Appcopy() {
 
   const updateMonthlyPlans = (newPlans) => {
     setMonthlyPlans(newPlans);
-    if (currentUser) {
+    if (currentUser && !isAdmin) {
       saveMonthlyPlansToStorage(currentUser, newPlans);
       console.log('💾 월간계획 즉시 로컬 저장:', newPlans.length, '개');
     }
@@ -311,13 +343,13 @@ function Appcopy() {
 
   const updateMonthlyGoals = (newGoals) => {
     setMonthlyGoals(newGoals);
-    if (currentUser) {
+    if (currentUser && !isAdmin) {
       saveMonthlyGoalsToStorage(currentUser, newGoals);
       console.log('💾 월간목표 즉시 로컬 저장:', newGoals.length, '개');
     }
   };
 
-  // 로그아웃 함수
+  // ✨ 개선된 로그아웃 함수
   const handleLogout = () => {
     // 타이머 정리
     if (saveTimeoutRef.current) {
@@ -333,9 +365,15 @@ function Appcopy() {
     setMonthlyPlans([]);
     setMonthlyGoals([]);
     
+    // 새로 추가된 상태들 초기화
+    setIsAdmin(false);
+    setDataLoaded(false);
+    
     // 플래그 초기화
     isSavingRef.current = false;
     lastSaveDataRef.current = '';
+    
+    console.log('🚪 로그아웃 완료');
   };
 
   const handleAdminLogout = () => {
@@ -351,14 +389,18 @@ function Appcopy() {
     };
   }, []);
 
-  // 로딩 화면
-  if (isLoading) {
+  // ✨ 개선된 로딩 화면 (더 구체적인 상태 표시)
+  if (isLoading || !dataLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">데이터를 불러오는 중...</p>
-          <p className="text-sm text-gray-500 mt-2">로컬 데이터를 우선 로드합니다...</p>
+          <p className="text-gray-600">
+            {isAdmin ? '관리자 권한 확인 중...' : '사용자 데이터를 불러오는 중...'}
+          </p>
+          <p className="text-sm text-gray-500 mt-2">
+            {currentUser ? `${currentUser}님의 데이터 로딩 중...` : '로그인 정보 확인 중...'}
+          </p>
         </div>
       </div>
     );
@@ -369,11 +411,12 @@ function Appcopy() {
       <Routes>
         <Route path="/login" element={<LogInPage />} />
         
+        {/* ✨ 개선된 루트 라우팅 (데이터 로딩 완료 후) */}
         <Route
           path="/"
           element={
-            isLoggedIn ? (
-              (currentUser === 'admin' || currentUser === '관리자') ?
+            isLoggedIn && dataLoaded ? (
+              isAdmin ?
                 <Navigate to="/admin" replace /> :
                 <Navigate to="/calendar" replace />
             ) : (
