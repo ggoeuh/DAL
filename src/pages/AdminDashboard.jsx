@@ -108,7 +108,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   };
 
-  // ✨ 서버 우선 getUserData 함수
+  // AdminDashboard.jsx에서 getUserData 함수만 수정
+
+  // ✨ 강화된 getUserData 함수 (기존 함수 교체)
   const getUserData = useCallback(async (nickname) => {
     if (!nickname) {
       console.warn('⚠️ getUserData: nickname이 없음');
@@ -120,56 +122,87 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         monthlyGoals: []
       };
     }
-
+  
     // 캐시된 데이터 먼저 확인
     if (memberData[nickname]) {
       console.log(`📦 ${nickname} 캐시된 데이터 사용`);
       return memberData[nickname];
     }
-
-    // ✨ 서버에서 데이터 로드
-    console.log(`📦 ${nickname} 서버에서 데이터 로드`);
+  
+    console.log(`📦 ${nickname} 서버+로컬 하이브리드 데이터 로드`);
+    
+    let serverData = null;
+    let localData = null;
+    
+    // 1단계: 서버에서 데이터 시도
     try {
-      const userData = await loadUserDataWithFallback(nickname);
-      
-      if (userData) {
-        console.log(`📦 ${nickname} 서버 데이터 로드 성공:`, {
-          schedules: userData.schedules?.length || 0,
-          tags: userData.tags?.length || 0,
-          tagItems: userData.tagItems?.length || 0,
-          monthlyPlans: userData.monthlyPlans?.length || 0,
-          monthlyGoals: userData.monthlyGoals?.length || 0
-        });
-        
-        // 캐시에도 저장
-        setMemberData(prev => ({...prev, [nickname]: userData}));
-        return userData;
-      }
+      serverData = await loadUserDataWithFallback(nickname);
+      console.log(`📦 ${nickname} 서버 데이터:`, {
+        schedules: serverData?.schedules?.length || 0,
+        tags: serverData?.tags?.length || 0,
+        tagItems: serverData?.tagItems?.length || 0,
+        monthlyPlans: serverData?.monthlyPlans?.length || 0,
+        monthlyGoals: serverData?.monthlyGoals?.length || 0
+      });
     } catch (error) {
       console.error(`❌ ${nickname} 서버 데이터 로드 실패:`, error);
     }
-
-    // 서버 실패 시 localStorage fallback
-    console.log(`🔄 ${nickname} localStorage fallback 시도`);
+  
+    // 2단계: localStorage에서 데이터 시도  
     try {
-      const fallbackData = loadAllUserData(nickname);
-      if (fallbackData) {
-        console.log(`🔄 ${nickname} localStorage 데이터 로드 성공`);
-        setMemberData(prev => ({...prev, [nickname]: fallbackData}));
-        return fallbackData;
-      }
-    } catch (fallbackError) {
-      console.error(`❌ ${nickname} localStorage fallback 실패:`, fallbackError);
+      localData = loadAllUserData(nickname);
+      console.log(`📦 ${nickname} 로컬 데이터:`, {
+        schedules: localData?.schedules?.length || 0,
+        tags: localData?.tags?.length || 0,
+        tagItems: localData?.tagItems?.length || 0,
+        monthlyPlans: localData?.monthlyPlans?.length || 0,
+        monthlyGoals: localData?.monthlyGoals?.length || 0
+      });
+    } catch (error) {
+      console.error(`❌ ${nickname} 로컬 데이터 로드 실패:`, error);
     }
-
-    // 모든 방법 실패 시 빈 데이터 반환
-    return {
-      schedules: [],
-      tags: [],
-      tagItems: [],
-      monthlyPlans: [],
-      monthlyGoals: []
+  
+    // 3단계: 하이브리드 데이터 생성 (각 필드별로 최적 데이터 선택)
+    const hybridData = {
+      // 일정: 서버 우선, 없으면 로컬
+      schedules: (serverData?.schedules?.length > 0) 
+        ? serverData.schedules 
+        : (localData?.schedules || []),
+        
+      // 태그: 서버 우선, 없으면 로컬  
+      tags: (serverData?.tags?.length > 0) 
+        ? serverData.tags 
+        : (localData?.tags || []),
+        
+      // 태그 아이템: 서버 우선, 없으면 로컬
+      tagItems: (serverData?.tagItems?.length > 0) 
+        ? serverData.tagItems 
+        : (localData?.tagItems || []),
+        
+      // 월간 계획: 서버 우선, 없으면 로컬
+      monthlyPlans: (serverData?.monthlyPlans?.length > 0) 
+        ? serverData.monthlyPlans 
+        : (localData?.monthlyPlans || []),
+        
+      // ✨ 월간 목표: 로컬 우선! (서버에 없는 경우가 많음)
+      monthlyGoals: (localData?.monthlyGoals?.length > 0) 
+        ? localData.monthlyGoals 
+        : (serverData?.monthlyGoals || [])
     };
+  
+    console.log(`📦 ${nickname} 하이브리드 최종 데이터:`, {
+      schedules: hybridData.schedules?.length || 0,
+      tags: hybridData.tags?.length || 0,
+      tagItems: hybridData.tagItems?.length || 0,
+      monthlyPlans: hybridData.monthlyPlans?.length || 0,
+      monthlyGoals: hybridData.monthlyGoals?.length || 0,
+      monthlyGoalsSource: (localData?.monthlyGoals?.length > 0) ? 'localStorage' : 'server'
+    });
+  
+    // 캐시에 저장
+    setMemberData(prev => ({...prev, [nickname]: hybridData}));
+    
+    return hybridData;
   }, [memberData]);
 
   // 태그 색상 가져오기 (CalendarPage와 동일)
