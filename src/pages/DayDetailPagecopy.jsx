@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { saveUserCoreData } from './utils/supabaseStorage.js';
+import { saveUserDataToDAL } from './utils/supabaseStorage.js';
 
 const SLOT_HEIGHT = 24;
 const DAYS_OF_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
@@ -299,7 +299,7 @@ const WeeklyCalendar = ({
           
           // storage에도 반영
           if (currentUser) {
-            saveUserCoreData(currentUser, {
+            saveUserDataToDAL(currentUser, {
               schedules: updatedSchedules,
               tags: safeTags,
               tagItems: safeTagItems
@@ -327,7 +327,7 @@ const WeeklyCalendar = ({
           
           // storage에도 반영
           if (currentUser) {
-            saveUserCoreData(currentUser, {
+            saveUserDataToDAL(currentUser, {
               schedules: updatedSchedules,
               tags: safeTags,
               tagItems: safeTagItems
@@ -377,7 +377,7 @@ const WeeklyCalendar = ({
       setSchedules(updatedSchedules);
       
       // storage에도 반영
-      saveUserCoreData(currentUser, {
+      saveUserDataToDAL(currentUser, {
         schedules: updatedSchedules,
         tags: safeTags,
         tagItems: safeTagItems
@@ -472,7 +472,7 @@ const WeeklyCalendar = ({
         
         // storage에도 반영
         if (currentUser) {
-          saveUserCoreData(currentUser, {
+          saveUserDataToDAL(currentUser, {
             schedules: updatedSchedules,
             tags: safeTags,
             tagItems: safeTagItems
@@ -607,7 +607,7 @@ const WeeklyCalendar = ({
         
         // storage에도 반영
         if (currentUser) {
-          saveUserCoreData(currentUser, {
+          saveUserDataToDAL(currentUser, {
             schedules: updatedSchedules,
             tags: safeTags,
             tagItems: safeTagItems
@@ -727,7 +727,7 @@ const WeeklyCalendar = ({
       
       // storage에도 반영
       if (currentUser) {
-        saveUserCoreData(currentUser, {
+        saveUserDataToDAL(currentUser, {
           schedules: safeSchedules,
           tags: updatedTags,
           tagItems: updatedTagItems
@@ -745,7 +745,7 @@ const WeeklyCalendar = ({
       setTagItems(updatedTagItems);
       
       // storage에도 반영
-      saveUserCoreData(currentUser, {
+      saveUserDataToDAL(currentUser, {
         schedules: safeSchedules,
         tags: safeTags,
         tagItems: updatedTagItems
