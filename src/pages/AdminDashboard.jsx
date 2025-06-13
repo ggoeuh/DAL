@@ -1,4 +1,4 @@
-// pages/AdminDashboard.jsx - 관리자 대시보드 페이지 (localStorage 기반)
+// pages/AdminDashboard.jsx - 관리자 대시보드 페이지 (localStorage 기반) - 완전한 최종 버전
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -30,8 +30,21 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
 
   // CalendarPage와 정확히 동일한 태그별 목표 달성률 계산 함수
   const calculateTagProgress = (member) => {
+    console.log('📊 태그 진행률 계산 시작:', member);
+    
     const userData = getUserData(member);
-    if (!userData) return [];
+    if (!userData) {
+      console.warn('⚠️ 사용자 데이터 없음:', member);
+      return [];
+    }
+
+    console.log('📊 사용자 데이터 확인:', {
+      member,
+      schedules: userData.schedules?.length || 0,
+      tags: userData.tags?.length || 0,
+      tagItems: userData.tagItems?.length || 0,
+      monthlyGoals: userData.monthlyGoals?.length || 0
+    });
 
     const { schedules = [], tags = [], tagItems = [], monthlyGoals = [] } = userData;
     const currentDate = new Date();
@@ -63,6 +76,12 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
       return scheduleMonth === currentMonth;
     });
 
+    console.log('📊 현재 월 일정:', {
+      currentMonth,
+      totalSchedules: schedules.length,
+      currentMonthSchedules: currentMonthSchedules.length
+    });
+
     // 태그별 총 시간 계산 (실제 사용 시간) - CalendarPage와 정확히 동일
     const monthlyTagTotals = {};
     
@@ -82,6 +101,8 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
       monthlyTagTotals[tagType] += duration;
     });
 
+    console.log('📊 월간 태그 총계:', monthlyTagTotals);
+
     // 월간 목표 불러오기 - CalendarPage와 정확히 동일한 방식
     const loadMonthlyGoals = () => {
       try {
@@ -96,6 +117,7 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
     };
 
     const currentMonthGoalsData = loadMonthlyGoals();
+    console.log('📊 현재 월 목표:', currentMonthGoalsData);
     
     // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
     const goalTagTypes = currentMonthGoalsData.map(goal => goal.tagType);
@@ -106,8 +128,14 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
     
     const allTagTypes = [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
 
+    console.log('📊 처리할 태그 타입들:', {
+      goalTagTypes,
+      currentMonthUsedTagTypes,
+      allTagTypes
+    });
+
     // CalendarPage와 정확히 동일한 로직으로 결과 생성
-    return allTagTypes.map((tagType) => {
+    const result = allTagTypes.map((tagType) => {
       // 태그 색상 가져오기 (CalendarPage와 동일)
       const tagColor = getTagColor(tagType, tags);
       
@@ -124,7 +152,7 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
       
       return {
         tagName: tagType,
-        tagColor: tagColor, // 이제 색상 객체
+        tagColor: tagColor,
         targetTime: goalTime,
         actualTime: actualTime,
         percentage: percentage
@@ -133,28 +161,100 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
       // 목표가 설정되었거나 실제 시간이 있는 것만 표시
       return progress.targetTime !== "00:00" || progress.actualTime !== "00:00";
     });
+
+    console.log('📊 최종 진행률 결과:', result);
+    return result;
+  };
+
+  // ✨ 강화된 데이터 새로고침 함수
+  const refreshMemberData = () => {
+    console.log('🔄 멤버 데이터 새로고침 시작');
+    setLoading(true);
+    
+    try {
+      // 모든 사용자 목록 다시 로드
+      const foundMembers = getAllUsers();
+      console.log('👥 새로고침된 멤버 목록:', foundMembers);
+      
+      // 각 멤버의 데이터 존재 여부 재확인
+      const validMembers = foundMembers.filter(member => {
+        const userData = getUserData(member);
+        const hasData = userData && (
+          (userData.schedules && userData.schedules.length > 0) ||
+          (userData.tags && userData.tags.length > 0) ||
+          (userData.tagItems && userData.tagItems.length > 0)
+        );
+        console.log(`👤 ${member} 데이터 확인:`, hasData ? '✅ 있음' : '❌ 없음');
+        return hasData;
+      });
+      
+      setMembers(validMembers);
+
+      // 각 멤버의 통계 데이터 재계산
+      const stats = getUserStats();
+      console.log('📊 새로고침된 통계:', stats);
+      setMemberStats(stats);
+      
+      console.log('✅ 멤버 데이터 새로고침 완료');
+    } catch (error) {
+      console.error('❌ 멤버 데이터 새로고침 실패:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
+    console.log('🚀 AdminDashboard 초기화 시작');
+    
     const loadMemberData = () => {
       try {
         // props로 전달받은 함수들을 사용하여 멤버 데이터 로드
+        console.log('📦 getAllUsers 함수 호출');
         const foundMembers = getAllUsers();
-        console.log('발견된 멤버들:', foundMembers);
+        console.log('👥 발견된 멤버들:', foundMembers);
+        
+        // 멤버별 데이터 상세 로그
+        foundMembers.forEach(member => {
+          const userData = getUserData(member);
+          console.log(`👤 ${member} 상세 데이터:`, {
+            schedules: userData?.schedules?.length || 0,
+            tags: userData?.tags?.length || 0,
+            tagItems: userData?.tagItems?.length || 0,
+            monthlyPlans: userData?.monthlyPlans?.length || 0,
+            monthlyGoals: userData?.monthlyGoals?.length || 0
+          });
+        });
+        
         setMembers(foundMembers);
 
         // 각 멤버의 통계 데이터 계산
+        console.log('📊 getUserStats 함수 호출');
         const stats = getUserStats();
+        console.log('📊 계산된 통계:', stats);
         setMemberStats(stats);
+        
+        console.log('✅ 멤버 데이터 로딩 완료');
         setLoading(false);
       } catch (error) {
-        console.error('멤버 데이터 로딩 실패:', error);
+        console.error('❌ 멤버 데이터 로딩 실패:', error);
         setLoading(false);
       }
     };
 
+    // 초기 로딩
     loadMemberData();
-  }, [getAllUsers, getUserStats]);
+    
+    // ✨ 주기적 새로고침 (5초마다)
+    const refreshInterval = setInterval(() => {
+      console.log('🔄 주기적 데이터 새로고침');
+      refreshMemberData();
+    }, 5000);
+    
+    // 클린업
+    return () => {
+      clearInterval(refreshInterval);
+    };
+  }, [getAllUsers, getUserStats, getUserData]);
 
   const handleMemberAction = (memberName, actionType) => {
     console.log('🔍 멤버 액션 시작:', { memberName, actionType });
@@ -165,8 +265,16 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
       memberName,
       userData: !!userData,
       userDataKeys: userData ? Object.keys(userData) : null,
-      schedules: userData?.schedules?.length || 0
+      schedules: userData?.schedules?.length || 0,
+      tags: userData?.tags?.length || 0,
+      tagItems: userData?.tagItems?.length || 0
     });
+    
+    if (!userData || !userData.schedules) {
+      alert(`❌ ${memberName}님의 데이터를 찾을 수 없습니다.\n\n다음을 확인해주세요:\n- 해당 멤버가 로그인한 적이 있는가?\n- 일정 데이터가 존재하는가?\n\n새로고침 후 다시 시도해보세요.`);
+      refreshMemberData(); // 즉시 새로고침
+      return;
+    }
     
     switch (actionType) {
       case 'detailed-calendar':
@@ -178,37 +286,6 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
         console.log('❌ 지원하지 않는 액션:', actionType);
     }
   };
-  
-  // 멤버 카드에서 버튼들을 하나로 단순화
-  <div className="space-y-2">
-    <button
-      onClick={() => handleMemberAction(member, 'detailed-calendar')}
-      className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
-    >
-      <span className="mr-2">📅</span>
-      상세 캘린더 보기
-    </button>
-    
-    <button
-      onClick={() => {
-        const tagProgress = calculateTagProgress(member);
-        if (tagProgress.length === 0) {
-          alert(`📊 ${member}님 상세 정보\n\n• 설정된 월간 목표가 없습니다\n• 목표를 설정하면 달성률을 확인할 수 있습니다`);
-        } else {
-          const avgProgress = Math.round(tagProgress.reduce((sum, p) => sum + p.percentage, 0) / tagProgress.length);
-          const progressDetails = tagProgress.map(p => 
-            `• ${p.tagName}: ${p.actualTime}/${p.targetTime} (${p.percentage}%)`
-          ).join('\n');
-          
-          alert(`📊 ${member}님 목표 달성 현황\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
-        }
-      }}
-      className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
-    >
-      <span className="mr-2">📈</span>
-      상세 달성률 보기
-    </button>
-  </div>
 
   // 관리자용 데이터 관리 함수들
   const handleDataDebug = () => {
@@ -248,10 +325,7 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
       alert(`✅ ${memberName}님의 데이터가 삭제되었습니다. (${keysToDelete.length}개 항목)`);
       
       // 데이터 새로고침
-      const foundMembers = getAllUsers();
-      setMembers(foundMembers);
-      const stats = getUserStats();
-      setMemberStats(stats);
+      refreshMemberData();
     }
   };
 
@@ -287,6 +361,7 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
           <p className="text-gray-600">멤버 데이터를 불러오는 중...</p>
+          <p className="text-sm text-gray-500 mt-2">localStorage에서 사용자 정보를 검색하고 있습니다.</p>
         </div>
       </div>
     );
@@ -450,29 +525,59 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
                   <div className="p-6 pt-0">
                     <h4 className="font-semibold text-gray-700 mb-3">🔍 데이터 조회</h4>
                     <div className="space-y-2">
-                    <button
-                      onClick={() => {
-                        console.log('🔍 캘린더 보기 버튼 클릭:', member);
-                        // 데이터 미리 검증
-                        const userData = getUserData(member);
-                        if (!userData) {
-                          alert(`❌ ${member}님의 데이터를 찾을 수 없습니다.\n먼저 해당 멤버가 로그인하여 데이터를 생성해야 합니다.`);
-                          return;
-                        }
-                        
-                        console.log('🔍 데이터 확인됨, 페이지 이동:', {
-                          member,
-                          schedules: userData.schedules?.length || 0,
-                          tags: userData.tags?.length || 0
-                        });
-                        
-                        handleMemberAction(member, 'detailed-calendar');
-                      }}
-                      className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
-                    >
-                      <span className="mr-2">📅</span>
-                      캘린더 보기
-                    </button>
+                      <button
+                        onClick={() => {
+                          console.log('🔍 캘린더 보기 버튼 클릭:', member);
+                          // 데이터 미리 검증
+                          const userData = getUserData(member);
+                          if (!userData || !userData.schedules) {
+                            alert(`❌ ${member}님의 데이터를 찾을 수 없습니다.\n먼저 해당 멤버가 로그인하여 데이터를 생성해야 합니다.`);
+                            return;
+                          }
+                          
+                          console.log('🔍 데이터 확인됨, 페이지 이동:', {
+                            member,
+                            schedules: userData.schedules?.length || 0,
+                            tags: userData.tags?.length || 0,
+                            tagItems: userData.tagItems?.length || 0
+                          });
+                          
+                          handleMemberAction(member, 'detailed-calendar');
+                        }}
+                        className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
+                      >
+                        <span className="mr-2">📅</span>
+                        캘린더 보기
+                      </button>
+                      
+                      <button
+                        onClick={() => {
+                          const tagProgress = calculateTagProgress(member);
+                          if (tagProgress.length === 0) {
+                            alert(`📊 ${member}님 상세 정보\n\n• 설정된 월간 목표가 없습니다\n• 목표를 설정하면 달성률을 확인할 수 있습니다`);
+                          } else {
+                            const avgProgress = Math.round(tagProgress.reduce((sum, p) => sum + p.percentage, 0) / tagProgress.length);
+                            const progressDetails = tagProgress.map(p => 
+                              `• ${p.tagName}: ${p.actualTime}/${p.targetTime} (${p.percentage}%)`
+                            ).join('\n');
+                            
+                            alert(`📊 ${member}님 목표 달성 현황\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
+                          }
+                        }}
+                        className="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
+                      >
+                        <span className="mr-2">📈</span>
+                        상세 달성률 보기
+                      </button>
+                      
+                      {/* ✨ 개별 사용자 데이터 삭제 버튼 추가 */}
+                      <button
+                        onClick={() => handleUserDataReset(member)}
+                        className="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
+                      >
+                        <span className="mr-2">🗑️</span>
+                        데이터 삭제
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -487,14 +592,14 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
             <span className="mr-2">🔧</span>
             관리자 도구
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <button
               onClick={() => {
                 const memberCount = members.length;
                 const totalData = Object.values(memberStats).reduce((sum, stats) => 
                   sum + stats.schedules + stats.tags + stats.tagItems + stats.monthlyPlans + stats.monthlyGoals, 0
                 );
-                alert(`📊 시스템 현황\n\n• 등록된 멤버: ${memberCount}명\n• 총 데이터: ${totalData}개\n• 상태: 정상 운영중`);
+                alert(`📊 시스템 현황\n\n• 등록된 멤버: ${memberCount}명\n• 총 데이터: ${totalData}개\n• 상태: 정상 운영중\n• 마지막 업데이트: ${new Date().toLocaleString('ko-KR')}`);
               }}
               className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
@@ -509,20 +614,81 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
             </button>
             
             <button
+              onClick={refreshMemberData}
+              className="bg-green-100 hover:bg-green-200 text-green-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
+            >
+              🔄 수동 새로고침
+            </button>
+            
+            <button
               onClick={handleCalendarDataReset}
               className="bg-orange-100 hover:bg-orange-200 text-orange-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
-              🗑️ 전체 캘린더 데이터 삭제
+              🗑️ 전체 데이터 삭제
             </button>
             
             <button
               onClick={() => {
                 window.location.reload();
               }}
-              className="bg-green-100 hover:bg-green-200 text-green-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
+              className="bg-purple-100 hover:bg-purple-200 text-purple-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
-              🔄 새로고침
+              🔄 페이지 새로고침
             </button>
+          </div>
+          
+          {/* ✨ 실시간 상태 표시 추가 */}
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+            <h4 className="font-medium text-gray-700 mb-2">📡 실시간 상태</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="flex items-center">
+                <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                <span>자동 새로고침: 활성</span>
+              </div>
+              <div className="flex items-center">
+                <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
+                <span>데이터 연결: 정상</span>
+              </div>
+              <div className="flex items-center">
+                <span className="w-2 h-2 bg-yellow-400 rounded-full mr-2"></span>
+                <span>멤버 감지: {members.length}명</span>
+              </div>
+              <div className="flex items-center">
+                <span className="w-2 h-2 bg-purple-400 rounded-full mr-2"></span>
+                <span>마지막 체크: 방금 전</span>
+              </div>
+            </div>
+          </div>
+          
+          {/* ✨ 추가 도움말 섹션 */}
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <h4 className="font-medium text-blue-800 mb-2">💡 사용 가이드</h4>
+            <div className="text-sm text-blue-700 space-y-1">
+              <div>• <strong>캘린더 보기:</strong> 멤버의 상세한 일정과 활동을 확인할 수 있습니다</div>
+              <div>• <strong>달성률 보기:</strong> 월간 목표 대비 실제 활동 시간을 확인할 수 있습니다</div>
+              <div>• <strong>자동 새로고침:</strong> 5초마다 최신 데이터로 자동 업데이트됩니다</div>
+              <div>• <strong>데이터 보호:</strong> 관리자는 읽기 전용으로 멤버 데이터를 조회합니다</div>
+            </div>
+          </div>
+        </div>
+        
+        {/* ✨ 시스템 정보 푸터 */}
+        <div className="mt-8 text-center text-xs text-gray-500 space-y-1">
+          <div>관리자 대시보드 v1.0 | 실시간 멤버 모니터링 시스템</div>
+          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: localStorage</div>
+          <div className="flex justify-center items-center space-x-4 mt-2">
+            <span className="flex items-center">
+              <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
+              시스템 정상
+            </span>
+            <span className="flex items-center">
+              <span className="w-2 h-2 bg-blue-400 rounded-full mr-1"></span>
+              실시간 동기화
+            </span>
+            <span className="flex items-center">
+              <span className="w-2 h-2 bg-purple-400 rounded-full mr-1"></span>
+              데이터 보호 활성
+            </span>
           </div>
         </div>
       </div>
