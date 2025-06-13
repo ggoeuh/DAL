@@ -135,27 +135,42 @@ function Appcopy() {
     }
   };
 
-  // ✨ 수정된 getAllUsers 함수 - 실제 데이터가 있는 사용자만 반환
+  // ✨ 완전히 새로운 getAllUsers 함수 - 단순하고 확실한 방식
   const getAllUsers = () => {
     const users = new Set();
+    
+    console.log('🔍 getAllUsers 실행 - localStorage 전체 스캔 시작');
+    console.log('📦 총 localStorage 항목 수:', localStorage.length);
+    
+    // 모든 localStorage 키를 확인
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.includes('-schedules')) { // 일정 데이터가 있는 사용자만
-        const [nickname] = key.split('-');
-        // 관리자 목록 제외하고 실제 데이터가 있는 사용자만 추가
-        if (nickname && !ADMIN_USERS.includes(nickname)) {
-          const userData = loadAllUserData(nickname);
-          // 스케줄이나 다른 데이터가 하나라도 있으면 추가
-          if ((userData.schedules && userData.schedules.length > 0) ||
-              (userData.tags && userData.tags.length > 0) ||
-              (userData.tagItems && userData.tagItems.length > 0)) {
-            users.add(nickname);
-          }
+      console.log(`🔍 키 확인: ${key}`);
+      
+      if (key && key.includes('-')) {
+        const [nickname, dataType] = key.split('-');
+        
+        // 관리자 목록 제외하고 유효한 데이터 키인 경우 사용자 추가
+        if (nickname && 
+            !ADMIN_USERS.includes(nickname) && 
+            nickname !== 'nickname' && 
+            nickname !== 'userType' &&
+            (dataType === 'schedules' || 
+             dataType === 'tags' || 
+             dataType === 'tagItems' || 
+             dataType === 'monthlyPlans' || 
+             dataType === 'monthlyGoals')) {
+          
+          console.log(`✅ 유효한 사용자 발견: ${nickname} (${dataType})`);
+          users.add(nickname);
         }
       }
     }
-    console.log('👥 발견된 활성 사용자들:', Array.from(users));
-    return Array.from(users);
+    
+    const userArray = Array.from(users);
+    console.log('👥 최종 감지된 사용자들:', userArray);
+    
+    return userArray;
   };
 
   // ✨ 수정된 getUserData 함수 - 더 안전한 데이터 로딩
@@ -186,19 +201,34 @@ function Appcopy() {
   };
 
   const getUserStats = () => {
+    console.log('📊 getUserStats 실행 시작');
+    
+    // getAllUsers 함수를 사용하여 사용자 목록 가져오기
     const users = getAllUsers();
+    console.log('📊 getUserStats에서 가져온 사용자 목록:', users);
+    
     const stats = {};
+    
     users.forEach(user => {
+      console.log(`📊 ${user} 통계 계산 중...`);
       const userData = loadAllUserData(user);
-      stats[user] = {
-        schedules: userData.schedules?.length || 0,
-        tags: userData.tags?.length || 0,
-        tagItems: userData.tagItems?.length || 0,
-        monthlyPlans: userData.monthlyPlans?.length || 0,
-        monthlyGoals: userData.monthlyGoals?.length || 0,
-        lastActivity: '오늘'
-      };
+      
+      if (userData) {
+        stats[user] = {
+          schedules: userData.schedules?.length || 0,
+          tags: userData.tags?.length || 0,
+          tagItems: userData.tagItems?.length || 0,
+          monthlyPlans: userData.monthlyPlans?.length || 0,
+          monthlyGoals: userData.monthlyGoals?.length || 0,
+          lastActivity: '오늘'
+        };
+        console.log(`📊 ${user} 통계:`, stats[user]);
+      } else {
+        console.warn(`⚠️ ${user} 데이터 없음`);
+      }
     });
+    
+    console.log('📊 getUserStats 최종 결과:', stats);
     return stats;
   };
 
