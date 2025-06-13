@@ -135,31 +135,54 @@ function Appcopy() {
     }
   };
 
-  // 기존 함수들
+  // ✨ 수정된 getAllUsers 함수 - 실제 데이터가 있는 사용자만 반환
   const getAllUsers = () => {
     const users = new Set();
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.includes('-')) {
+      if (key && key.includes('-schedules')) { // 일정 데이터가 있는 사용자만
         const [nickname] = key.split('-');
-        // ✨ 관리자 목록 제외 시 새로운 ADMIN_USERS 상수 사용
+        // 관리자 목록 제외하고 실제 데이터가 있는 사용자만 추가
         if (nickname && !ADMIN_USERS.includes(nickname)) {
-          users.add(nickname);
+          const userData = loadAllUserData(nickname);
+          // 스케줄이나 다른 데이터가 하나라도 있으면 추가
+          if ((userData.schedules && userData.schedules.length > 0) ||
+              (userData.tags && userData.tags.length > 0) ||
+              (userData.tagItems && userData.tagItems.length > 0)) {
+            users.add(nickname);
+          }
         }
       }
     }
+    console.log('👥 발견된 활성 사용자들:', Array.from(users));
     return Array.from(users);
   };
 
+  // ✨ 수정된 getUserData 함수 - 더 안전한 데이터 로딩
   const getUserData = (nickname) => {
-    if (!nickname) return {
-      schedules: [],
-      tags: [],
-      tagItems: [],
-      monthlyPlans: [],
-      monthlyGoals: []
-    };
-    return loadAllUserData(nickname);
+    if (!nickname) {
+      console.warn('⚠️ getUserData: nickname이 없음');
+      return {
+        schedules: [],
+        tags: [],
+        tagItems: [],
+        monthlyPlans: [],
+        monthlyGoals: []
+      };
+    }
+
+    console.log('📦 getUserData 호출:', nickname);
+    const userData = loadAllUserData(nickname);
+    console.log('📦 로드된 데이터:', {
+      nickname,
+      schedules: userData.schedules?.length || 0,
+      tags: userData.tags?.length || 0,
+      tagItems: userData.tagItems?.length || 0,
+      monthlyPlans: userData.monthlyPlans?.length || 0,
+      monthlyGoals: userData.monthlyGoals?.length || 0
+    });
+    
+    return userData;
   };
 
   const getUserStats = () => {
@@ -199,125 +222,157 @@ function Appcopy() {
     }
   };
 
-  // ✨ 개선된 사용자 데이터 로드 함수 (상태 업데이트 동기화)
+  // ✨ 개선된 사용자 데이터 로드 함수 - 완전한 비동기 처리
   const loadCurrentUserData = async (nickname) => {
     if (!nickname) return;
     
     console.log('📦 데이터 로딩 시작:', nickname);
     
-    // ✨ 먼저 관리자 여부를 확인하고 상태를 설정
+    // 먼저 관리자 여부를 확인
     const isUserAdmin = checkIsAdmin(nickname);
     console.log('👑 관리자 체크 결과:', { nickname, isUserAdmin });
     
-    // 관리자인 경우 데이터 로딩 스킵
+    // 관리자인 경우
     if (isUserAdmin) {
       console.log('👑 관리자 로그인 - 데이터 로딩 스킵');
-      
-      // ✨ 모든 상태를 한 번에 설정 (동기화)
       setIsAdmin(true);
       setDataLoaded(true);
-      setIsLoading(false);
-      
       return;
     }
     
+    // 일반 사용자 데이터 로딩
+    setIsAdmin(false);
+    console.log('📦 일반 사용자 데이터 로딩 시작:', nickname);
+    
     try {
-      // ✨ 일반 사용자 상태 설정
-      setIsAdmin(false);
-      console.log('📦 일반 사용자 데이터 로딩 시작:', nickname);
+      // ✨ 더 강력한 데이터 로딩 - 여러 소스에서 시도
+      let userData = null;
       
-      let userData = await loadUserDataWithFallback(nickname);
+      // 1차: 기본 로딩 시도
+      userData = await loadUserDataWithFallback(nickname);
       
+      // 2차: 직접 localStorage에서 로딩 시도
+      if (!userData || !userData.schedules) {
+        console.log('🔄 대체 로딩 방법 시도...');
+        userData = loadAllUserData(nickname);
+      }
+      
+      // 3차: 기본 구조라도 생성
       if (!userData || 
-          !userData.tags || userData.tags.length === 0 ||
+          !userData.tags || userData.tags.length === 0 || 
           !userData.tagItems || userData.tagItems.length === 0) {
         
-        console.log('🆕 새 사용자 또는 빈 데이터 감지, 기본 데이터 생성 중...');
+        console.log('🆕 기본 데이터 구조 생성:', nickname);
+        
+        const defaultTags = [
+          { tagType: '공부', color: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' } },
+          { tagType: '운동', color: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-200' } },
+          { tagType: '취미', color: { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-200' } },
+          { tagType: '업무', color: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-200' } }
+        ];
+        
+        const defaultTagItems = [
+          { tagType: '공부', tagName: '독서' },
+          { tagType: '공부', tagName: '강의 수강' },
+          { tagType: '공부', tagName: '과제' },
+          { tagType: '운동', tagName: '조깅' },
+          { tagType: '운동', tagName: '헬스장' },
+          { tagType: '취미', tagName: '음악 감상' },
+          { tagType: '취미', tagName: '영화 관람' },
+          { tagType: '업무', tagName: '회의' },
+          { tagType: '업무', tagName: '프로젝트' }
+        ];
         
         userData = {
           schedules: userData?.schedules || [],
-          tags: [
-            { tagType: '공부', color: { bg: 'bg-blue-100', text: 'text-blue-800' } },
-            { tagType: '운동', color: { bg: 'bg-green-100', text: 'text-green-800' } },
-            { tagType: '취미', color: { bg: 'bg-purple-100', text: 'text-purple-800' } },
-            { tagType: '업무', color: { bg: 'bg-red-100', text: 'text-red-800' } }
-          ],
-          tagItems: [
-            { tagType: '공부', tagName: '독서' },
-            { tagType: '공부', tagName: '강의 수강' },
-            { tagType: '공부', tagName: '과제' },
-            { tagType: '운동', tagName: '조깅' },
-            { tagType: '운동', tagName: '헬스장' },
-            { tagType: '취미', tagName: '음악 감상' },
-            { tagType: '취미', tagName: '영화 관람' },
-            { tagType: '업무', tagName: '회의' },
-            { tagType: '업무', tagName: '프로젝트' }
-          ],
+          tags: userData?.tags?.length > 0 ? userData.tags : defaultTags,
+          tagItems: userData?.tagItems?.length > 0 ? userData.tagItems : defaultTagItems,
           monthlyPlans: userData?.monthlyPlans || [],
           monthlyGoals: userData?.monthlyGoals || []
         };
+        
+        // 기본 데이터 저장
+        if (userData.tags.length > 0 && userData.tagItems.length > 0) {
+          saveTagsToStorage(nickname, userData.tags);
+          saveTagItemsToStorage(nickname, userData.tagItems);
+          console.log('💾 기본 데이터 저장 완료');
+        }
       }
       
-      // 상태 설정 (한 번에)
-      setSchedules(userData.schedules || []);
-      setTags(userData.tags || []);
-      setTagItems(userData.tagItems || []);
-      setMonthlyPlans(userData.monthlyPlans || []);
-      setMonthlyGoals(userData.monthlyGoals || []);
+      // ✨ 상태 업데이트를 한 번에 처리 (리렌더링 최소화)
+      const newSchedules = userData.schedules || [];
+      const newTags = userData.tags || [];
+      const newTagItems = userData.tagItems || [];
+      const newMonthlyPlans = userData.monthlyPlans || [];
+      const newMonthlyGoals = userData.monthlyGoals || [];
+      
+      // 상태 업데이트
+      setSchedules(newSchedules);
+      setTags(newTags);
+      setTagItems(newTagItems);
+      setMonthlyPlans(newMonthlyPlans);
+      setMonthlyGoals(newMonthlyGoals);
       
       // 초기 데이터 해시 설정
       lastSaveDataRef.current = generateDataHash(
-        userData.schedules || [],
-        userData.tags || [],
-        userData.tagItems || [],
-        userData.monthlyPlans || [],
-        userData.monthlyGoals || []
+        newSchedules,
+        newTags,
+        newTagItems,
+        newMonthlyPlans,
+        newMonthlyGoals
       );
       
-      console.log('✅ 일반 사용자 데이터 로딩 완료:', {
+      console.log('✅ 데이터 로딩 완료:', {
         nickname,
-        schedulesCount: userData.schedules?.length || 0,
-        tagsCount: userData.tags?.length || 0,
-        tagItemsCount: userData.tagItems?.length || 0,
-        monthlyPlansCount: userData.monthlyPlans?.length || 0,
-        monthlyGoalsCount: userData.monthlyGoals?.length || 0
+        schedulesCount: newSchedules.length,
+        tagsCount: newTags.length,
+        tagItemsCount: newTagItems.length,
+        monthlyPlansCount: newMonthlyPlans.length,
+        monthlyGoalsCount: newMonthlyGoals.length
       });
       
     } catch (error) {
-      console.error('❌ 사용자 데이터 로딩 실패:', error);
+      console.error('❌ 데이터 로딩 실패:', error);
       
+      // 실패 시 빈 상태로 초기화
       setSchedules([]);
       setTags([]);
       setTagItems([]);
       setMonthlyPlans([]);
       setMonthlyGoals([]);
-      
-    } finally {
-      // ✨ 마지막에 로딩 완료 상태 설정
-      setDataLoaded(true);
-      setIsLoading(false);
     }
+    
+    // ✨ 로딩 완료 상태 설정
+    setDataLoaded(true);
   };
 
-  // ✨ 개선된 로그인 상태 확인 (데이터 로딩 완료 후 라우팅)
+  // ✨ 개선된 로그인 상태 확인 - 완전한 비동기 처리
   useEffect(() => {
     const checkLoginStatus = async () => {
+      console.log('🔐 로그인 상태 확인 시작');
+      
       const nickname = localStorage.getItem('nickname');
       const userType = localStorage.getItem('userType');
       
-      console.log('🔐 저장된 로그인 정보 확인:', { nickname, userType });
+      console.log('🔐 저장된 로그인 정보:', { nickname, userType });
       
       if (nickname) {
         setIsLoggedIn(true);
         setCurrentUser(nickname);
         
-        // 데이터 로딩 완료까지 대기
+        // ✨ 데이터 로딩을 완전히 완료한 후에만 다음 단계로
         await loadCurrentUserData(nickname);
+        console.log('✅ 모든 초기화 완료');
       } else {
+        console.log('❌ 로그인 정보 없음');
         setIsLoading(false);
         setDataLoaded(true);
       }
+      
+      // ✨ 마지막에 로딩 상태 해제
+      setIsLoading(false);
     };
+    
     checkLoginStatus();
   }, []);
 
@@ -385,7 +440,7 @@ function Appcopy() {
     }
   };
 
-  // ✨ 수정된 로그아웃 함수 (강제 페이지 이동 추가)
+  // ✨ 수정된 로그아웃 함수
   const handleLogout = () => {
     console.log('🚪 로그아웃 시작');
     
@@ -394,7 +449,7 @@ function Appcopy() {
       clearTimeout(saveTimeoutRef.current);
     }
     
-    // localStorage 정리
+    // localStorage 정리 (데이터는 보존, 로그인 정보만 삭제)
     localStorage.removeItem('nickname');
     localStorage.removeItem('userType');
     
@@ -416,7 +471,7 @@ function Appcopy() {
     
     console.log('🚪 로그아웃 완료 - 로그인 페이지로 이동');
     
-    // ✨ 강제 페이지 이동
+    // 강제 페이지 이동
     window.location.href = '#/login';
   };
 
@@ -434,18 +489,27 @@ function Appcopy() {
     };
   }, []);
 
-  // ✨ 개선된 로딩 화면 (더 구체적인 상태 표시)
-  if (isLoading || !dataLoaded) {
+  // ✨ 개선된 로딩 화면
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-600">
-            {checkIsAdmin(currentUser) ? '관리자 권한 확인 중...' : '사용자 데이터를 불러오는 중...'}
+            {currentUser ? 
+              (checkIsAdmin(currentUser) ? '관리자 권한 확인 중...' : `${currentUser}님의 데이터를 불러오는 중...`) : 
+              '로그인 정보 확인 중...'
+            }
           </p>
-          <p className="text-sm text-gray-500 mt-2">
-            {currentUser ? `${currentUser}님의 데이터 로딩 중...` : '로그인 정보 확인 중...'}
-          </p>
+          <div className="mt-2 text-xs text-gray-500">
+            {currentUser && !checkIsAdmin(currentUser) && (
+              <div className="space-y-1">
+                <div>📅 일정 데이터 로딩...</div>
+                <div>🏷️ 태그 설정 확인...</div>
+                <div>📊 월간 계획 불러오기...</div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -456,7 +520,7 @@ function Appcopy() {
       <Routes>
         <Route path="/login" element={<LogInPage />} />
         
-        {/* ✨ 개선된 루트 라우팅 - localStorage 직접 체크로 즉시 판단 */}
+        {/* ✨ 개선된 루트 라우팅 */}
         <Route
           path="/"
           element={(() => {
@@ -464,18 +528,16 @@ function Appcopy() {
               return <Navigate to="/login" replace />;
             }
             
-            // ✨ localStorage에서 직접 체크 (상태 업데이트 지연 방지)
+            // localStorage에서 직접 체크
             const nickname = localStorage.getItem('nickname');
             const userType = localStorage.getItem('userType');
             const isDirectAdmin = userType === 'admin' || ADMIN_USERS.includes(nickname);
             
-            console.log('🏠 루트 라우팅 판단:', {
+            console.log('🏠 루트 라우팅:', {
               nickname,
               userType,
               isDirectAdmin,
-              isAdmin,
-              isLoggedIn,
-              dataLoaded
+              targetRoute: isDirectAdmin ? '/admin' : '/calendar'
             });
             
             return isDirectAdmin ? 
