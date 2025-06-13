@@ -22,7 +22,7 @@ import {
   getUserKeys,
   debugStorage
 } from './pages/utils/unifiedStorage';
-import './utils/supabaseStorage.js';
+import './pages/utils/supabaseStorage.js';
 
 
 // 보호된 라우트 컴포넌트
