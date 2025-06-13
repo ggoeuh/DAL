@@ -43,13 +43,13 @@ const DataResetButton = ({ currentUser, className = "" }) => {
     cleanup: (nickname) => {
       if (!nickname) return;
       
-      if (window.confirm(${nickname} 사용자의 불일치 데이터를 정리하시겠습니까?)) {
-        console.log(🧹 ${nickname} 사용자의 고아 데이터 정리 시작);
+      if (window.confirm(`${nickname} 사용자의 불일치 데이터를 정리하시겠습니까?`)) {
+        console.log(`🧹 ${nickname} 사용자의 고아 데이터 정리 시작`);
         
-        const schedules = JSON.parse(localStorage.getItem(${nickname}-schedules) || '[]');
-        const tags = JSON.parse(localStorage.getItem(${nickname}-tags) || '[]');
-        const tagItems = JSON.parse(localStorage.getItem(${nickname}-tagItems) || '[]');
-        const monthlyGoals = JSON.parse(localStorage.getItem(${nickname}-monthlyGoals) || '[]');
+        const schedules = JSON.parse(localStorage.getItem(`${nickname}-schedules`) || '[]');
+        const tags = JSON.parse(localStorage.getItem(`${nickname}-tags`) || '[]');
+        const tagItems = JSON.parse(localStorage.getItem(`${nickname}-tagItems`) || '[]');
+        const monthlyGoals = JSON.parse(localStorage.getItem(`${nickname}-monthlyGoals`) || '[]');
         
         // 실제 사용되지 않는 태그 타입 찾기
         const usedTagTypes = [...new Set(tagItems.map(item => item.tagType))];
@@ -57,8 +57,8 @@ const DataResetButton = ({ currentUser, className = "" }) => {
         
         if (unusedTags.length > 0) {
           const cleanedTags = tags.filter(tag => usedTagTypes.includes(tag.tagType));
-          localStorage.setItem(${nickname}-tags, JSON.stringify(cleanedTags));
-          console.log(  🗑️ 사용되지 않는 태그 타입 ${unusedTags.length}개 삭제);
+          localStorage.setItem(`${nickname}-tags`, JSON.stringify(cleanedTags));
+          console.log(`  🗑️ 사용되지 않는 태그 타입 ${unusedTags.length}개 삭제`);
         }
         
         // 실제 태그 항목이 없는 월간 목표 찾기
@@ -69,11 +69,11 @@ const DataResetButton = ({ currentUser, className = "" }) => {
         })).filter(monthGoal => monthGoal.goals.length > 0);
         
         if (JSON.stringify(validGoals) !== JSON.stringify(monthlyGoals)) {
-          localStorage.setItem(${nickname}-monthlyGoals, JSON.stringify(validGoals));
-          console.log(  🗑️ 유효하지 않은 월간 목표 정리 완료);
+          localStorage.setItem(`${nickname}-monthlyGoals`, JSON.stringify(validGoals));
+          console.log(`  🗑️ 유효하지 않은 월간 목표 정리 완료`);
         }
         
-        console.log(🧹 ${nickname} 사용자 고아 데이터 정리 완료);
+        console.log(`🧹 ${nickname} 사용자 고아 데이터 정리 완료`);
         alert('✅ 데이터 정리가 완료되었습니다.');
         window.location.reload();
       }
@@ -83,30 +83,30 @@ const DataResetButton = ({ currentUser, className = "" }) => {
       if (!nickname) return;
       
       if (window.confirm(
-        ⚠️ ${nickname} 사용자의 모든 데이터를 완전히 삭제하시겠습니까?\n +
-        - 모든 일정\n +
-        - 모든 태그\n +
-        - 모든 월간 계획\n +
-        - 모든 월간 목표\n\n +
-        이 작업은 되돌릴 수 없습니다.
+        `⚠️ ${nickname} 사용자의 모든 데이터를 완전히 삭제하시겠습니까?\n` +
+        `- 모든 일정\n` +
+        `- 모든 태그\n` +
+        `- 모든 월간 계획\n` +
+        `- 모든 월간 목표\n\n` +
+        `이 작업은 되돌릴 수 없습니다.`
       )) {
         const keysToDelete = [
-          ${nickname}-schedules,
-          ${nickname}-tags,
-          ${nickname}-tagItems,
-          ${nickname}-monthlyPlans,
-          ${nickname}-monthlyGoals,
-          ${nickname}-tagTotals
+          `${nickname}-schedules`,
+          `${nickname}-tags`,
+          `${nickname}-tagItems`,
+          `${nickname}-monthlyPlans`,
+          `${nickname}-monthlyGoals`,
+          `${nickname}-tagTotals`
         ];
         
         keysToDelete.forEach(key => {
           if (localStorage.getItem(key)) {
             localStorage.removeItem(key);
-            console.log(  ✅ 삭제됨: ${key});
+            console.log(`  ✅ 삭제됨: ${key}`);
           }
         });
         
-        alert(✅ ${nickname} 사용자의 모든 데이터가 완전히 삭제되었습니다.);
+        alert(`✅ ${nickname} 사용자의 모든 데이터가 완전히 삭제되었습니다.`);
         window.location.reload();
       }
     },
@@ -131,7 +131,7 @@ const DataResetButton = ({ currentUser, className = "" }) => {
           localStorage.removeItem(key);
         });
         
-        alert(✅ 모든 캘린더 데이터가 초기화되었습니다. (${calendarKeys.length}개 항목 삭제));
+        alert(`✅ 모든 캘린더 데이터가 초기화되었습니다. (${calendarKeys.length}개 항목 삭제)`);
         window.location.reload();
       }
     },
@@ -171,7 +171,7 @@ const DataResetButton = ({ currentUser, className = "" }) => {
     <>
       <button
         onClick={() => setShowModal(true)}
-        className={bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded-lg text-sm font-medium transition-colors ${className}}
+        className={`bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded-lg text-sm font-medium transition-colors ${className}`}
         title="데이터 초기화"
       >
         🗑️ 초기화
@@ -358,7 +358,7 @@ const CalendarPage = ({
     
     try {
       const currentMonthKey = format(currentDate, 'yyyy-MM');
-      const key = ${currentUser}-monthlyGoals;
+      const key = `${currentUser}-monthlyGoals`;
       const data = localStorage.getItem(key);
       
       if (data) {
@@ -445,9 +445,9 @@ const CalendarPage = ({
     const minutes = totalMinutes % 60;
     
     if (hours === 0 && minutes === 0) return '';
-    if (minutes === 0) return ${hours}h;
-    if (hours === 0) return ${minutes}m;
-    return ${hours}h${minutes}m;
+    if (minutes === 0) return `${hours}h`;
+    if (hours === 0) return `${minutes}m`;
+    return `${hours}h${minutes}m`;
   };
 
   // 특정 날짜의 태그 목록 가져오기
@@ -573,26 +573,26 @@ const CalendarPage = ({
               return (
                 <div
                   key={tagType}
-                  className={p-4 w-60 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow flex-shrink-0}
+                  className={`p-4 w-60 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow flex-shrink-0`}
                 >
                   <div className="mb-2">
-                    <span className={font-medium ${tagColor.text}}>{tagType}</span>
+                    <span className={`font-medium ${tagColor.text}`}>{tagType}</span>
                   </div>
                   
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-600">실제:</span>
-                      <span className={font-semibold ${tagColor.text}}>{actualTime}</span>
+                      <span className={`font-semibold ${tagColor.text}`}>{actualTime}</span>
                     </div>
                     
                     <div className="flex justify-between">
                       <span className="text-gray-600">목표:</span>
-                      <span className={font-semibold ${tagColor.text}}>{goalTime}</span>
+                      <span className={`font-semibold ${tagColor.text}`}>{goalTime}</span>
                     </div>
                     
                     <div className="flex justify-between items-center">
                       <span className="text-gray-600">달성률:</span>
-                      <span className={font-bold text-lg ${getProgressColor(percentage)}}>
+                      <span className={`font-bold text-lg ${getProgressColor(percentage)}`}>
                         {percentage}%
                       </span>
                     </div>
@@ -600,12 +600,12 @@ const CalendarPage = ({
                     {/* 진행률 바 */}
                     <div className="w-full bg-white rounded-full h-2 mt-2">
                       <div 
-                        className={h-2 rounded-full transition-all duration-300 ${
+                        className={`h-2 rounded-full transition-all duration-300 ${
                           percentage >= 100 ? 'bg-green-500' :
                           percentage >= 75 ? 'bg-blue-500' :
                           percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500'
-                        }}
-                        style={{ width: ${Math.min(percentage, 100)}% }}
+                        }`}
+                        style={{ width: `${Math.min(percentage, 100)}%` }}
                       ></div>
                     </div>
                   </div>
@@ -630,9 +630,9 @@ const CalendarPage = ({
         {/* 요일 헤더 */}
         <div className="grid grid-cols-7 bg-gray-100 border-b">
           {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => (
-            <div key={day} className={p-3 text-center font-medium ${
+            <div key={day} className={`p-3 text-center font-medium ${
               index === 0 ? 'text-red-600' : index === 6 ? 'text-blue-600' : 'text-gray-700'
-            }}>
+            }`}>
               {day}
             </div>
           ))}
@@ -650,21 +650,21 @@ const CalendarPage = ({
             return (
               <div
                 key={day}
-                className={
+                className={`
                   relative cursor-pointer p-2 min-h-[100px] border-r border-b hover:bg-gray-50 transition-colors
                   ${isToday ? 'bg-blue-50' : ''}
                   ${isWeekend ? 'bg-gray-25' : ''}
-                }
-                onClick={() => navigate(/day/${format(day, 'yyyy-MM-dd')})}
+                `}
+                onClick={() => navigate(`/day/${format(day, 'yyyy-MM-dd')}`)}
               >
                 {/* 날짜 표시 행 */}
                 <div className="flex justify-between items-center mb-2">
-                  <div className={
+                  <div className={`
                     inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium
                     ${isToday ? 'bg-blue-500 text-white' :
                       index % 7 === 0 ? 'text-red-600' :
                       index % 7 === 6 ? 'text-blue-600' : 'text-gray-700'}
-                  }>
+                  `}>
                     {format(day, 'd')}
                   </div>
                   {/* 총 시간 표시 */}
@@ -685,22 +685,22 @@ const CalendarPage = ({
                     return (
                       <div
                         key={schedule.id}
-                        className={
+                        className={`
                           ${tagColor.bg} ${tagColor.border} border rounded-md p-2 text-xs
                           hover:shadow-md cursor-pointer transition-all
-                        }
-                        onClick={() => navigate(/day/${format(day, 'yyyy-MM-dd')})}
-                        title={${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}}
+                        `}
+                        onClick={() => navigate(`/day/${format(day, 'yyyy-MM-dd')}`)}
+                        title={`${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}`}
                       >
                         <div className="space-y-1">
                           {/* 1줄: 시작시간-마감시간 */}
-                          <div className={font-bold ${tagColor.text} text-left}>
+                          <div className={`font-bold ${tagColor.text} text-left`}>
                             {schedule.start} - {schedule.end}
                           </div>
                           {/* 2줄: 태그-일정명 */}
                           <div className="flex items-center gap-1">
-                            <div className={w-2 h-2 rounded-full ${tagColor.bg.replace('100', '500')} flex-shrink-0}></div>
-                            <div className={font-medium ${tagColor.text} truncate flex-1}>
+                            <div className={`w-2 h-2 rounded-full ${tagColor.bg.replace('100', '500')} flex-shrink-0`}></div>
+                            <div className={`font-medium ${tagColor.text} truncate flex-1`}>
                               {schedule.tag} I {schedule.title}
                             </div>
                           </div>
