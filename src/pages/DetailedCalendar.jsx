@@ -1,8 +1,7 @@
 // pages/DetailedCalendar.jsx - 서버 연동 강화 버전
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loadUserDataWithFallback, loadAllUserData } from './utils/unifiedStorage';
-
+import { saveUserDataToDAL, loadUserDataFromDAL } from './utils/supabaseStorage.js';
 // 파스텔 색상 팔레트
 const PASTEL_COLORS = [
   { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-200" },
