@@ -1,8 +1,9 @@
-// pages/AdminDashboard.jsx - 관리자 대시보드 페이지 (localStorage 기반) - 완전한 최종 버전
+// pages/AdminDashboard.jsx - 서버 직접 연동 버전
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { loadUserDataWithFallback, loadAllUserData } from '../utils/unifiedStorage';
 
-const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getUserData }) => {
+const AdminDashboard = ({ currentUser, onLogout }) => {
   const [members, setMembers] = useState([]);
   const [memberStats, setMemberStats] = useState({});
   const [loading, setLoading] = useState(true);
@@ -21,6 +22,123 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
     { bg: "bg-teal-100", text: "text-teal-800", border: "border-teal-200" },
     { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
   ];
+
+  // ✨ AdminDashboard 내부에서 직접 서버 데이터 불러오기
+  const getServerUsers = async () => {
+    console.log('🔍 AdminDashboard에서 직접 서버 사용자 검색');
+    
+    try {
+      const users = new Set();
+      
+      // 1단계: localStorage에서 사용자 이름 수집
+      const localUsers = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.includes('-')) {
+          const [nickname] = key.split('-');
+          if (nickname && 
+              nickname !== 'nickname' && 
+              nickname !== 'userType' &&
+              !['교수님', 'admin', '관리자'].includes(nickname)) {
+            localUsers.push(nickname);
+          }
+        }
+      }
+      
+      console.log('📦 localStorage 사용자들:', [...new Set(localUsers)]);
+      
+      // 2단계: 각 사용자의 서버 데이터 확인
+      for (const user of [...new Set(localUsers)]) {
+        try {
+          console.log(`🔍 ${user} 서버 데이터 확인 중...`);
+          const userData = await loadUserDataWithFallback(user);
+          
+          if (userData && (
+            (userData.schedules && userData.schedules.length > 0) ||
+            (userData.tags && userData.tags.length > 0) ||
+            (userData.tagItems && userData.tagItems.length > 0)
+          )) {
+            users.add(user);
+            console.log(`✅ ${user} 서버 데이터 확인됨:`, {
+              schedules: userData.schedules?.length || 0,
+              tags: userData.tags?.length || 0,
+              tagItems: userData.tagItems?.length || 0
+            });
+          } else {
+            console.log(`❌ ${user} 서버 데이터 없음`);
+          }
+        } catch (error) {
+          console.error(`❌ ${user} 서버 확인 실패:`, error);
+        }
+      }
+      
+      const result = Array.from(users);
+      console.log('🎯 최종 서버 사용자 목록:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ 서버 사용자 검색 실패:', error);
+      return [];
+    }
+  };
+
+  // ✨ AdminDashboard 내부에서 직접 서버 통계 계산
+  const getServerStats = async (userList) => {
+    console.log('📊 AdminDashboard에서 직접 서버 통계 계산');
+    
+    const stats = {};
+    
+    for (const user of userList) {
+      try {
+        console.log(`📊 ${user} 서버 통계 계산 중...`);
+        const userData = await loadUserDataWithFallback(user);
+        
+        if (userData) {
+          stats[user] = {
+            schedules: userData.schedules?.length || 0,
+            tags: userData.tags?.length || 0,
+            tagItems: userData.tagItems?.length || 0,
+            monthlyPlans: userData.monthlyPlans?.length || 0,
+            monthlyGoals: userData.monthlyGoals?.length || 0,
+            lastActivity: '오늘'
+          };
+          console.log(`✅ ${user} 통계 완료:`, stats[user]);
+        }
+      } catch (error) {
+        console.error(`❌ ${user} 통계 계산 실패:`, error);
+      }
+    }
+    
+    console.log('📊 최종 서버 통계:', stats);
+    return stats;
+  };
+
+  // ✨ getUserData도 내부에서 직접 처리
+  const getUserData = async (nickname) => {
+    if (!nickname) {
+      return {
+        schedules: [],
+        tags: [],
+        tagItems: [],
+        monthlyPlans: [],
+        monthlyGoals: []
+      };
+    }
+
+    try {
+      console.log(`📦 ${nickname} 서버 데이터 로드`);
+      const userData = await loadUserDataWithFallback(nickname);
+      console.log(`📦 ${nickname} 데이터:`, {
+        schedules: userData?.schedules?.length || 0,
+        tags: userData?.tags?.length || 0,
+        tagItems: userData?.tagItems?.length || 0
+      });
+      return userData;
+    } catch (error) {
+      console.error(`❌ ${nickname} 데이터 로드 실패:`, error);
+      return loadAllUserData(nickname);
+    }
+  };
 
   // 태그 색상 가져오기 (CalendarPage와 동일)
   const getTagColor = (tagType, tags) => {
@@ -166,85 +284,73 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
     return result;
   };
 
-  // ✨ 서버 기반 데이터 새로고침 함수
+  // ✨ 서버 기반 새로고침 함수
   const refreshMemberData = async () => {
-    console.log('🔄 서버 기반 멤버 데이터 새로고침 시작');
+    console.log('🔄 서버 기반 새로고침 시작');
     
     try {
-      // 서버에서 최신 사용자 목록 가져오기
-      const foundMembers = await getAllUsers();
-      console.log('👥 새로고침: 서버에서 가져온 사용자들:', foundMembers);
+      const serverUsers = await getServerUsers();
+      console.log('🔄 새로고침: 서버 사용자들:', serverUsers);
       
-      if (foundMembers.length > 0) {
-        setMembers(foundMembers);
-        
-        // 서버에서 최신 통계 계산
-        const stats = await getUserStats();
-        console.log('📊 새로고침: 서버 기반 통계:', stats);
-        setMemberStats(stats);
-        
+      if (serverUsers.length > 0) {
+        setMembers(serverUsers);
+        const serverStats = await getServerStats(serverUsers);
+        setMemberStats(serverStats);
         console.log('✅ 서버 기반 새로고침 완료');
-      } else {
-        console.log('⚠️ 새로고침에서 멤버를 찾을 수 없음');
       }
-      
     } catch (error) {
       console.error('❌ 서버 기반 새로고침 실패:', error);
     }
   };
 
   useEffect(() => {
-    console.log('🚀 AdminDashboard 초기화 시작 (서버 기반)');
+    console.log('🚀 AdminDashboard 직접 서버 연동 시작');
     
-    const loadMemberData = async () => {
+    const loadServerData = async () => {
       try {
         setLoading(true);
-        console.log('📦 서버에서 멤버 데이터 로딩');
+        console.log('📦 서버에서 직접 멤버 데이터 로딩');
         
         // 1단계: 서버에서 사용자 목록 가져오기
-        const foundMembers = await getAllUsers();
-        console.log('👥 서버에서 가져온 사용자들:', foundMembers);
+        const serverUsers = await getServerUsers();
+        console.log('👥 서버에서 가져온 사용자들:', serverUsers);
         
-        if (foundMembers.length > 0) {
-          setMembers(foundMembers);
+        if (serverUsers.length > 0) {
+          // 즉시 상태 업데이트
+          setMembers(serverUsers);
           
-          // 2단계: 서버에서 통계 데이터 계산
-          const stats = await getUserStats();
-          console.log('📊 서버 기반 계산된 통계:', stats);
-          setMemberStats(stats);
+          // 2단계: 서버에서 통계 계산
+          const serverStats = await getServerStats(serverUsers);
+          console.log('📊 서버 기반 통계:', serverStats);
+          setMemberStats(serverStats);
           
-          console.log('✅ 서버 기반 멤버 데이터 로딩 완료');
+          console.log('✅ 서버 기반 데이터 로딩 완료');
         } else {
-          console.warn('⚠️ 서버에서 멤버를 찾을 수 없음');
+          console.warn('⚠️ 서버에서 사용자를 찾을 수 없음');
           
-          // fallback: localStorage 직접 스캔
-          const directUsers = new Set();
+          // 강제로 localStorage 직접 스캔 (최후의 수단)
+          console.log('🔧 강제 localStorage 스캔 시작');
+          const forceUsers = [];
           for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
-            if (key && key.includes('-')) {
-              const [nickname, dataType] = key.split('-');
-              if (nickname && 
-                  nickname !== 'nickname' && 
-                  nickname !== 'userType' &&
-                  !['교수님', 'admin', '관리자'].includes(nickname) &&
-                  ['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'].includes(dataType)) {
-                directUsers.add(nickname);
+            if (key && key.includes('-schedules')) {
+              const [nickname] = key.split('-');
+              if (nickname && !['교수님', 'admin', '관리자'].includes(nickname)) {
+                forceUsers.push(nickname);
               }
             }
           }
           
-          const fallbackUsers = Array.from(directUsers);
-          console.log('🔧 fallback 사용자들:', fallbackUsers);
-          
-          if (fallbackUsers.length > 0) {
-            setMembers(fallbackUsers);
+          if (forceUsers.length > 0) {
+            console.log('🔧 강제 스캔 결과:', forceUsers);
+            setMembers(forceUsers);
             
-            // fallback 통계 생성
-            const fallbackStats = {};
-            for (const user of fallbackUsers) {
-              const userData = getUserData(user);
+            // 강제 통계 생성
+            const forceStats = {};
+            for (const user of forceUsers) {
+              const userData = loadAllUserData(user);
               if (userData) {
-                fallbackStats[user] = {
+                forceStats[user] = {
                   schedules: userData.schedules?.length || 0,
                   tags: userData.tags?.length || 0,
                   tagItems: userData.tagItems?.length || 0,
@@ -254,41 +360,38 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
                 };
               }
             }
-            setMemberStats(fallbackStats);
-            console.log('🔧 fallback 통계 완료:', fallbackStats);
+            setMemberStats(forceStats);
+            console.log('🔧 강제 통계 완료:', forceStats);
           }
         }
         
       } catch (error) {
-        console.error('❌ 서버 기반 멤버 데이터 로딩 실패:', error);
+        console.error('❌ 서버 기반 데이터 로딩 실패:', error);
       } finally {
         setLoading(false);
       }
     };
 
     // 초기 로딩
-    loadMemberData();
+    loadServerData();
     
-    // ✅ localStorage 변경 감지 이벤트 리스너 추가
+    // localStorage 변경 감지
     const handleStorageChange = (e) => {
       if (e.key && e.key.includes('-')) {
         console.log('📦 localStorage 변경 감지:', e.key);
-        // 멤버 데이터 관련 변경만 감지
         if (['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'].some(type => e.key.includes(type))) {
           console.log('🔄 멤버 데이터 변경으로 인한 새로고침');
-          setTimeout(() => loadMemberData(), 1000); // 1초 후 새로고침
+          setTimeout(() => loadServerData(), 1000);
         }
       }
     };
     
-    // ✅ 이벤트 리스너 등록
     window.addEventListener('storage', handleStorageChange);
     
-    // 클린업
     return () => {
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, [getAllUsers, getUserStats, getUserData]);
+  }, []); // 의존성 제거 - 내부 함수만 사용
 
   const handleMemberAction = (memberName, actionType) => {
     console.log('🔍 멤버 액션 시작:', { memberName, actionType });
