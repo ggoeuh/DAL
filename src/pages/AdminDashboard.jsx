@@ -655,7 +655,6 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
               </ul>
             </div>
           </div>
-        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {members.map((member) => {
               const stats = memberStats[member] || {};
@@ -773,7 +772,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
               onClick={handleCalendarDataReset}
               className="bg-orange-100 hover:bg-orange-200 text-orange-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
-              🗑️전체 데이터 삭제
+              🗑️ 전체 데이터 삭제
             </button>
             
             <button
