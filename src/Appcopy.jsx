@@ -1,4 +1,4 @@
-// Appcopy.jsx - 로그인 라우팅 문제 해결 버전
+// Appcopy.jsx - 관리자 권한 체크 수정 버전
 import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
@@ -27,16 +27,25 @@ import {
 // ✨ Supabase DAL 기능 추가
 import './pages/utils/supabaseStorage.js';
 
+// ✨ 관리자 목록 상수 (LogInPage와 동일하게 유지)
+const ADMIN_USERS = ['교수님', 'admin', '관리자'];
+
 // 보호된 라우트 컴포넌트
 const ProtectedRoute = ({ children }) => {
   const nickname = localStorage.getItem('nickname');
   return nickname ? children : <Navigate to="/login" replace />;
 };
 
-// 관리자 전용 라우트 컴포넌트
+// ✨ 수정된 관리자 전용 라우트 컴포넌트
 const AdminRoute = ({ children }) => {
   const nickname = localStorage.getItem('nickname');
-  const isAdmin = nickname === 'admin' || nickname === '교수님';
+  const userType = localStorage.getItem('userType');
+  
+  // 더블 체크: userType이 admin이거나 nickname이 관리자 목록에 있는 경우
+  const isAdmin = userType === 'admin' || ADMIN_USERS.includes(nickname);
+  
+  console.log('🔍 AdminRoute 체크:', { nickname, userType, isAdmin });
+  
   return isAdmin ? children : <Navigate to="/calendar" replace />;
 };
 
@@ -60,9 +69,24 @@ function Appcopy() {
   const saveTimeoutRef = useRef(null);
   const lastSaveDataRef = useRef('');
 
-  // 🔧 관리자 여부 확인 함수
+  // ✨ 수정된 관리자 여부 확인 함수
   const checkIsAdmin = (nickname) => {
-    return nickname === 'admin' || nickname === '관리자';
+    const userType = localStorage.getItem('userType');
+    
+    // userType이 admin이거나 nickname이 관리자 목록에 있는 경우
+    const isAdminByType = userType === 'admin';
+    const isAdminByName = ADMIN_USERS.includes(nickname);
+    
+    console.log('🔍 관리자 체크:', {
+      nickname,
+      userType,
+      isAdminByType,
+      isAdminByName,
+      ADMIN_USERS,
+      result: isAdminByType || isAdminByName
+    });
+    
+    return isAdminByType || isAdminByName;
   };
 
   // 🔧 데이터 해시 생성 (변경 감지용)
@@ -118,7 +142,8 @@ function Appcopy() {
       const key = localStorage.key(i);
       if (key && key.includes('-')) {
         const [nickname] = key.split('-');
-        if (nickname && nickname !== 'admin' && nickname !== '관리자') {
+        // ✨ 관리자 목록 제외 시 새로운 ADMIN_USERS 상수 사용
+        if (nickname && !ADMIN_USERS.includes(nickname)) {
           users.add(nickname);
         }
       }
@@ -178,8 +203,11 @@ function Appcopy() {
   const loadCurrentUserData = async (nickname) => {
     if (!nickname) return;
     
+    // ✨ 수정된 관리자 체크
+    const isUserAdmin = checkIsAdmin(nickname);
+    
     // 관리자인 경우 데이터 로딩 스킵
-    if (checkIsAdmin(nickname)) {
+    if (isUserAdmin) {
       console.log('👑 관리자 로그인 - 데이터 로딩 스킵:', nickname);
       setIsAdmin(true);
       setDataLoaded(true);
@@ -270,8 +298,11 @@ function Appcopy() {
   useEffect(() => {
     const checkLoginStatus = async () => {
       const nickname = localStorage.getItem('nickname');
+      const userType = localStorage.getItem('userType');
+      
+      console.log('🔐 저장된 로그인 정보 확인:', { nickname, userType });
+      
       if (nickname) {
-        console.log('🔐 저장된 로그인 정보 확인:', nickname);
         setIsLoggedIn(true);
         setCurrentUser(nickname);
         
@@ -357,6 +388,7 @@ function Appcopy() {
     }
     
     localStorage.removeItem('nickname');
+    localStorage.removeItem('userType'); // ✨ userType도 제거
     setIsLoggedIn(false);
     setCurrentUser('');
     setSchedules([]);
