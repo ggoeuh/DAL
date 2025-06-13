@@ -252,7 +252,27 @@ const WeeklyCalendar = ({
     if (dayIndex === focusedDayIndex) return;
     
     const clickedDate = currentWeek[dayIndex];
-    goToDate(clickedDate);
+    setCenterDate(clickedDate);
+    
+    // 새로운 날짜 배열 생성
+    const newDates = [];
+    for (let i = -30; i <= 30; i++) {
+      const date = new Date(clickedDate);
+      date.setDate(clickedDate.getDate() + i);
+      newDates.push(date);
+    }
+    setCurrentWeek(newDates);
+    
+    // 클릭한 날짜를 중심으로 설정 (중심은 항상 30번 인덱스)
+    setFocusedDayIndex(30);
+    
+    const newVisibleDays = [];
+    for (let i = 0; i < 5; i++) {
+      const offset = i - 2; // 가운데 위치
+      const newIndex = 30 + offset;
+      newVisibleDays.push(newIndex);
+    }
+    setVisibleDays(newVisibleDays);
   };
 
   // 시간 슬롯 계산 헬퍼 함수
@@ -634,7 +654,7 @@ const WeeklyCalendar = ({
       item => item.tagType === selectedTagType && item.tagName === form.tag
     );
   
-    const focusedBaseDate = new Date(currentWeek[focusedDayIndex]);
+    const focusedBaseDate = new Date(currentWeek[focusedDayIndex]); // 실제 선택된 날짜 사용
     
     const baseSchedule = {
       id: Date.now(),
@@ -765,13 +785,13 @@ const WeeklyCalendar = ({
 
   const goToPreviousWeek = () => {
     const newCenterDate = new Date(centerDate);
-    newCenterDate.setDate(centerDate.getDate() - 1);
+    newCenterDate.setDate(centerDate.getDate() - 7); // 7일 전으로 이동
     goToDate(newCenterDate);
   };
 
   const goToNextWeek = () => {
     const newCenterDate = new Date(centerDate);
-    newCenterDate.setDate(centerDate.getDate() + 1);
+    newCenterDate.setDate(centerDate.getDate() + 7); // 7일 후로 이동
     goToDate(newCenterDate);
   };
 
