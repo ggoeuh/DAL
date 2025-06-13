@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { saveUserCoreData } from './utils/unifiedStorage';
+import { saveUserCoreData } from './utils/supabaseStorage.js';
 
 const SLOT_HEIGHT = 24;
 const DAYS_OF_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
@@ -114,31 +114,29 @@ const WeeklyCalendar = ({
   const safeTags = Array.isArray(tags) ? tags : [];
   const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
 
-  // 날짜 상태 관리
+  // 날짜 상태 관리 - 클릭한 날짜 중심으로 연속된 날짜들 생성
   const today = new Date();
-  const [currentWeek, setCurrentWeek] = useState(
-    Array(7).fill().map((_, i) => {
+  const [centerDate, setCenterDate] = useState(today);
+  
+  const [currentWeek, setCurrentWeek] = useState(() => {
+    // 센터 날짜를 기준으로 앞뒤 30일씩 총 61일 생성
+    const dates = [];
+    for (let i = -30; i <= 30; i++) {
       const date = new Date(today);
-      date.setDate(today.getDate() - today.getDay() + i);
-      return date;
-    })
-  );
-  const [focusedDayIndex, setFocusedDayIndex] = useState(today.getDay());
+      date.setDate(today.getDate() + i);
+      dates.push(date);
+    }
+    return dates;
+  });
+  
+  const [focusedDayIndex, setFocusedDayIndex] = useState(30); // 가운데 인덱스 (오늘)
   
   const [visibleDays, setVisibleDays] = useState(() => {
     const focusPosition = 2; // 가운데 위치
     const newVisibleDays = [];
     for (let i = 0; i < 5; i++) {
       const offset = i - focusPosition;
-      let newIndex = focusedDayIndex + offset;
-      
-      // 0-6 범위를 벗어나지 않도록 조정
-      if (newIndex < 0) {
-        newIndex = 7 + newIndex;
-      } else if (newIndex >= 7) {
-        newIndex = newIndex - 7;
-      }
-      
+      const newIndex = 30 + offset; // 오늘 기준 앞뒤 2일
       newVisibleDays.push(newIndex);
     }
     return newVisibleDays;
@@ -225,30 +223,36 @@ const WeeklyCalendar = ({
       : PASTEL_COLORS[safeTags.length % PASTEL_COLORS.length];
   };
 
-  // 포커스 날짜 변경 핸들러
+  // 특정 날짜로 이동하는 함수 추가
+  const goToDate = (targetDate) => {
+    setCenterDate(targetDate);
+    
+    // 새로운 날짜 배열 생성
+    const newDates = [];
+    for (let i = -30; i <= 30; i++) {
+      const date = new Date(targetDate);
+      date.setDate(targetDate.getDate() + i);
+      newDates.push(date);
+    }
+    setCurrentWeek(newDates);
+    
+    // 포커스와 visible days 업데이트
+    setFocusedDayIndex(30); // 항상 가운데
+    
+    const newVisibleDays = [];
+    for (let i = 0; i < 5; i++) {
+      const offset = i - 2; // 가운데 위치
+      const newIndex = 30 + offset;
+      newVisibleDays.push(newIndex);
+    }
+    setVisibleDays(newVisibleDays);
+  };
+  // 포커스 날짜 변경 핸들러 - 클릭한 날짜로 새로운 배열 생성
   const handleDayFocus = (dayIndex) => {
     if (dayIndex === focusedDayIndex) return;
     
-    setFocusedDayIndex(dayIndex);
-    
-    const newVisibleDays = [];
-    const focusPosition = 2; // 가운데 위치
-    
-    for (let i = 0; i < 5; i++) {
-      const offset = i - focusPosition;
-      let newIndex = dayIndex + offset;
-      
-      // 0-6 범위를 벗어나지 않도록 조정
-      if (newIndex < 0) {
-        newIndex = 7 + newIndex;
-      } else if (newIndex >= 7) {
-        newIndex = newIndex - 7;
-      }
-      
-      newVisibleDays.push(newIndex);
-    }
-    
-    setVisibleDays(newVisibleDays);
+    const clickedDate = currentWeek[dayIndex];
+    goToDate(clickedDate);
   };
 
   // 시간 슬롯 계산 헬퍼 함수
@@ -760,52 +764,19 @@ const WeeklyCalendar = ({
   };
 
   const goToPreviousWeek = () => {
-    setCurrentWeek(prevWeek => {
-      return prevWeek.map(date => {
-        const newDate = new Date(date);
-        newDate.setDate(date.getDate() - 7);
-        return newDate;
-      });
-    });
+    const newCenterDate = new Date(centerDate);
+    newCenterDate.setDate(centerDate.getDate() - 1);
+    goToDate(newCenterDate);
   };
 
   const goToNextWeek = () => {
-    setCurrentWeek(prevWeek => {
-      return prevWeek.map(date => {
-        const newDate = new Date(date);
-        newDate.setDate(date.getDate() + 7);
-        return newDate;
-      });
-    });
+    const newCenterDate = new Date(centerDate);
+    newCenterDate.setDate(centerDate.getDate() + 1);
+    goToDate(newCenterDate);
   };
 
   const goToCurrentWeek = () => {
-    const currentDate = new Date();
-    setCurrentWeek(
-      Array(7).fill().map((_, i) => {
-        const date = new Date(currentDate);
-        date.setDate(currentDate.getDate() - currentDate.getDay() + i);
-        return date;
-      })
-    );
-    setFocusedDayIndex(currentDate.getDay());
-    
-    const newVisibleDays = [];
-    const focusPosition = 2; // 가운데 위치
-    for (let i = 0; i < 5; i++) {
-      const offset = i - focusPosition;
-      let newIndex = currentDate.getDay() + offset;
-      
-      // 0-6 범위를 벗어나지 않도록 조정
-      if (newIndex < 0) {
-        newIndex = 7 + newIndex;
-      } else if (newIndex >= 7) {
-        newIndex = newIndex - 7;
-      }
-      
-      newVisibleDays.push(newIndex);
-    }
-    setVisibleDays(newVisibleDays);
+    goToDate(new Date());
   };
   
   const handleTimeSlotClick = (time) => {
@@ -953,7 +924,10 @@ const WeeklyCalendar = ({
           {/* 오른쪽: 날짜 + 사용자 정보 */}
           <div className="flex items-center gap-4">
             <div className="text-gray-800 font-semibold">
-              {`${formatDate(currentWeek[0])} - ${formatDate(currentWeek[6])}`}
+              {currentWeek.length > 0 && visibleDays.length > 0 ? 
+                `${formatDate(currentWeek[visibleDays[0]])} - ${formatDate(currentWeek[visibleDays[visibleDays.length - 1]])}` 
+                : ''
+              }
             </div>
             {currentUser && (
               <div className="flex items-center gap-2 text-sm text-gray-600">
