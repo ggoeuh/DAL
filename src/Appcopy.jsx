@@ -1,4 +1,4 @@
-// Appcopy.jsx - 관리자 권한 체크 수정 버전
+// Appcopy.jsx - 라우팅 문제 해결 버전
 import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
@@ -199,24 +199,30 @@ function Appcopy() {
     }
   };
 
-  // ✨ 개선된 사용자 데이터 로드 함수 (관리자 구분)
+  // ✨ 개선된 사용자 데이터 로드 함수 (상태 업데이트 동기화)
   const loadCurrentUserData = async (nickname) => {
     if (!nickname) return;
     
-    // ✨ 수정된 관리자 체크
+    console.log('📦 데이터 로딩 시작:', nickname);
+    
+    // ✨ 먼저 관리자 여부를 확인하고 상태를 설정
     const isUserAdmin = checkIsAdmin(nickname);
+    console.log('👑 관리자 체크 결과:', { nickname, isUserAdmin });
     
     // 관리자인 경우 데이터 로딩 스킵
     if (isUserAdmin) {
-      console.log('👑 관리자 로그인 - 데이터 로딩 스킵:', nickname);
+      console.log('👑 관리자 로그인 - 데이터 로딩 스킵');
+      
+      // ✨ 모든 상태를 한 번에 설정 (동기화)
       setIsAdmin(true);
       setDataLoaded(true);
       setIsLoading(false);
+      
       return;
     }
     
     try {
-      setIsLoading(true);
+      // ✨ 일반 사용자 상태 설정
       setIsAdmin(false);
       console.log('📦 일반 사용자 데이터 로딩 시작:', nickname);
       
@@ -277,8 +283,6 @@ function Appcopy() {
         monthlyGoalsCount: userData.monthlyGoals?.length || 0
       });
       
-      setDataLoaded(true);
-      
     } catch (error) {
       console.error('❌ 사용자 데이터 로딩 실패:', error);
       
@@ -287,9 +291,10 @@ function Appcopy() {
       setTagItems([]);
       setMonthlyPlans([]);
       setMonthlyGoals([]);
-      setDataLoaded(true);
       
     } finally {
+      // ✨ 마지막에 로딩 완료 상태 설정
+      setDataLoaded(true);
       setIsLoading(false);
     }
   };
@@ -380,15 +385,20 @@ function Appcopy() {
     }
   };
 
-  // ✨ 개선된 로그아웃 함수
+  // ✨ 수정된 로그아웃 함수 (강제 페이지 이동 추가)
   const handleLogout = () => {
+    console.log('🚪 로그아웃 시작');
+    
     // 타이머 정리
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
     
+    // localStorage 정리
     localStorage.removeItem('nickname');
-    localStorage.removeItem('userType'); // ✨ userType도 제거
+    localStorage.removeItem('userType');
+    
+    // 상태 초기화
     setIsLoggedIn(false);
     setCurrentUser('');
     setSchedules([]);
@@ -396,19 +406,22 @@ function Appcopy() {
     setTagItems([]);
     setMonthlyPlans([]);
     setMonthlyGoals([]);
-    
-    // 새로 추가된 상태들 초기화
     setIsAdmin(false);
     setDataLoaded(false);
+    setIsLoading(false);
     
     // 플래그 초기화
     isSavingRef.current = false;
     lastSaveDataRef.current = '';
     
-    console.log('🚪 로그아웃 완료');
+    console.log('🚪 로그아웃 완료 - 로그인 페이지로 이동');
+    
+    // ✨ 강제 페이지 이동
+    window.location.href = '#/login';
   };
 
   const handleAdminLogout = () => {
+    console.log('👑 관리자 로그아웃');
     handleLogout();
   };
 
@@ -428,7 +441,7 @@ function Appcopy() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-600">
-            {isAdmin ? '관리자 권한 확인 중...' : '사용자 데이터를 불러오는 중...'}
+            {checkIsAdmin(currentUser) ? '관리자 권한 확인 중...' : '사용자 데이터를 불러오는 중...'}
           </p>
           <p className="text-sm text-gray-500 mt-2">
             {currentUser ? `${currentUser}님의 데이터 로딩 중...` : '로그인 정보 확인 중...'}
@@ -443,18 +456,32 @@ function Appcopy() {
       <Routes>
         <Route path="/login" element={<LogInPage />} />
         
-        {/* ✨ 개선된 루트 라우팅 (데이터 로딩 완료 후) */}
+        {/* ✨ 개선된 루트 라우팅 - localStorage 직접 체크로 즉시 판단 */}
         <Route
           path="/"
-          element={
-            isLoggedIn && dataLoaded ? (
-              isAdmin ?
-                <Navigate to="/admin" replace /> :
-                <Navigate to="/calendar" replace />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
+          element={(() => {
+            if (!isLoggedIn || !dataLoaded) {
+              return <Navigate to="/login" replace />;
+            }
+            
+            // ✨ localStorage에서 직접 체크 (상태 업데이트 지연 방지)
+            const nickname = localStorage.getItem('nickname');
+            const userType = localStorage.getItem('userType');
+            const isDirectAdmin = userType === 'admin' || ADMIN_USERS.includes(nickname);
+            
+            console.log('🏠 루트 라우팅 판단:', {
+              nickname,
+              userType,
+              isDirectAdmin,
+              isAdmin,
+              isLoggedIn,
+              dataLoaded
+            });
+            
+            return isDirectAdmin ? 
+              <Navigate to="/admin" replace /> : 
+              <Navigate to="/calendar" replace />;
+          })()}
         />
 
         <Route
