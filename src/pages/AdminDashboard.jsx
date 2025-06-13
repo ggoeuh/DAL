@@ -1,41 +1,11 @@
-// AdminDashboard.jsx - 스마트 데이터 병합 수정 버전
+// AdminDashboard.jsx - 완전 서버 기반 버전
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-// ✨ 올바른 Supabase 함수들로 수정
 import { 
   saveUserDataToDAL, 
-  loadUserDataFromDAL 
+  loadUserDataFromDAL,
+  supabase
 } from './utils/supabaseStorage';
-// localStorage 함수들 (필요시 별도 파일에서 import)
-const loadAllUserData = (nickname) => {
-  try {
-    const userData = {
-      schedules: [],
-      tags: [],
-      tagItems: [],
-      monthlyPlans: [],
-      monthlyGoals: []
-    };
-    
-    const dataTypes = ['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'];
-    dataTypes.forEach(type => {
-      try {
-        const key = `${nickname}-${type}`;
-        const data = localStorage.getItem(key);
-        if (data) {
-          userData[type] = JSON.parse(data);
-        }
-      } catch (error) {
-        console.error(`❌ ${type} 로컬 불러오기 실패:`, error);
-      }
-    });
-    
-    return userData;
-  } catch (error) {
-    console.error('❌ 전체 사용자 데이터 불러오기 실패:', error);
-    return { schedules: [], tags: [], tagItems: [], monthlyPlans: [], monthlyGoals: [] };
-  }
-};
 
 const AdminDashboard = ({ currentUser, onLogout }) => {
   const [members, setMembers] = useState([]);
@@ -43,6 +13,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
   const [memberData, setMemberData] = useState({}); // 멤버별 실제 데이터 캐시
   const [loading, setLoading] = useState(true);
   const [progressData, setProgressData] = useState({}); // 진행률 데이터 캐시
+  const [lastSyncTime, setLastSyncTime] = useState(null);
   const navigate = useNavigate();
 
   // 파스텔 색상 팔레트
@@ -59,206 +30,43 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
   ];
 
-  // ✨ Supabase 자동 서버 동기화 함수
-  const autoSyncToServer = async (userName, localData) => {
-    try {
-      console.log(`🔄 ${userName} 자동 서버 동기화 시작`);
-      
-      // ✨ 올바른 Supabase 함수 호출
-      const result = await saveUserDataToDAL(userName, localData);
-      
-      if (result.success) {
-        console.log(`✅ ${userName} 자동 서버 동기화 완료`);
-        return true;
-      } else {
-        console.error(`❌ ${userName} 자동 서버 동기화 실패:`, result.error);
-        return false;
-      }
-    } catch (error) {
-      console.error(`❌ ${userName} 자동 서버 동기화 실패:`, error);
-      return false;
-    }
-  };
-
-  // ✨ 수정된 서버에서 사용자 목록 가져오기 (스마트 데이터 병합)
+  // ✨ 서버에서 모든 사용자 목록 가져오기
   const getServerUsers = async () => {
-    console.log('🔍 서버 사용자 검색 + 스마트 데이터 병합');
-    
+    if (!supabase) {
+      console.error('❌ Supabase 클라이언트가 초기화되지 않았습니다');
+      return [];
+    }
+
     try {
-      const users = new Set();
-      const userDataCache = {};
+      console.log('🔍 서버에서 모든 사용자 검색 시작');
       
-      // 1단계: localStorage에서 사용자 이름 수집
-      const localUsers = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.includes('-')) {
-          const [nickname] = key.split('-');
-          if (nickname && 
-              nickname !== 'nickname' && 
-              nickname !== 'userType' &&
-              !['교수님', 'admin', '관리자'].includes(nickname)) {
-            localUsers.push(nickname);
-          }
-        }
+      // DAL 테이블에서 모든 고유한 사용자 이름 가져오기
+      const { data, error } = await supabase
+        .from('DAL')
+        .select('user_name')
+        .order('user_name');
+
+      if (error) {
+        throw error;
       }
-      
-      console.log('📦 발견된 사용자들:', [...new Set(localUsers)]);
-      
-      // 2단계: 각 사용자 처리 (스마트 병합)
-      for (const user of [...new Set(localUsers)]) {
-        try {
-          console.log(`🔍 ${user} 스마트 병합 처리 시작`);
-          
-          // 서버에서 데이터 확인
-          let serverData = null;
-          try {
-            // ✨ 올바른 Supabase 함수 호출
-            const result = await loadUserDataFromDAL(user);
-            if (result.success) {
-              serverData = result.data;
-              console.log(`📥 ${user} 서버 데이터:`, {
-                schedules: serverData?.schedules?.length || 0,
-                tags: serverData?.tags?.length || 0,
-                tagItems: serverData?.tagItems?.length || 0,
-                monthlyGoals: serverData?.monthlyGoals?.length || 0
-              });
-            }
-          } catch (serverError) {
-            console.warn(`⚠️ ${user} 서버 접근 실패:`, serverError);
-          }
-          
-          // localStorage에서 데이터 수집
-          const localData = {
-            schedules: [],
-            tags: [],
-            tagItems: [],
-            monthlyPlans: [],
-            monthlyGoals: []
-          };
-          
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.startsWith(`${user}-`)) {
-              const value = localStorage.getItem(key);
-              try {
-                const parsedValue = JSON.parse(value);
-                
-                if (key.includes('schedules')) {
-                  localData.schedules = Array.isArray(parsedValue) ? parsedValue : [];
-                } else if (key.includes('tags')) {
-                  localData.tags = Array.isArray(parsedValue) ? parsedValue : [];
-                } else if (key.includes('tagItems')) {
-                  localData.tagItems = Array.isArray(parsedValue) ? parsedValue : [];
-                } else if (key.includes('monthlyPlans')) {
-                  localData.monthlyPlans = Array.isArray(parsedValue) ? parsedValue : [];
-                } else if (key.includes('monthlyGoals')) {
-                  localData.monthlyGoals = Array.isArray(parsedValue) ? parsedValue : [];
-                }
-              } catch (parseError) {
-                console.error(`${user} 키 ${key} 파싱 실패:`, parseError);
-              }
-            }
-          }
-          
-          console.log(`📦 ${user} 로컬 데이터:`, {
-            schedules: localData.schedules.length,
-            tags: localData.tags.length,
-            tagItems: localData.tagItems.length,
-            monthlyGoals: localData.monthlyGoals.length
-          });
-          
-          // ✨ 핵심 수정: 스마트 데이터 병합
-          let finalData = null;
-          
-          const hasLocalData = localData.schedules.length || localData.tags.length || 
-                              localData.tagItems.length || localData.monthlyGoals.length;
-          
-          const hasServerData = serverData && (
-            (serverData.schedules && serverData.schedules.length > 0) ||
-            (serverData.tags && serverData.tags.length > 0) ||
-            (serverData.tagItems && serverData.tagItems.length > 0) ||
-            (serverData.monthlyGoals && serverData.monthlyGoals.length > 0)
-          );
-          
-          if (hasLocalData && !hasServerData) {
-            // 로컬에만 데이터가 있는 경우: 서버로 자동 업로드
-            console.log(`📤 ${user} 로컬 데이터를 서버로 자동 업로드`);
-            finalData = localData;
-            await autoSyncToServer(user, localData);
-            
-          } else if (hasServerData && hasLocalData) {
-            // ✨ 핵심 수정: 서버와 로컬 모두 있는 경우 스마트 병합
-            console.log(`🧠 ${user} 스마트 데이터 병합`);
-            finalData = {
-              // 일정, 태그, 태그아이템: 서버 우선 (더 최신으로 가정)
-              schedules: (serverData.schedules?.length > 0) ? serverData.schedules : localData.schedules,
-              tags: (serverData.tags?.length > 0) ? serverData.tags : localData.tags,
-              tagItems: (serverData.tagItems?.length > 0) ? serverData.tagItems : localData.tagItems,
-              monthlyPlans: (serverData.monthlyPlans?.length > 0) ? serverData.monthlyPlans : localData.monthlyPlans,
-              
-              // ✨ 월간 목표: 로컬 우선! (사용자가 최근에 설정했을 가능성)
-              monthlyGoals: (localData.monthlyGoals.length > 0) ? localData.monthlyGoals : (serverData.monthlyGoals || [])
-            };
-            
-            console.log(`🔄 ${user} 병합 결과:`, {
-              schedules: finalData.schedules.length,
-              tags: finalData.tags.length,
-              tagItems: finalData.tagItems.length,
-              monthlyGoals: finalData.monthlyGoals.length,
-              monthlyGoalsSource: (localData.monthlyGoals.length > 0) ? 'localStorage' : 'server'
-            });
-            
-            // 로컬 목표가 있으면 서버로 업데이트
-            if (localData.monthlyGoals.length > 0) {
-              console.log(`📤 ${user} 로컬 목표를 서버로 업데이트`);
-              await autoSyncToServer(user, finalData);
-            }
-            
-          } else if (hasServerData) {
-            // 서버에만 데이터가 있는 경우
-            console.log(`📥 ${user} 서버 데이터 사용`);
-            finalData = serverData;
-            
-          } else {
-            // 양쪽 다 데이터가 없는 경우: 신규 사용자
-            console.log(`🆕 ${user} 신규 사용자 (빈 데이터)`);
-            finalData = localData; // 빈 구조체라도 사용자 등록
-          }
-          
-          // 사용자 등록
-          if (finalData) {
-            users.add(user);
-            userDataCache[user] = finalData;
-            console.log(`✅ ${user} 등록 완료:`, {
-              schedules: finalData.schedules?.length || 0,
-              tags: finalData.tags?.length || 0,
-              tagItems: finalData.tagItems?.length || 0,
-              monthlyGoals: finalData.monthlyGoals?.length || 0,
-              dataSource: hasServerData && hasLocalData ? 'smart-merge' : hasServerData ? 'server' : 'local'
-            });
-          }
-          
-        } catch (error) {
-          console.error(`❌ ${user} 처리 실패:`, error);
-        }
-      }
-      
-      // 캐시된 데이터 상태에 저장
-      setMemberData(userDataCache);
-      
-      const result = Array.from(users);
-      console.log('🎯 최종 사용자 목록:', result);
-      console.log('📊 스마트 병합 완료:', Object.keys(userDataCache).length, '명 처리');
-      return result;
-      
+
+      // 중복 제거하여 고유한 사용자 목록 생성
+      const uniqueUsers = [...new Set(data.map(item => item.user_name))].filter(userName => 
+        userName && 
+        userName.trim() !== '' &&
+        !['교수님', 'admin', '관리자', 'test', 'Test'].includes(userName)
+      );
+
+      console.log('✅ 서버에서 발견된 사용자들:', uniqueUsers);
+      return uniqueUsers;
+
     } catch (error) {
       console.error('❌ 서버 사용자 검색 실패:', error);
       return [];
     }
   };
 
-  // ✨ 수정된 getUserData 함수 (스마트 병합 적용)
+  // ✨ 서버에서 사용자 데이터 가져오기
   const getUserData = useCallback(async (nickname) => {
     if (!nickname) {
       console.warn('⚠️ getUserData: nickname이 없음');
@@ -270,105 +78,69 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         monthlyGoals: []
       };
     }
-  
+
     // 캐시된 데이터 먼저 확인
     if (memberData[nickname]) {
       console.log(`📦 ${nickname} 캐시된 데이터 사용`);
       return memberData[nickname];
     }
-  
-    console.log(`📦 ${nickname} 스마트 병합 데이터 로드`);
-    
-    let serverData = null;
-    let localData = null;
-    
-    // 1단계: 서버에서 데이터 로드
+
     try {
-      // ✨ 올바른 Supabase 함수 호출
+      console.log(`📦 ${nickname} 서버에서 데이터 로드 시작`);
+      
       const result = await loadUserDataFromDAL(nickname);
-      if (result.success) {
-        serverData = result.data;
-        console.log(`📦 ${nickname} 서버 데이터:`, {
-          schedules: serverData?.schedules?.length || 0,
-          tags: serverData?.tags?.length || 0,
-          tagItems: serverData?.tagItems?.length || 0,
-          monthlyPlans: serverData?.monthlyPlans?.length || 0,
-          monthlyGoals: serverData?.monthlyGoals?.length || 0
+      
+      if (result.success && result.data) {
+        const userData = result.data;
+        
+        console.log(`✅ ${nickname} 서버 데이터 로드 성공:`, {
+          schedules: userData.schedules?.length || 0,
+          tags: userData.tags?.length || 0,
+          tagItems: userData.tagItems?.length || 0,
+          monthlyPlans: userData.monthlyPlans?.length || 0,
+          monthlyGoals: userData.monthlyGoals?.length || 0
         });
+
+        // 캐시에 저장
+        setMemberData(prev => ({...prev, [nickname]: userData}));
+        
+        return userData;
+      } else {
+        console.warn(`⚠️ ${nickname} 서버 데이터 없음 또는 로드 실패:`, result.error);
+        
+        // 빈 데이터 구조 반환
+        const emptyData = {
+          schedules: [],
+          tags: [],
+          tagItems: [],
+          monthlyPlans: [],
+          monthlyGoals: []
+        };
+        
+        setMemberData(prev => ({...prev, [nickname]: emptyData}));
+        return emptyData;
       }
+
     } catch (error) {
       console.error(`❌ ${nickname} 서버 데이터 로드 실패:`, error);
-    }
-  
-    // 2단계: localStorage에서 데이터 로드
-    try {
-      localData = loadAllUserData(nickname);
-      console.log(`📦 ${nickname} 로컬 데이터:`, {
-        schedules: localData?.schedules?.length || 0,
-        tags: localData?.tags?.length || 0,
-        tagItems: localData?.tagItems?.length || 0,
-        monthlyPlans: localData?.monthlyPlans?.length || 0,
-        monthlyGoals: localData?.monthlyGoals?.length || 0
-      });
-    } catch (error) {
-      console.error(`❌ ${nickname} 로컬 데이터 로드 실패:`, error);
-    }
-  
-    // 3단계: 스마트 데이터 병합
-    let finalData = {
-      schedules: [],
-      tags: [],
-      tagItems: [],
-      monthlyPlans: [],
-      monthlyGoals: []
-    };
-    
-    if (serverData && localData) {
-      // 둘 다 있는 경우: 스마트 병합
-      finalData = {
-        schedules: (serverData.schedules?.length > 0) ? serverData.schedules : localData.schedules || [],
-        tags: (serverData.tags?.length > 0) ? serverData.tags : localData.tags || [],
-        tagItems: (serverData.tagItems?.length > 0) ? serverData.tagItems : localData.tagItems || [],
-        monthlyPlans: (serverData.monthlyPlans?.length > 0) ? serverData.monthlyPlans : localData.monthlyPlans || [],
-        // ✨ 핵심: 월간 목표는 로컬 우선!
-        monthlyGoals: (localData.monthlyGoals?.length > 0) ? localData.monthlyGoals : (serverData.monthlyGoals || [])
+      
+      const emptyData = {
+        schedules: [],
+        tags: [],
+        tagItems: [],
+        monthlyPlans: [],
+        monthlyGoals: []
       };
       
-      // 로컬 목표가 더 최신이면 서버 업데이트
-      if (localData.monthlyGoals?.length > 0 && (!serverData.monthlyGoals || serverData.monthlyGoals.length === 0)) {
-        console.log(`🔄 ${nickname} 로컬 목표를 서버로 업데이트`);
-        await autoSyncToServer(nickname, finalData);
-      }
-      
-    } else if (serverData) {
-      // 서버 데이터만 있는 경우
-      finalData = serverData;
-    } else if (localData) {
-      // 로컬 데이터만 있는 경우: 서버로 업로드
-      finalData = localData;
-      console.log(`📤 ${nickname} 로컬 데이터를 서버로 자동 업로드`);
-      await autoSyncToServer(nickname, finalData);
+      setMemberData(prev => ({...prev, [nickname]: emptyData}));
+      return emptyData;
     }
-  
-    console.log(`📦 ${nickname} 최종 데이터:`, {
-      schedules: finalData.schedules?.length || 0,
-      tags: finalData.tags?.length || 0,
-      tagItems: finalData.tagItems?.length || 0,
-      monthlyPlans: finalData.monthlyPlans?.length || 0,
-      monthlyGoals: finalData.monthlyGoals?.length || 0,
-      source: 'smart-merge'
-    });
-  
-    // 캐시에 저장
-    setMemberData(prev => ({...prev, [nickname]: finalData}));
-    
-    return finalData;
   }, [memberData]);
 
-  // 태그 색상 가져오기
-  const getTagColor = (tagType, tags) => {
-    const tag = tags.find(t => t.tagType === tagType);
-    return tag ? tag.color : PASTEL_COLORS[0];
+  // 태그 색상 가져오기 (해시 기반)
+  const getTagColor = (tagType) => {
+    const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+    return PASTEL_COLORS[index];
   };
 
   // ✨ 비동기 태그별 목표 달성률 계산 함수
@@ -395,7 +167,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       monthlyGoals: userData.monthlyGoals?.length || 0
     });
 
-    const { schedules = [], tags = [], tagItems = [], monthlyGoals = [] } = userData;
+    const { schedules = [], monthlyGoals = [] } = userData;
     const currentDate = new Date();
     const currentMonth = currentDate.toISOString().slice(0, 7); // YYYY-MM 형식
     
@@ -435,9 +207,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     const monthlyTagTotals = {};
     
     currentMonthSchedules.forEach(schedule => {
-      // 태그 항목에서 tagType 찾기
-      const tagItem = tagItems.find(item => item.tagName === schedule.tag);
-      const tagType = tagItem ? tagItem.tagType : (schedule.tagType || "기타");
+      const tagType = schedule.tagType || "기타";
       
       if (!monthlyTagTotals[tagType]) {
         monthlyTagTotals[tagType] = 0;
@@ -482,10 +252,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     
     // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
     const goalTagTypes = currentMonthGoalsData.map(goal => goal.tagType);
-    const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => {
-      const tagItem = tagItems.find(item => item.tagName === schedule.tag);
-      return tagItem ? tagItem.tagType : (schedule.tagType || "기타");
-    }))];
+    const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"))];
     
     const allTagTypes = [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
 
@@ -498,7 +265,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     // 결과 생성
     const result = allTagTypes.map((tagType) => {
       // 태그 색상 가져오기
-      const tagColor = getTagColor(tagType, tags);
+      const tagColor = getTagColor(tagType);
       
       const actualMinutes = monthlyTagTotals[tagType] || 0;
       const actualTime = minutesToTimeString(actualMinutes);
@@ -550,7 +317,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             tagItems: userData.tagItems?.length || 0,
             monthlyPlans: userData.monthlyPlans?.length || 0,
             monthlyGoals: userData.monthlyGoals?.length || 0,
-            lastActivity: '오늘'
+            lastActivity: '서버에서 조회'
           };
           console.log(`✅ ${user} 통계 완료:`, stats[user]);
         }
@@ -565,7 +332,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
   // ✨ 새로고침 함수
   const refreshMemberData = async () => {
-    console.log('🔄 스마트 병합 새로고침 시작');
+    console.log('🔄 서버 데이터 새로고침 시작');
     
     try {
       setLoading(true);
@@ -581,7 +348,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         setMembers(serverUsers);
         const serverStats = await getServerStats(serverUsers);
         setMemberStats(serverStats);
-        console.log('✅ 스마트 병합 새로고침 완료');
+        setLastSyncTime(new Date());
+        console.log('✅ 서버 데이터 새로고침 완료');
       }
     } catch (error) {
       console.error('❌ 새로고침 실패:', error);
@@ -592,16 +360,16 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
   // ✨ 초기 데이터 로딩
   useEffect(() => {
-    console.log('🚀 AdminDashboard 시작 - 스마트 병합 시스템');
+    console.log('🚀 AdminDashboard 시작 - 완전 서버 기반 시스템');
     
     const loadServerData = async () => {
       try {
         setLoading(true);
-        console.log('📦 스마트 병합과 함께 데이터 로딩');
+        console.log('📦 서버에서 데이터 로딩');
         
-        // 스마트 병합이 포함된 사용자 목록 가져오기
+        // 서버에서 사용자 목록 가져오기
         const serverUsers = await getServerUsers();
-        console.log('👥 처리된 사용자들:', serverUsers);
+        console.log('👥 서버 사용자들:', serverUsers);
         
         if (serverUsers.length > 0) {
           setMembers(serverUsers);
@@ -610,10 +378,11 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           const serverStats = await getServerStats(serverUsers);
           console.log('📊 최종 통계:', serverStats);
           setMemberStats(serverStats);
+          setLastSyncTime(new Date());
           
-          console.log('✅ 스마트 병합 시스템 완료');
+          console.log('✅ 서버 기반 시스템 완료');
         } else {
-          console.warn('⚠️ 사용자를 찾을 수 없음');
+          console.warn('⚠️ 서버에서 사용자를 찾을 수 없음');
         }
         
       } catch (error) {
@@ -624,42 +393,16 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     };
 
     loadServerData();
-    
-    // localStorage 변경 감지 및 자동 동기화
-    const handleStorageChange = (e) => {
-      if (e.key && e.key.includes('-')) {
-        console.log('📦 localStorage 변경 감지:', e.key);
-        if (['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'].some(type => e.key.includes(type))) {
-          console.log('🔄 데이터 변경으로 인한 자동 새로고침');
-          
-          // 변경된 사용자 감지
-          const [userName] = e.key.split('-');
-          if (userName && !['교수님', 'admin', '관리자'].includes(userName)) {
-            // 해당 사용자 데이터 자동 동기화
-            setTimeout(async () => {
-              try {
-                const userData = await loadAllUserData(userName);
-                if (userData) {
-                  await autoSyncToServer(userName, userData);
-                  console.log(`✅ ${userName} 변경 감지 후 자동 동기화 완료`);
-                }
-              } catch (error) {
-                console.error(`❌ ${userName} 자동 동기화 실패:`, error);
-              }
-            }, 1000);
-          }
-          
-          // 전체 새로고침
-          setTimeout(() => refreshMemberData(), 2000);
-        }
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
+  }, []);
+
+  // 자동 새로고침 (5분마다)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('⏰ 자동 새로고침 트리거');
+      refreshMemberData();
+    }, 5 * 60 * 1000); // 5분
+
+    return () => clearInterval(interval);
   }, []);
 
   const handleMemberAction = async (memberName, actionType) => {
@@ -690,92 +433,94 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
   // 관리자용 데이터 관리 함수들
   const handleDataDebug = () => {
-    const result = window.confirm('⚠️ 모든 데이터를 콘솔에 출력하시겠습니까?');
+    const result = window.confirm('⚠️ 모든 서버 데이터를 콘솔에 출력하시겠습니까?');
     if (result) {
-      console.log('=== localStorage 전체 데이터 ===');
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        const value = localStorage.getItem(key);
-        try {
-          console.log(`${key}:`, JSON.parse(value));
-        } catch (e) {
-          console.log(`${key}:`, value);
-        }
-      }
-      
       console.log('=== 캐시된 멤버 데이터 ===');
       console.log(memberData);
       
       console.log('=== 캐시된 진행률 데이터 ===');
       console.log(progressData);
       
-      alert('✅ 콘솔에 데이터가 출력되었습니다. 개발자 도구를 확인하세요.');
+      console.log('=== 멤버 통계 ===');
+      console.log(memberStats);
+      
+      alert('✅ 콘솔에 서버 데이터가 출력되었습니다. 개발자 도구를 확인하세요.');
     }
   };
 
   const handleUserDataReset = async (memberName) => {
-    const result = window.confirm(`⚠️ ${memberName}님의 모든 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`);
+    if (!supabase) {
+      alert('❌ Supabase 연결이 없습니다.');
+      return;
+    }
+
+    const result = window.confirm(`⚠️ ${memberName}님의 모든 서버 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`);
     if (result) {
-      // 사용자별 데이터 삭제
-      const keysToDelete = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith(`${memberName}-`)) {
-          keysToDelete.push(key);
+      try {
+        // 서버에서 사용자 데이터 삭제
+        const { error } = await supabase
+          .from('DAL')
+          .delete()
+          .eq('user_name', memberName);
+        
+        if (error) {
+          throw error;
         }
+
+        // 캐시에서도 제거
+        setMemberData(prev => {
+          const newData = { ...prev };
+          delete newData[memberName];
+          return newData;
+        });
+        
+        setProgressData(prev => {
+          const newData = { ...prev };
+          delete newData[memberName];
+          return newData;
+        });
+        
+        alert(`✅ ${memberName}님의 서버 데이터가 삭제되었습니다.`);
+        
+        await refreshMemberData();
+      } catch (error) {
+        console.error('서버 데이터 삭제 실패:', error);
+        alert('❌ 서버 데이터 삭제 실패: ' + error.message);
       }
-      
-      keysToDelete.forEach(key => {
-        localStorage.removeItem(key);
-        console.log(`삭제됨: ${key}`);
-      });
-      
-      // 캐시에서도 제거
-      setMemberData(prev => {
-        const newData = { ...prev };
-        delete newData[memberName];
-        return newData;
-      });
-      
-      setProgressData(prev => {
-        const newData = { ...prev };
-        delete newData[memberName];
-        return newData;
-      });
-      
-      alert(`✅ ${memberName}님의 데이터가 삭제되었습니다. (${keysToDelete.length}개 항목)`);
-      
-      await refreshMemberData();
     }
   };
 
-  const handleCalendarDataReset = () => {
-    const result = window.confirm('⚠️ 모든 사용자의 캘린더 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.');
+  const handleAllServerDataReset = async () => {
+    if (!supabase) {
+      alert('❌ Supabase 연결이 없습니다.');
+      return;
+    }
+
+    const result = window.confirm('⚠️ 모든 사용자의 서버 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.');
     if (result) {
-      const keysToDelete = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (
-          key.includes('schedules') ||
-          key.includes('tags') ||
-          key.includes('tagItems') ||
-          key.includes('monthlyPlans') ||
-          key.includes('monthlyGoals')
-        )) {
-          keysToDelete.push(key);
+      try {
+        const { error } = await supabase
+          .from('DAL')
+          .delete()
+          .neq('id', 0); // 모든 레코드 삭제
+        
+        if (error) {
+          throw error;
         }
+
+        // 캐시 초기화
+        setMemberData({});
+        setProgressData({});
+        setMembers([]);
+        setMemberStats({});
+        
+        alert('✅ 모든 서버 데이터가 삭제되었습니다.');
+        
+        await refreshMemberData();
+      } catch (error) {
+        console.error('전체 서버 데이터 삭제 실패:', error);
+        alert('❌ 전체 서버 데이터 삭제 실패: ' + error.message);
       }
-      
-      keysToDelete.forEach(key => {
-        localStorage.removeItem(key);
-      });
-      
-      // 캐시 초기화
-      setMemberData({});
-      setProgressData({});
-      
-      alert(`✅ 모든 캘린더 데이터가 삭제되었습니다. (${keysToDelete.length}개 항목)`);
-      window.location.reload();
     }
   };
 
@@ -784,8 +529,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">스마트 병합과 함께 멤버 데이터를 불러오는 중...</p>
-          <p className="text-sm text-gray-500 mt-2">월간 목표 보존 + 자동 동기화 시스템</p>
+          <p className="text-gray-600">서버에서 멤버 데이터를 불러오는 중...</p>
+          <p className="text-sm text-gray-500 mt-2">완전 서버 기반 시스템</p>
         </div>
       </div>
     );
@@ -799,12 +544,17 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           <div className="flex items-center space-x-4">
             <h1 className="text-xl font-bold">👑 관리자 대시보드</h1>
             <span className="text-red-200 text-sm">({currentUser})</span>
-            <span className="bg-green-500 text-xs px-2 py-1 rounded">스마트 병합</span>
+            <span className="bg-blue-500 text-xs px-2 py-1 rounded">서버 기반</span>
           </div>
           <div className="flex items-center space-x-4">
             <span className="text-red-200 text-sm">
               {new Date().toLocaleDateString('ko-KR')}
             </span>
+            {lastSyncTime && (
+              <span className="text-red-200 text-xs">
+                마지막 동기화: {lastSyncTime.toLocaleTimeString('ko-KR')}
+              </span>
+            )}
             <button 
               onClick={onLogout}
               className="bg-red-500 hover:bg-red-700 px-4 py-2 rounded transition duration-200"
@@ -823,9 +573,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           <div className="flex items-center space-x-4 text-sm text-gray-600">
             <span>총 {members.length}명의 멤버</span>
             <span>•</span>
-            <span>마지막 업데이트: {new Date().toLocaleString('ko-KR')}</span>
+            <span>마지막 업데이트: {lastSyncTime ? lastSyncTime.toLocaleString('ko-KR') : '로딩 중'}</span>
             <span>•</span>
-            <span className="text-green-600 font-medium">✅ 스마트 병합 시스템 활성</span>
+            <span className="text-blue-600 font-medium">🌐 서버 기반 시스템</span>
           </div>
         </div>
 
@@ -835,15 +585,15 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             <div className="text-gray-400 text-8xl mb-6">👥</div>
             <h3 className="text-2xl font-semibold text-gray-600 mb-3">등록된 멤버가 없습니다</h3>
             <p className="text-gray-500 mb-6">
-              멤버가 로그인하여 데이터를 생성하면 자동으로 스마트 병합되어 여기에 표시됩니다.
+              멤버가 로그인하여 서버에 데이터를 생성하면 자동으로 여기에 표시됩니다.
             </p>
             <div className="bg-gray-50 rounded-lg p-4 text-left">
-              <h4 className="font-semibold mb-2">💡 스마트 병합 시스템</h4>
+              <h4 className="font-semibold mb-2">🌐 서버 기반 시스템</h4>
               <ul className="text-sm text-gray-600 space-y-1">
-                <li>• 멤버가 로그인하면 자동으로 감지됩니다</li>
-                <li>• localStorage와 서버 데이터를 지능적으로 병합합니다</li>
-                <li>• 월간 목표는 로컬 우선으로 보존됩니다</li>
-                <li>• 자동 동기화로 데이터 손실을 방지합니다</li>
+                <li>• 모든 데이터가 Supabase 서버에 저장됩니다</li>
+                <li>• 실시간 서버 동기화로 최신 데이터 보장</li>
+                <li>• 로컬 저장소 의존성 완전 제거</li>
+                <li>• 자동 5분마다 새로고침</li>
               </ul>
             </div>
           </div>
@@ -871,8 +621,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                               신규 사용자
                             </span>
                           )}
-                          <span className="bg-purple-100 text-purple-800 text-xs font-medium px-2 py-1 rounded-full border border-purple-200">
-                            스마트 병합
+                          <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full border border-blue-200">
+                            서버 기반
                           </span>
                         </div>
                         <p className="text-gray-500 text-sm flex items-center">
@@ -890,7 +640,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                         <div className="text-gray-400 text-4xl mb-3">🌟</div>
                         <h4 className="font-semibold text-gray-700 mb-2">새로운 멤버입니다!</h4>
                         <p className="text-gray-500 text-sm mb-4">
-                          아직 일정이나 목표를 설정하지 않았습니다.
+                          아직 서버에 일정이나 목표를 설정하지 않았습니다.
                         </p>
                         <div className="bg-gray-50 rounded-lg p-3 text-left">
                           <h5 className="font-medium text-gray-700 mb-2">💡 시작 가이드</h5>
@@ -898,7 +648,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                             <li>• 캘린더에서 첫 일정 등록</li>
                             <li>• 태그와 카테고리 설정</li>
                             <li>• 월간 목표 계획 수립</li>
-                            <li>• 스마트 병합으로 데이터 보존</li>
+                            <li>• 자동 서버 동기화</li>
                           </ul>
                         </div>
                       </div>
@@ -937,7 +687,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                                 `• ${p.tagName}: ${p.actualTime}/${p.targetTime} (${p.percentage}%)`
                               ).join('\n');
                               
-                              alert(`📊 ${member}님 목표 달성 현황 (스마트 병합)\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
+                              alert(`📊 ${member}님 목표 달성 현황 (서버 기반)\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
                             }
                           }}
                           className="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
@@ -952,7 +702,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                         className="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
                       >
                         <span className="mr-2">🗑️</span>
-                        데이터 삭제
+                        서버 데이터 삭제
                       </button>
                     </div>
                   </div>
@@ -967,7 +717,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
             <span className="mr-2">🔧</span>
             관리자 도구
-            <span className="ml-2 bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded">스마트 병합 활성</span>
+            <span className="ml-2 bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded">서버 기반</span>
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <button
@@ -976,7 +726,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                 const totalData = Object.values(memberStats).reduce((sum, stats) => 
                   sum + stats.schedules + stats.tags + stats.tagItems + stats.monthlyPlans + stats.monthlyGoals, 0
                 );
-                alert(`📊 시스템 현황\n\n• 등록된 멤버: ${memberCount}명\n• 총 데이터: ${totalData}개\n• 캐시된 데이터: ${Object.keys(memberData).length}명\n• 스마트 병합: 활성\n• 상태: 정상 운영중\n• 마지막 업데이트: ${new Date().toLocaleString('ko-KR')}`);
+                alert(`📊 시스템 현황 (서버 기반)\n\n• 등록된 멤버: ${memberCount}명\n• 총 서버 데이터: ${totalData}개\n• 캐시된 데이터: ${Object.keys(memberData).length}명\n• 데이터 소스: Supabase 서버\n• 상태: 정상 운영중\n• 마지막 업데이트: ${lastSyncTime ? lastSyncTime.toLocaleString('ko-KR') : '로딩 중'}`);
               }}
               className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
@@ -987,75 +737,76 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
               onClick={handleDataDebug}
               className="bg-blue-100 hover:bg-blue-200 text-blue-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
-              🔍 데이터 디버그
+              🔍 서버 데이터 디버그
             </button>
             
             <button
               onClick={refreshMemberData}
-              className="bg-green-100 hover:bg-green-200 text-green-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
+              disabled={loading}
+              className="bg-green-100 hover:bg-green-200 text-green-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium disabled:opacity-50"
             >
-              🔄 수동 새로고침
+              {loading ? '🔄 로딩...' : '🔄 서버 새로고침'}
             </button>
             
             <button
-              onClick={handleCalendarDataReset}
-              className="bg-orange-100 hover:bg-orange-200 text-orange-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
+              onClick={handleAllServerDataReset}
+              className="bg-red-100 hover:bg-red-200 text-red-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
-              🗑️ 전체 데이터 삭제
+              🗑️ 전체 서버 삭제
             </button>
           </div>
           
-          {/* 스마트 병합 상태 표시 */}
-          <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
-            <h4 className="font-medium text-purple-800 mb-2">🧠 스마트 병합 시스템 상태</h4>
+          {/* 서버 기반 시스템 상태 표시 */}
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <h4 className="font-medium text-blue-800 mb-2">🌐 서버 기반 시스템 상태</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                <span>서버 연동: 활성</span>
-              </div>
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
-                <span>스마트 병합: 활성</span>
+                <span>Supabase: 활성</span>
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                <span>목표 보존: 활성</span>
+                <span>서버 동기화: 활성</span>
+              </div>
+              <div className="flex items-center">
+                <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
+                <span>실시간 업데이트: 활성</span>
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2"></span>
-                <span>자동 동기화: 활성</span>
+                <span>자동 새로고침: 5분</span>
               </div>
             </div>
           </div>
           
           {/* 시스템 개선사항 */}
           <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
-            <h4 className="font-medium text-green-800 mb-2">💡 스마트 병합 시스템 (v4.0)</h4>
+            <h4 className="font-medium text-green-800 mb-2">💡 서버 기반 시스템 (v5.0)</h4>
             <div className="text-sm text-green-700 space-y-1">
-              <div>• <strong>스마트 데이터 병합:</strong> 서버와 로컬 데이터를 지능적으로 통합</div>
-              <div>• <strong>월간 목표 보존:</strong> 사용자 목표 데이터 우선 보호</div>
-              <div>• <strong>자동 복구:</strong> 데이터 손실 시 자동으로 최적 데이터 선택</div>
-              <div>• <strong>실시간 동기화:</strong> 변경 감지 시 즉시 서버 업데이트</div>
+              <div>• <strong>완전 서버 기반:</strong> 로컬 저장소 의존성 완전 제거</div>
+              <div>• <strong>실시간 동기화:</strong> Supabase를 통한 실시간 데이터 관리</div>
+              <div>• <strong>자동 새로고침:</strong> 5분마다 자동으로 최신 데이터 갱신</div>
+              <div>• <strong>안정성 향상:</strong> 서버 기반으로 데이터 손실 방지</div>
             </div>
           </div>
         </div>
         
         {/* 시스템 정보 푸터 */}
         <div className="mt-8 text-center text-xs text-gray-500 space-y-1">
-          <div>관리자 대시보드 v4.0 | 스마트 병합 + 목표 보존 시스템</div>
-          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: 스마트 병합 (로컬+서버)</div>
+          <div>관리자 대시보드 v5.0 | 완전 서버 기반 시스템</div>
+          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: Supabase 서버</div>
           <div className="flex justify-center items-center space-x-4 mt-2">
             <span className="flex items-center">
-              <span className="w-2 h-2 bg-purple-500 rounded-full mr-1"></span>
-              스마트 병합
+              <span className="w-2 h-2 bg-blue-500 rounded-full mr-1"></span>
+              서버 기반
             </span>
             <span className="flex items-center">
               <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
-              목표 보존
+              실시간 동기화
             </span>
             <span className="flex items-center">
-              <span className="w-2 h-2 bg-blue-500 rounded-full mr-1"></span>
-              자동 동기화
+              <span className="w-2 h-2 bg-purple-500 rounded-full mr-1"></span>
+              자동 새로고침
             </span>
           </div>
         </div>
@@ -1064,7 +815,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
   );
 };
 
-// ✨ 멤버 진행률 표시 컴포넌트 (동일)
+// ✨ 멤버 진행률 표시 컴포넌트
 const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
   const [tagProgress, setTagProgress] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1090,7 +841,7 @@ const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
     return (
       <div className="text-center py-4">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2"></div>
-        <p className="text-gray-500 text-sm">목표 달성률 계산 중...</p>
+        <p className="text-gray-500 text-sm">서버에서 목표 달성률 계산 중...</p>
       </div>
     );
   }
