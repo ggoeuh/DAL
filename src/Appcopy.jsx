@@ -1,4 +1,4 @@
-// Appcopy.jsx - 라우팅 문제 해결 버전
+// Appcopy.jsx - 모든 문제 해결 완료 버전
 import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
@@ -135,38 +135,80 @@ function Appcopy() {
     }
   };
 
-  // 기존 함수들
+  // ✨ 완전히 수정된 getAllUsers 함수
   const getAllUsers = () => {
+    console.log('📋 모든 사용자 조회 시작');
     const users = new Set();
+    
+    // localStorage의 모든 키를 확인
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.includes('-')) {
         const [nickname] = key.split('-');
-        // ✨ 관리자 목록 제외 시 새로운 ADMIN_USERS 상수 사용
+        // 관리자가 아닌 경우만 추가
         if (nickname && !ADMIN_USERS.includes(nickname)) {
+          console.log('📋 발견된 사용자:', nickname, '키:', key);
           users.add(nickname);
         }
       }
     }
-    return Array.from(users);
+    
+    const userList = Array.from(users);
+    console.log('📋 최종 사용자 목록:', userList);
+    return userList;
   };
 
+  // ✨ 완전히 수정된 getUserData 함수
   const getUserData = (nickname) => {
-    if (!nickname) return {
-      schedules: [],
-      tags: [],
-      tagItems: [],
-      monthlyPlans: [],
-      monthlyGoals: []
-    };
-    return loadAllUserData(nickname);
+    console.log('📦 사용자 데이터 조회:', nickname);
+    
+    if (!nickname) {
+      console.log('❌ 사용자명이 없음');
+      return {
+        schedules: [],
+        tags: [],
+        tagItems: [],
+        monthlyPlans: [],
+        monthlyGoals: []
+      };
+    }
+
+    try {
+      // loadAllUserData 함수를 사용하여 데이터 로드
+      const userData = loadAllUserData(nickname);
+      
+      console.log('📦 로드된 데이터:', {
+        nickname,
+        hasSchedules: !!userData.schedules,
+        schedulesCount: userData.schedules?.length || 0,
+        hasTags: !!userData.tags,
+        tagsCount: userData.tags?.length || 0,
+        hasTagItems: !!userData.tagItems,
+        tagItemsCount: userData.tagItems?.length || 0,
+        hasMonthlyPlans: !!userData.monthlyPlans,
+        monthlyPlansCount: userData.monthlyPlans?.length || 0,
+        hasMonthlyGoals: !!userData.monthlyGoals,
+        monthlyGoalsCount: userData.monthlyGoals?.length || 0
+      });
+
+      return userData;
+    } catch (error) {
+      console.error('❌ 사용자 데이터 로드 실패:', error);
+      return {
+        schedules: [],
+        tags: [],
+        tagItems: [],
+        monthlyPlans: [],
+        monthlyGoals: []
+      };
+    }
   };
 
   const getUserStats = () => {
     const users = getAllUsers();
     const stats = {};
     users.forEach(user => {
-      const userData = loadAllUserData(user);
+      const userData = getUserData(user);
       stats[user] = {
         schedules: userData.schedules?.length || 0,
         tags: userData.tags?.length || 0,
@@ -199,13 +241,18 @@ function Appcopy() {
     }
   };
 
-  // ✨ 개선된 사용자 데이터 로드 함수 (상태 업데이트 동기화)
+  // ✨ 완전히 수정된 사용자 데이터 로드 함수
   const loadCurrentUserData = async (nickname) => {
-    if (!nickname) return;
+    if (!nickname) {
+      console.log('❌ 닉네임이 없음');
+      setIsLoading(false);
+      setDataLoaded(true);
+      return;
+    }
     
     console.log('📦 데이터 로딩 시작:', nickname);
     
-    // ✨ 먼저 관리자 여부를 확인하고 상태를 설정
+    // ✨ 먼저 관리자 여부를 확인
     const isUserAdmin = checkIsAdmin(nickname);
     console.log('👑 관리자 체크 결과:', { nickname, isUserAdmin });
     
@@ -213,16 +260,22 @@ function Appcopy() {
     if (isUserAdmin) {
       console.log('👑 관리자 로그인 - 데이터 로딩 스킵');
       
-      // ✨ 모든 상태를 한 번에 설정 (동기화)
+      // ✨ 관리자 상태 한 번에 설정 (동기화) - 빈 배열로 초기화
       setIsAdmin(true);
+      setSchedules([]);
+      setTags([]);
+      setTagItems([]);
+      setMonthlyPlans([]);
+      setMonthlyGoals([]);
       setDataLoaded(true);
       setIsLoading(false);
       
+      console.log('✅ 관리자 상태 설정 완료');
       return;
     }
     
+    // 일반 사용자 처리
     try {
-      // ✨ 일반 사용자 상태 설정
       setIsAdmin(false);
       console.log('📦 일반 사용자 데이터 로딩 시작:', nickname);
       
@@ -286,6 +339,7 @@ function Appcopy() {
     } catch (error) {
       console.error('❌ 사용자 데이터 로딩 실패:', error);
       
+      // 실패 시 빈 배열로 초기화
       setSchedules([]);
       setTags([]);
       setTagItems([]);
@@ -293,31 +347,37 @@ function Appcopy() {
       setMonthlyGoals([]);
       
     } finally {
-      // ✨ 마지막에 로딩 완료 상태 설정
+      // ✨ 항상 마지막에 로딩 완료 처리
       setDataLoaded(true);
       setIsLoading(false);
+      console.log('✅ 데이터 로딩 프로세스 완료');
     }
   };
 
-  // ✨ 개선된 로그인 상태 확인 (데이터 로딩 완료 후 라우팅)
+  // ✨ 개선된 로그인 상태 확인
   useEffect(() => {
     const checkLoginStatus = async () => {
+      console.log('🔐 로그인 상태 확인 시작');
+      
       const nickname = localStorage.getItem('nickname');
       const userType = localStorage.getItem('userType');
       
-      console.log('🔐 저장된 로그인 정보 확인:', { nickname, userType });
+      console.log('🔐 저장된 로그인 정보:', { nickname, userType });
       
       if (nickname) {
+        console.log('✅ 로그인 정보 발견:', nickname);
         setIsLoggedIn(true);
         setCurrentUser(nickname);
         
         // 데이터 로딩 완료까지 대기
         await loadCurrentUserData(nickname);
       } else {
+        console.log('❌ 로그인 정보 없음');
         setIsLoading(false);
         setDataLoaded(true);
       }
     };
+    
     checkLoginStatus();
   }, []);
 
@@ -385,7 +445,7 @@ function Appcopy() {
     }
   };
 
-  // ✨ 수정된 로그아웃 함수 (강제 페이지 이동 추가)
+  // ✨ 완전히 수정된 로그아웃 함수
   const handleLogout = () => {
     console.log('🚪 로그아웃 시작');
     
@@ -398,7 +458,7 @@ function Appcopy() {
     localStorage.removeItem('nickname');
     localStorage.removeItem('userType');
     
-    // 상태 초기화
+    // 모든 상태 즉시 초기화
     setIsLoggedIn(false);
     setCurrentUser('');
     setSchedules([]);
@@ -407,8 +467,8 @@ function Appcopy() {
     setMonthlyPlans([]);
     setMonthlyGoals([]);
     setIsAdmin(false);
-    setDataLoaded(false);
-    setIsLoading(false);
+    setDataLoaded(true);  // ✨ 데이터 로딩 완료로 설정하여 무한 로딩 방지
+    setIsLoading(false);  // ✨ 로딩 상태 해제
     
     // 플래그 초기화
     isSavingRef.current = false;
@@ -416,8 +476,10 @@ function Appcopy() {
     
     console.log('🚪 로그아웃 완료 - 로그인 페이지로 이동');
     
-    // ✨ 강제 페이지 이동
-    window.location.href = '#/login';
+    // ✨ 즉시 로그인 페이지로 이동
+    setTimeout(() => {
+      window.location.href = '#/login';
+    }, 100);
   };
 
   const handleAdminLogout = () => {
@@ -434,17 +496,20 @@ function Appcopy() {
     };
   }, []);
 
-  // ✨ 개선된 로딩 화면 (더 구체적인 상태 표시)
-  if (isLoading || !dataLoaded) {
+  // ✨ 로딩 조건 단순화 - 로그아웃 후 무한 로딩 방지
+  if (isLoading && !dataLoaded) {
+    const nickname = localStorage.getItem('nickname');
+    const isCurrentAdmin = checkIsAdmin(nickname);
+    
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-600">
-            {checkIsAdmin(currentUser) ? '관리자 권한 확인 중...' : '사용자 데이터를 불러오는 중...'}
+            {isCurrentAdmin ? '관리자 권한 확인 중...' : '사용자 데이터를 불러오는 중...'}
           </p>
           <p className="text-sm text-gray-500 mt-2">
-            {currentUser ? `${currentUser}님의 데이터 로딩 중...` : '로그인 정보 확인 중...'}
+            {nickname ? `${nickname}님의 데이터 로딩 중...` : '로그인 정보 확인 중...'}
           </p>
         </div>
       </div>
@@ -456,31 +521,38 @@ function Appcopy() {
       <Routes>
         <Route path="/login" element={<LogInPage />} />
         
-        {/* ✨ 개선된 루트 라우팅 - localStorage 직접 체크로 즉시 판단 */}
+        {/* ✨ 완전히 개선된 루트 라우팅 */}
         <Route
           path="/"
           element={(() => {
-            if (!isLoggedIn || !dataLoaded) {
+            const nickname = localStorage.getItem('nickname');
+            const userType = localStorage.getItem('userType');
+            
+            // 로그인 상태 확인
+            if (!nickname || !isLoggedIn) {
+              console.log('🏠 루트: 로그인 필요');
               return <Navigate to="/login" replace />;
             }
             
-            // ✨ localStorage에서 직접 체크 (상태 업데이트 지연 방지)
-            const nickname = localStorage.getItem('nickname');
-            const userType = localStorage.getItem('userType');
+            // 관리자 여부 확인
             const isDirectAdmin = userType === 'admin' || ADMIN_USERS.includes(nickname);
             
             console.log('🏠 루트 라우팅 판단:', {
               nickname,
               userType,
               isDirectAdmin,
-              isAdmin,
               isLoggedIn,
               dataLoaded
             });
             
-            return isDirectAdmin ? 
-              <Navigate to="/admin" replace /> : 
-              <Navigate to="/calendar" replace />;
+            // 즉시 판단하여 리다이렉트
+            if (isDirectAdmin) {
+              console.log('🏠 → 관리자 페이지로 이동');
+              return <Navigate to="/admin" replace />;
+            } else {
+              console.log('🏠 → 일반 사용자 캘린더로 이동');
+              return <Navigate to="/calendar" replace />;
+            }
           })()}
         />
 
