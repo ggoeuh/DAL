@@ -7,8 +7,6 @@ import DayDetailPagecopy from './pages/DayDetailPagecopy'; // pages 폴더 안�
 import MonthlyPlanPage from './pages/MonthlyPlanPage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminMemberView from './pages/AdminMemberView';
-// 기존 import들 밑에 추가
-import './utils/supabaseStorage.js';
 // 기존 dataAPI 대신 개선된 unifiedStorage 사용
 import {
   loadAllUserData,
@@ -24,6 +22,8 @@ import {
   getUserKeys,
   debugStorage
 } from './pages/utils/unifiedStorage';
+import './utils/supabaseStorage.js';
+
 
 // 보호된 라우트 컴포넌트
 const ProtectedRoute = ({ children }) => {
