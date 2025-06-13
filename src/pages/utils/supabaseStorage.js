@@ -140,6 +140,7 @@ export const deleteActivityFromDAL = async (activityId) => {
 };
 
 // ✨ 사용자별 모든 데이터를 DAL에 저장 (캘린더 앱용)
+// ✨ 수정된 saveUserDataToDAL 함수 (실제 DAL 테이블 구조에 맞춤)
 export const saveUserDataToDAL = async (nickname, userData) => {
   if (!supabase) {
     console.warn('⚠️ Supabase가 초기화되지 않았습니다 - 로컬 저장만 진행');
@@ -164,31 +165,49 @@ export const saveUserDataToDAL = async (nickname, userData) => {
         const endMinutes = parseTime(schedule.end);
         const duration = endMinutes - startMinutes;
         
+        // ✨ 실제 DAL 테이블 구조에 맞춘 데이터
         activities.push({
           user_name: nickname,
           activity_type: schedule.tag || 'Unknown',
-          description: `${schedule.title} ${schedule.description ? '- ' + schedule.description : ''}`,
+          description: `${schedule.title || 'No Title'} | ${schedule.date} ${schedule.start}-${schedule.end}${schedule.description ? ' | ' + schedule.description : ''}`,
           duration: duration,
-          completed: true,
-          activity_date: schedule.date,
-          start_time: schedule.start,
-          end_time: schedule.end,
-          tag_type: schedule.tagType || 'Unknown',
-          metadata: JSON.stringify({
-            scheduleId: schedule.id,
-            originalData: schedule
-          })
+          completed: true
         });
       });
     }
     
+    // 월간 목표도 저장 (별도 활동으로)
+    if (userData.monthlyGoals && userData.monthlyGoals.length > 0) {
+      userData.monthlyGoals.forEach(monthGoal => {
+        if (monthGoal.goals && monthGoal.goals.length > 0) {
+          monthGoal.goals.forEach(goal => {
+            activities.push({
+              user_name: nickname,
+              activity_type: 'MONTHLY_GOAL',
+              description: `${monthGoal.month} 월간목표: ${goal.tagType} - ${goal.targetHours}`,
+              duration: 0, // 목표는 실제 소요시간 없음
+              completed: false // 목표는 미완료 상태로 저장
+            });
+          });
+        }
+      });
+    }
+    
     if (activities.length > 0) {
+      // 기존 사용자 데이터 삭제 (새로 덮어쓰기)
+      const { error: deleteError } = await supabase
+        .from('DAL')
+        .delete()
+        .eq('user_name', nickname);
+      
+      if (deleteError) {
+        console.warn('기존 데이터 삭제 중 오류 (계속 진행):', deleteError);
+      }
+      
+      // 새 데이터 저장
       const { data, error } = await supabase
         .from('DAL')
-        .upsert(activities, { 
-          onConflict: 'user_name,activity_date,start_time,end_time',
-          ignoreDuplicates: false 
-        })
+        .insert(activities)
         .select();
 
       if (error) {
@@ -198,7 +217,7 @@ export const saveUserDataToDAL = async (nickname, userData) => {
       console.log('✅ 사용자 데이터 DAL 저장 성공:', data?.length || 0, '개 활동');
       return { success: true, data };
     } else {
-      console.log('ℹ️ 저장할 일정이 없습니다');
+      console.log('ℹ️ 저장할 데이터가 없습니다');
       return { success: true, data: [] };
     }
     
@@ -208,7 +227,7 @@ export const saveUserDataToDAL = async (nickname, userData) => {
   }
 };
 
-// ✨ 사용자별 데이터를 DAL에서 불러오기 (캘린더 앱용)
+// ✨ 수정된 loadUserDataFromDAL 함수 (실제 DAL 테이블 구조에 맞춤)
 export const loadUserDataFromDAL = async (nickname) => {
   if (!supabase) {
     console.warn('⚠️ Supabase가 초기화되지 않았습니다');
@@ -222,33 +241,87 @@ export const loadUserDataFromDAL = async (nickname) => {
       .from('DAL')
       .select('*')
       .eq('user_name', nickname)
-      .order('activity_date', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (error) {
       throw error;
     }
     
     // DAL 데이터를 캘린더 형식으로 변환
-    const schedules = data.map(activity => ({
-      id: activity.id,
-      title: activity.description.split(' - ')[0] || activity.description,
-      description: activity.description.split(' - ')[1] || '',
-      tag: activity.activity_type,
-      tagType: activity.tag_type,
-      date: activity.activity_date,
-      start: activity.start_time,
-      end: activity.end_time
-    }));
+    const schedules = [];
+    const monthlyGoals = [];
     
-    console.log('✅ 사용자 데이터 DAL 불러오기 성공:', schedules.length, '개 일정');
+    data.forEach(activity => {
+      if (activity.activity_type === 'MONTHLY_GOAL') {
+        // 월간 목표 파싱
+        try {
+          const description = activity.description;
+          const monthMatch = description.match(/(\d{4}-\d{2})/);
+          const goalMatch = description.match(/월간목표: (.+?) - (.+)/);
+          
+          if (monthMatch && goalMatch) {
+            const month = monthMatch[1];
+            const tagType = goalMatch[1];
+            const targetHours = goalMatch[2];
+            
+            // 해당 월 목표 찾기 또는 생성
+            let monthGoal = monthlyGoals.find(mg => mg.month === month);
+            if (!monthGoal) {
+              monthGoal = { month, goals: [] };
+              monthlyGoals.push(monthGoal);
+            }
+            
+            monthGoal.goals.push({ tagType, targetHours });
+          }
+        } catch (parseError) {
+          console.warn('월간 목표 파싱 실패:', parseError);
+        }
+      } else {
+        // 일반 일정 파싱
+        try {
+          const description = activity.description;
+          const parts = description.split(' | ');
+          
+          if (parts.length >= 2) {
+            const title = parts[0];
+            const dateTimePart = parts[1];
+            const desc = parts[2] || '';
+            
+            // 날짜와 시간 파싱
+            const dateTimeMatch = dateTimePart.match(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})-(\d{2}:\d{2})/);
+            
+            if (dateTimeMatch) {
+              schedules.push({
+                id: activity.id,
+                title: title,
+                description: desc,
+                tag: activity.activity_type,
+                tagType: activity.activity_type,
+                date: dateTimeMatch[1],
+                start: dateTimeMatch[2],
+                end: dateTimeMatch[3]
+              });
+            }
+          }
+        } catch (parseError) {
+          console.warn('일정 파싱 실패:', parseError);
+        }
+      }
+    });
+    
+    console.log('✅ 사용자 데이터 DAL 불러오기 성공:', {
+      schedules: schedules.length,
+      monthlyGoals: monthlyGoals.length
+    });
+    
     return { 
       success: true, 
       data: {
         schedules,
         tags: [], // 태그는 로컬에서 관리
         tagItems: [], // 태그 아이템도 로컬에서 관리
-        monthlyPlans: [],
-        monthlyGoals: []
+        monthlyPlans: [], // 월간 계획도 로컬에서 관리
+        monthlyGoals // ✨ 서버에서 불러온 월간 목표
       }
     };
     
