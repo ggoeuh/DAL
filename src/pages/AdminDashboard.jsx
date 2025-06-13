@@ -1,4 +1,4 @@
-// AdminDashboard.jsx - 서버 자동 동기화 완성 버전
+// AdminDashboard.jsx - 스마트 데이터 병합 수정 버전
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadUserDataWithFallback, loadAllUserData, saveUserCoreData } from './utils/unifiedStorage';
@@ -38,9 +38,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   };
 
-  // ✨ 서버에서 사용자 목록 가져오기 (자동 동기화 포함)
+  // ✨ 수정된 서버에서 사용자 목록 가져오기 (스마트 데이터 병합)
   const getServerUsers = async () => {
-    console.log('🔍 서버 사용자 검색 + 자동 동기화');
+    console.log('🔍 서버 사용자 검색 + 스마트 데이터 병합');
     
     try {
       const users = new Set();
@@ -63,15 +63,21 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       
       console.log('📦 발견된 사용자들:', [...new Set(localUsers)]);
       
-      // 2단계: 각 사용자 처리 (서버 확인 + 자동 동기화)
+      // 2단계: 각 사용자 처리 (스마트 병합)
       for (const user of [...new Set(localUsers)]) {
         try {
-          console.log(`🔍 ${user} 처리 시작`);
+          console.log(`🔍 ${user} 스마트 병합 처리 시작`);
           
           // 서버에서 데이터 확인
           let serverData = null;
           try {
             serverData = await loadUserDataWithFallback(user);
+            console.log(`📥 ${user} 서버 데이터:`, {
+              schedules: serverData?.schedules?.length || 0,
+              tags: serverData?.tags?.length || 0,
+              tagItems: serverData?.tagItems?.length || 0,
+              monthlyGoals: serverData?.monthlyGoals?.length || 0
+            });
           } catch (serverError) {
             console.warn(`⚠️ ${user} 서버 접근 실패:`, serverError);
           }
@@ -109,7 +115,16 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             }
           }
           
-          // 데이터 비교 및 자동 동기화 결정
+          console.log(`📦 ${user} 로컬 데이터:`, {
+            schedules: localData.schedules.length,
+            tags: localData.tags.length,
+            tagItems: localData.tagItems.length,
+            monthlyGoals: localData.monthlyGoals.length
+          });
+          
+          // ✨ 핵심 수정: 스마트 데이터 병합
+          let finalData = null;
+          
           const hasLocalData = localData.schedules.length || localData.tags.length || 
                               localData.tagItems.length || localData.monthlyGoals.length;
           
@@ -120,29 +135,37 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             (serverData.monthlyGoals && serverData.monthlyGoals.length > 0)
           );
           
-          let finalData = null;
-          
           if (hasLocalData && !hasServerData) {
             // 로컬에만 데이터가 있는 경우: 서버로 자동 업로드
             console.log(`📤 ${user} 로컬 데이터를 서버로 자동 업로드`);
-            const syncSuccess = await autoSyncToServer(user, localData);
             finalData = localData;
-            
-            if (syncSuccess) {
-              console.log(`✅ ${user} 자동 동기화 성공`);
-            } else {
-              console.warn(`⚠️ ${user} 자동 동기화 실패, 로컬 데이터 사용`);
-            }
+            await autoSyncToServer(user, localData);
             
           } else if (hasServerData && hasLocalData) {
-            // 서버와 로컬 모두 데이터가 있는 경우: 서버 데이터 우선 사용
-            console.log(`📥 ${user} 서버 데이터 우선 사용`);
-            finalData = serverData;
+            // ✨ 핵심 수정: 서버와 로컬 모두 있는 경우 스마트 병합
+            console.log(`🧠 ${user} 스마트 데이터 병합`);
+            finalData = {
+              // 일정, 태그, 태그아이템: 서버 우선 (더 최신으로 가정)
+              schedules: (serverData.schedules?.length > 0) ? serverData.schedules : localData.schedules,
+              tags: (serverData.tags?.length > 0) ? serverData.tags : localData.tags,
+              tagItems: (serverData.tagItems?.length > 0) ? serverData.tagItems : localData.tagItems,
+              monthlyPlans: (serverData.monthlyPlans?.length > 0) ? serverData.monthlyPlans : localData.monthlyPlans,
+              
+              // ✨ 월간 목표: 로컬 우선! (사용자가 최근에 설정했을 가능성)
+              monthlyGoals: (localData.monthlyGoals.length > 0) ? localData.monthlyGoals : (serverData.monthlyGoals || [])
+            };
             
-            // 로컬 데이터가 더 최신인지 확인 (monthlyGoals 우선)
-            if (localData.monthlyGoals.length > serverData.monthlyGoals.length) {
-              console.log(`🔄 ${user} 로컬 목표가 더 최신, 서버 업데이트`);
-              finalData.monthlyGoals = localData.monthlyGoals;
+            console.log(`🔄 ${user} 병합 결과:`, {
+              schedules: finalData.schedules.length,
+              tags: finalData.tags.length,
+              tagItems: finalData.tagItems.length,
+              monthlyGoals: finalData.monthlyGoals.length,
+              monthlyGoalsSource: (localData.monthlyGoals.length > 0) ? 'localStorage' : 'server'
+            });
+            
+            // 로컬 목표가 있으면 서버로 업데이트
+            if (localData.monthlyGoals.length > 0) {
+              console.log(`📤 ${user} 로컬 목표를 서버로 업데이트`);
               await autoSyncToServer(user, finalData);
             }
             
@@ -166,7 +189,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
               tags: finalData.tags?.length || 0,
               tagItems: finalData.tagItems?.length || 0,
               monthlyGoals: finalData.monthlyGoals?.length || 0,
-              source: hasServerData ? 'server' : 'local'
+              dataSource: hasServerData && hasLocalData ? 'smart-merge' : hasServerData ? 'server' : 'local'
             });
           }
           
@@ -180,7 +203,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       
       const result = Array.from(users);
       console.log('🎯 최종 사용자 목록:', result);
-      console.log('📊 캐시된 데이터:', userDataCache);
+      console.log('📊 스마트 병합 완료:', Object.keys(userDataCache).length, '명 처리');
       return result;
       
     } catch (error) {
@@ -189,7 +212,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   };
 
-  // ✨ 강화된 getUserData 함수 (서버 우선 + 자동 동기화)
+  // ✨ 수정된 getUserData 함수 (스마트 병합 적용)
   const getUserData = useCallback(async (nickname) => {
     if (!nickname) {
       console.warn('⚠️ getUserData: nickname이 없음');
@@ -208,7 +231,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       return memberData[nickname];
     }
   
-    console.log(`📦 ${nickname} 서버 우선 데이터 로드`);
+    console.log(`📦 ${nickname} 스마트 병합 데이터 로드`);
     
     let serverData = null;
     let localData = null;
@@ -241,7 +264,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       console.error(`❌ ${nickname} 로컬 데이터 로드 실패:`, error);
     }
   
-    // 3단계: 데이터 통합 및 자동 동기화
+    // 3단계: 스마트 데이터 병합
     let finalData = {
       schedules: [],
       tags: [],
@@ -250,24 +273,28 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       monthlyGoals: []
     };
     
-    if (serverData) {
-      // 서버 데이터 우선 사용
+    if (serverData && localData) {
+      // 둘 다 있는 경우: 스마트 병합
       finalData = {
-        schedules: serverData.schedules || [],
-        tags: serverData.tags || [],
-        tagItems: serverData.tagItems || [],
-        monthlyPlans: serverData.monthlyPlans || [],
-        monthlyGoals: serverData.monthlyGoals || []
+        schedules: (serverData.schedules?.length > 0) ? serverData.schedules : localData.schedules || [],
+        tags: (serverData.tags?.length > 0) ? serverData.tags : localData.tags || [],
+        tagItems: (serverData.tagItems?.length > 0) ? serverData.tagItems : localData.tagItems || [],
+        monthlyPlans: (serverData.monthlyPlans?.length > 0) ? serverData.monthlyPlans : localData.monthlyPlans || [],
+        // ✨ 핵심: 월간 목표는 로컬 우선!
+        monthlyGoals: (localData.monthlyGoals?.length > 0) ? localData.monthlyGoals : (serverData.monthlyGoals || [])
       };
       
-      // 로컬에 더 최신 목표가 있으면 동기화
-      if (localData?.monthlyGoals?.length > finalData.monthlyGoals.length) {
-        console.log(`🔄 ${nickname} 로컬 목표가 더 최신, 서버 업데이트`);
-        finalData.monthlyGoals = localData.monthlyGoals;
+      // 로컬 목표가 더 최신이면 서버 업데이트
+      if (localData.monthlyGoals?.length > 0 && (!serverData.monthlyGoals || serverData.monthlyGoals.length === 0)) {
+        console.log(`🔄 ${nickname} 로컬 목표를 서버로 업데이트`);
         await autoSyncToServer(nickname, finalData);
       }
+      
+    } else if (serverData) {
+      // 서버 데이터만 있는 경우
+      finalData = serverData;
     } else if (localData) {
-      // 서버에 데이터가 없으면 로컬 데이터 사용 + 서버 업로드
+      // 로컬 데이터만 있는 경우: 서버로 업로드
       finalData = localData;
       console.log(`📤 ${nickname} 로컬 데이터를 서버로 자동 업로드`);
       await autoSyncToServer(nickname, finalData);
@@ -278,7 +305,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       tags: finalData.tags?.length || 0,
       tagItems: finalData.tagItems?.length || 0,
       monthlyPlans: finalData.monthlyPlans?.length || 0,
-      monthlyGoals: finalData.monthlyGoals?.length || 0
+      monthlyGoals: finalData.monthlyGoals?.length || 0,
+      source: 'smart-merge'
     });
   
     // 캐시에 저장
@@ -487,7 +515,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
   // ✨ 새로고침 함수
   const refreshMemberData = async () => {
-    console.log('🔄 새로고침 시작');
+    console.log('🔄 스마트 병합 새로고침 시작');
     
     try {
       setLoading(true);
@@ -503,7 +531,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         setMembers(serverUsers);
         const serverStats = await getServerStats(serverUsers);
         setMemberStats(serverStats);
-        console.log('✅ 새로고침 완료');
+        console.log('✅ 스마트 병합 새로고침 완료');
       }
     } catch (error) {
       console.error('❌ 새로고침 실패:', error);
@@ -514,14 +542,14 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
   // ✨ 초기 데이터 로딩
   useEffect(() => {
-    console.log('🚀 AdminDashboard 시작 - 자동 동기화 포함');
+    console.log('🚀 AdminDashboard 시작 - 스마트 병합 시스템');
     
     const loadServerData = async () => {
       try {
         setLoading(true);
-        console.log('📦 자동 동기화와 함께 데이터 로딩');
+        console.log('📦 스마트 병합과 함께 데이터 로딩');
         
-        // 자동 동기화가 포함된 사용자 목록 가져오기
+        // 스마트 병합이 포함된 사용자 목록 가져오기
         const serverUsers = await getServerUsers();
         console.log('👥 처리된 사용자들:', serverUsers);
         
@@ -533,7 +561,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           console.log('📊 최종 통계:', serverStats);
           setMemberStats(serverStats);
           
-          console.log('✅ 자동 동기화 완료');
+          console.log('✅ 스마트 병합 시스템 완료');
         } else {
           console.warn('⚠️ 사용자를 찾을 수 없음');
         }
@@ -706,8 +734,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">자동 동기화와 함께 멤버 데이터를 불러오는 중...</p>
-          <p className="text-sm text-gray-500 mt-2">서버 우선 + 자동 동기화 시스템</p>
+          <p className="text-gray-600">스마트 병합과 함께 멤버 데이터를 불러오는 중...</p>
+          <p className="text-sm text-gray-500 mt-2">월간 목표 보존 + 자동 동기화 시스템</p>
         </div>
       </div>
     );
@@ -721,7 +749,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           <div className="flex items-center space-x-4">
             <h1 className="text-xl font-bold">👑 관리자 대시보드</h1>
             <span className="text-red-200 text-sm">({currentUser})</span>
-            <span className="bg-red-500 text-xs px-2 py-1 rounded">자동 동기화</span>
+            <span className="bg-green-500 text-xs px-2 py-1 rounded">스마트 병합</span>
           </div>
           <div className="flex items-center space-x-4">
             <span className="text-red-200 text-sm">
@@ -747,7 +775,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             <span>•</span>
             <span>마지막 업데이트: {new Date().toLocaleString('ko-KR')}</span>
             <span>•</span>
-            <span className="text-green-600 font-medium">✅ 서버 자동 동기화 활성</span>
+            <span className="text-green-600 font-medium">✅ 스마트 병합 시스템 활성</span>
           </div>
         </div>
 
@@ -757,15 +785,15 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             <div className="text-gray-400 text-8xl mb-6">👥</div>
             <h3 className="text-2xl font-semibold text-gray-600 mb-3">등록된 멤버가 없습니다</h3>
             <p className="text-gray-500 mb-6">
-              멤버가 로그인하여 데이터를 생성하면 자동으로 서버에 동기화되어 여기에 표시됩니다.
+              멤버가 로그인하여 데이터를 생성하면 자동으로 스마트 병합되어 여기에 표시됩니다.
             </p>
             <div className="bg-gray-50 rounded-lg p-4 text-left">
-              <h4 className="font-semibold mb-2">💡 자동 동기화 시스템</h4>
+              <h4 className="font-semibold mb-2">💡 스마트 병합 시스템</h4>
               <ul className="text-sm text-gray-600 space-y-1">
                 <li>• 멤버가 로그인하면 자동으로 감지됩니다</li>
-                <li>• localStorage 변경 시 즉시 서버로 동기화됩니다</li>
-                <li>• 서버 데이터를 우선으로 최신 상태를 유지합니다</li>
-                <li>• 별도의 동기화 버튼이 필요 없습니다</li>
+                <li>• localStorage와 서버 데이터를 지능적으로 병합합니다</li>
+                <li>• 월간 목표는 로컬 우선으로 보존됩니다</li>
+                <li>• 자동 동기화로 데이터 손실을 방지합니다</li>
               </ul>
             </div>
           </div>
@@ -793,8 +821,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                               신규 사용자
                             </span>
                           )}
-                          <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full border border-blue-200">
-                            자동 동기화
+                          <span className="bg-purple-100 text-purple-800 text-xs font-medium px-2 py-1 rounded-full border border-purple-200">
+                            스마트 병합
                           </span>
                         </div>
                         <p className="text-gray-500 text-sm flex items-center">
@@ -820,7 +848,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                             <li>• 캘린더에서 첫 일정 등록</li>
                             <li>• 태그와 카테고리 설정</li>
                             <li>• 월간 목표 계획 수립</li>
-                            <li>• 자동으로 서버에 동기화됩니다</li>
+                            <li>• 스마트 병합으로 데이터 보존</li>
                           </ul>
                         </div>
                       </div>
@@ -859,7 +887,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                                 `• ${p.tagName}: ${p.actualTime}/${p.targetTime} (${p.percentage}%)`
                               ).join('\n');
                               
-                              alert(`📊 ${member}님 목표 달성 현황 (서버 동기화됨)\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
+                              alert(`📊 ${member}님 목표 달성 현황 (스마트 병합)\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
                             }
                           }}
                           className="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
@@ -889,7 +917,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
             <span className="mr-2">🔧</span>
             관리자 도구
-            <span className="ml-2 bg-green-100 text-green-700 text-xs px-2 py-1 rounded">자동 동기화 활성</span>
+            <span className="ml-2 bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded">스마트 병합 활성</span>
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <button
@@ -898,7 +926,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                 const totalData = Object.values(memberStats).reduce((sum, stats) => 
                   sum + stats.schedules + stats.tags + stats.tagItems + stats.monthlyPlans + stats.monthlyGoals, 0
                 );
-                alert(`📊 시스템 현황\n\n• 등록된 멤버: ${memberCount}명\n• 총 데이터: ${totalData}개\n• 캐시된 데이터: ${Object.keys(memberData).length}명\n• 자동 동기화: 활성\n• 상태: 정상 운영중\n• 마지막 업데이트: ${new Date().toLocaleString('ko-KR')}`);
+                alert(`📊 시스템 현황\n\n• 등록된 멤버: ${memberCount}명\n• 총 데이터: ${totalData}개\n• 캐시된 데이터: ${Object.keys(memberData).length}명\n• 스마트 병합: 활성\n• 상태: 정상 운영중\n• 마지막 업데이트: ${new Date().toLocaleString('ko-KR')}`);
               }}
               className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
@@ -927,57 +955,57 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             </button>
           </div>
           
-          {/* 자동 동기화 상태 표시 */}
-          <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
-            <h4 className="font-medium text-green-800 mb-2">🚀 자동 동기화 시스템 상태</h4>
+          {/* 스마트 병합 상태 표시 */}
+          <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <h4 className="font-medium text-purple-800 mb-2">🧠 스마트 병합 시스템 상태</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
                 <span>서버 연동: 활성</span>
               </div>
               <div className="flex items-center">
+                <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
+                <span>스마트 병합: 활성</span>
+              </div>
+              <div className="flex items-center">
                 <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                <span>자동 동기화: 활성</span>
+                <span>목표 보존: 활성</span>
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2"></span>
-                <span>변경 감지: 활성</span>
-              </div>
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
-                <span>캐시 관리: 정상</span>
+                <span>자동 동기화: 활성</span>
               </div>
             </div>
           </div>
           
           {/* 시스템 개선사항 */}
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-medium text-blue-800 mb-2">💡 자동 동기화 시스템 (v3.0)</h4>
-            <div className="text-sm text-blue-700 space-y-1">
-              <div>• <strong>실시간 동기화:</strong> localStorage 변경 시 즉시 서버 업로드</div>
-              <div>• <strong>서버 우선 정책:</strong> 항상 서버 데이터를 최신 상태로 유지</div>
-              <div>• <strong>스마트 병합:</strong> 로컬과 서버 데이터를 지능적으로 통합</div>
-              <div>• <strong>자동 복구:</strong> 동기화 실패 시 자동 재시도</div>
+          <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+            <h4 className="font-medium text-green-800 mb-2">💡 스마트 병합 시스템 (v4.0)</h4>
+            <div className="text-sm text-green-700 space-y-1">
+              <div>• <strong>스마트 데이터 병합:</strong> 서버와 로컬 데이터를 지능적으로 통합</div>
+              <div>• <strong>월간 목표 보존:</strong> 사용자 목표 데이터 우선 보호</div>
+              <div>• <strong>자동 복구:</strong> 데이터 손실 시 자동으로 최적 데이터 선택</div>
+              <div>• <strong>실시간 동기화:</strong> 변경 감지 시 즉시 서버 업데이트</div>
             </div>
           </div>
         </div>
         
         {/* 시스템 정보 푸터 */}
         <div className="mt-8 text-center text-xs text-gray-500 space-y-1">
-          <div>관리자 대시보드 v3.0 | 완전 자동 동기화 시스템</div>
-          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: 서버 API (자동 동기화)</div>
+          <div>관리자 대시보드 v4.0 | 스마트 병합 + 목표 보존 시스템</div>
+          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: 스마트 병합 (로컬+서버)</div>
           <div className="flex justify-center items-center space-x-4 mt-2">
             <span className="flex items-center">
+              <span className="w-2 h-2 bg-purple-500 rounded-full mr-1"></span>
+              스마트 병합
+            </span>
+            <span className="flex items-center">
               <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
-              자동 동기화
+              목표 보존
             </span>
             <span className="flex items-center">
               <span className="w-2 h-2 bg-blue-500 rounded-full mr-1"></span>
-              서버 우선
-            </span>
-            <span className="flex items-center">
-              <span className="w-2 h-2 bg-purple-500 rounded-full mr-1"></span>
-              실시간 감지
+              자동 동기화
             </span>
           </div>
         </div>
