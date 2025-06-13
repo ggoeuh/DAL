@@ -2,11 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { 
-  backupToServer, 
-  restoreFromServer, 
-  loadAllUserData,
-  saveUserCoreData 
-} from './utils/unifiedStorage';
+  saveUserDataToDAL, 
+  loadUserDataFromDAL 
+} from './utils/supabaseStorage.js';
 
 // 파스텔 색상 팔레트
 const PASTEL_COLORS = [
