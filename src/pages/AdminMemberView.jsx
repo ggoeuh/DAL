@@ -1,7 +1,8 @@
 // AdminMemberView.jsx - 월간 목표 표시 문제 해결 버전
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { loadUserDataWithFallback, loadAllUserData } from './utils/unifiedStorage';
+// AdminDashboard.jsx에서
+import { saveUserDataToDAL, loadUserDataFromDAL } from './utils/supabaseStorage.js';
 import DetailedCalendar from './DetailedCalendar';
 
 const AdminMemberView = ({ currentUser, onLogout }) => {
