@@ -1,13 +1,14 @@
-// Appcopy.jsx - 개선된 서버 연동 버전
+// Appcopy.jsx - DAL 실시간 기능 추가된 버전
 import React, { useState, useEffect } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
 import CalendarPage from './pages/CalendarPage';
-import DayDetailPagecopy from './pages/DayDetailPagecopy'; // pages 폴더 안의 파일
+import DayDetailPagecopy from './pages/DayDetailPagecopy';
 import MonthlyPlanPage from './pages/MonthlyPlanPage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminMemberView from './pages/AdminMemberView';
-// 기존 dataAPI 대신 개선된 unifiedStorage 사용
+
+// 기존 저장 시스템
 import {
   loadAllUserData,
   saveUserCoreData,
@@ -22,8 +23,9 @@ import {
   getUserKeys,
   debugStorage
 } from './pages/utils/unifiedStorage';
-import './pages/utils/supabaseStorage.js';
 
+// ✨ Supabase DAL 기능 추가
+import './pages/utils/supabaseStorage.js';
 
 // 보호된 라우트 컴포넌트
 const ProtectedRoute = ({ children }) => {
@@ -39,7 +41,7 @@ const AdminRoute = ({ children }) => {
 };
 
 function Appcopy() {
-  // 공유할 상태들을 상위 컴포넌트에서 관리
+  // 기존 상태들
   const [schedules, setSchedules] = useState([]);
   const [tags, setTags] = useState([]);
   const [tagItems, setTagItems] = useState([]);
@@ -49,7 +51,93 @@ function Appcopy() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState('');
 
-  // 모든 사용자 목록 가져오기 (관리자용)
+  // ✨ DAL 관련 새로운 상태들
+  const [dalSubscription, setDalSubscription] = useState(null);
+  const [lastActivityTime, setLastActivityTime] = useState(Date.now());
+
+  // DAL 활동 로그 저장 함수
+  const logDalActivity = async (activityType, description, duration = null) => {
+    if (!currentUser) return;
+
+    try {
+      // Supabase가 사용 가능한지 확인
+      if (typeof window !== 'undefined' && window.supabaseUtils) {
+        // Supabase에 직접 저장 (실시간)
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+        if (!document.head.querySelector('script[src*="supabase"]')) {
+          document.head.appendChild(script);
+        }
+
+        setTimeout(async () => {
+          try {
+            const supabase = window.supabase?.createClient(
+              'https://hbrnjzclvtreppxzsspv.supabase.co',
+              'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhicm5qemNsdnRyZXBweHpzc3B2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NjY5OTgsImV4cCI6MjA2NTM0Mjk5OH0.txgsa7O_kzdeI2RjM1CEiIW6Zt419gr0o2BgULdTcQc'
+            );
+
+            if (supabase) {
+              const { error } = await supabase.from('DAL').insert([{
+                user_name: currentUser,
+                activity_type: activityType,
+                description: description,
+                duration: duration,
+                completed: true
+              }]);
+
+              if (!error) {
+                console.log('✅ DAL 활동 로그 저장 성공:', { activityType, description });
+                setLastActivityTime(Date.now());
+              }
+            }
+          } catch (error) {
+            console.warn('⚠️ DAL 로그 저장 실패 (무시):', error);
+          }
+        }, 500);
+      }
+    } catch (error) {
+      console.warn('⚠️ DAL 활동 로그 실패 (계속 진행):', error);
+    }
+  };
+
+  // 실시간 DAL 구독 설정
+  const setupDalSubscription = () => {
+    if (!currentUser || dalSubscription) return;
+
+    try {
+      setTimeout(() => {
+        if (window.supabase && !dalSubscription) {
+          const supabase = window.supabase.createClient(
+            'https://hbrnjzclvtreppxzsspv.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhicm5qemNsdnRyZXBweHpzc3B2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NjY5OTgsImV4cCI6MjA2NTM0Mjk5OH0.txgsa7O_kzdeI2RjM1CEiIW6Zt419gr0o2BgULdTcQc'
+          );
+
+          const subscription = supabase
+            .channel(`dal_${currentUser}`)
+            .on('postgres_changes', 
+              { 
+                event: '*', 
+                schema: 'public', 
+                table: 'DAL',
+                filter: `user_name=eq.${currentUser}`
+              }, 
+              (payload) => {
+                console.log('🔄 DAL 실시간 변화 감지:', payload);
+                setLastActivityTime(Date.now());
+              }
+            )
+            .subscribe();
+
+          setDalSubscription(subscription);
+          console.log('🔄 DAL 실시간 구독 시작:', currentUser);
+        }
+      }, 2000);
+    } catch (error) {
+      console.warn('⚠️ DAL 구독 설정 실패:', error);
+    }
+  };
+
+  // 기존 함수들 (변경 없음)
   const getAllUsers = () => {
     const users = new Set();
     for (let i = 0; i < localStorage.length; i++) {
@@ -64,7 +152,6 @@ function Appcopy() {
     return Array.from(users);
   };
 
-  // 특정 사용자 데이터 가져오기 (관리자용)
   const getUserData = (nickname) => {
     if (!nickname) return {
       schedules: [],
@@ -76,7 +163,6 @@ function Appcopy() {
     return loadAllUserData(nickname);
   };
 
-  // 사용자별 통계 가져오기 (관리자용)
   const getUserStats = () => {
     const users = getAllUsers();
     const stats = {};
@@ -94,7 +180,7 @@ function Appcopy() {
     return stats;
   };
 
-  // 🔧 개발자/디버깅용 수동 백업 함수 (평상시에는 숨김)
+  // ✨ 개선된 수동 동기화 (DAL 로그 포함)
   const handleManualServerSync = async (showConfirm = true) => {
     if (!currentUser) return false;
 
@@ -105,7 +191,6 @@ function Appcopy() {
     try {
       console.log('🔧 수동 서버 동기화 시작:', currentUser);
       
-      // 현재 상태를 서버에 강제 저장
       const success = await saveUserCoreData(currentUser, {
         schedules,
         tags,
@@ -115,6 +200,9 @@ function Appcopy() {
       });
       
       if (success) {
+        // ✨ DAL 활동 로그 추가
+        await logDalActivity('sync', '수동 서버 동기화 완료');
+        
         console.log('✅ 수동 서버 동기화 완료:', currentUser);
         alert('✅ 서버 동기화가 완료되었습니다!');
         return true;
@@ -123,12 +211,12 @@ function Appcopy() {
       }
     } catch (error) {
       console.error('❌ 수동 서버 동기화 실패:', error);
-      console.log('⚠️ 자동 저장은 계속 진행됩니다.');
+      await logDalActivity('error', '서버 동기화 실패');
       return false;
     }
   };
 
-  // 🔄 개선된 사용자 데이터 로드 함수 (서버 우선 + 기본 데이터 생성)
+  // 기존 사용자 데이터 로드 함수 (변경 없음)
   const loadCurrentUserData = async (nickname) => {
     if (!nickname) return;
     
@@ -136,10 +224,8 @@ function Appcopy() {
       setIsLoading(true);
       console.log('📦 사용자 데이터 로딩 시작:', nickname);
       
-      // 서버 우선, 로컬 백업으로 데이터 로드
       let userData = await loadUserDataWithFallback(nickname);
       
-      // 🎯 새 사용자나 빈 데이터인 경우 기본 데이터 생성
       if (!userData || 
           !userData.tags || userData.tags.length === 0 ||
           !userData.tagItems || userData.tagItems.length === 0) {
@@ -169,14 +255,12 @@ function Appcopy() {
           monthlyGoals: userData?.monthlyGoals || []
         };
         
-        // 기본 데이터를 로컬과 서버에 저장
         saveSchedulesToStorage(nickname, userData.schedules);
         saveTagsToStorage(nickname, userData.tags);
         saveTagItemsToStorage(nickname, userData.tagItems);
         saveMonthlyPlansToStorage(nickname, userData.monthlyPlans);
         saveMonthlyGoalsToStorage(nickname, userData.monthlyGoals);
         
-        // 서버에도 백업 (백그라운드)
         try {
           await saveUserCoreData(nickname, userData);
           console.log('✅ 기본 데이터 서버 백업 완료');
@@ -197,14 +281,12 @@ function Appcopy() {
         tagsCount: userData.tags?.length || 0,
         tagItemsCount: userData.tagItems?.length || 0,
         monthlyPlansCount: userData.monthlyPlans?.length || 0,
-        monthlyGoalsCount: userData.monthlyGoals?.length || 0,
-        source: userData.source || 'generated'
+        monthlyGoalsCount: userData.monthlyGoals?.length || 0
       });
       
     } catch (error) {
       console.error('❌ 사용자 데이터 로딩 실패:', error);
       
-      // 완전 실패 시 기본값으로 초기화
       setSchedules([]);
       setTags([]);
       setTagItems([]);
@@ -224,6 +306,14 @@ function Appcopy() {
         setIsLoggedIn(true);
         setCurrentUser(nickname);
         await loadCurrentUserData(nickname);
+        
+        // ✨ DAL 구독 설정
+        setupDalSubscription();
+        
+        // ✨ 로그인 활동 로그
+        setTimeout(() => {
+          logDalActivity('login', '사용자 로그인');
+        }, 1000);
       } else {
         setIsLoading(false);
       }
@@ -231,13 +321,13 @@ function Appcopy() {
     checkLoginStatus();
   }, []);
 
-  // 🔄 개선된 자동 저장 (디바운싱 + 서버 백업)
+  // ✨ 개선된 자동 저장 (DAL 활동 로그 포함)
   useEffect(() => {
     if (!currentUser || isLoading) return;
     
     const saveTimer = setTimeout(async () => {
       try {
-        // 1. 로컬에 즉시 저장
+        // 1. 기존 로컬 저장
         saveSchedulesToStorage(currentUser, schedules);
         saveTagsToStorage(currentUser, tags);
         saveTagItemsToStorage(currentUser, tagItems);
@@ -246,7 +336,7 @@ function Appcopy() {
         
         console.log('💾 로컬 자동 저장 완료:', currentUser);
         
-        // 2. 서버에 백그라운드 저장 (에러가 나도 사용자 경험에 영향 없음)
+        // 2. 서버에 백그라운드 저장
         try {
           await saveUserCoreData(currentUser, {
             schedules,
@@ -256,57 +346,88 @@ function Appcopy() {
             monthlyGoals
           });
           console.log('🌐 서버 자동 저장 완료:', currentUser);
+          
+          // ✨ DAL 활동 로그 (데이터 변경 시에만)
+          const totalItems = schedules.length + tags.length + tagItems.length + 
+                            monthlyPlans.length + monthlyGoals.length;
+          
+          if (totalItems > 0) {
+            await logDalActivity('auto_save', 
+              `데이터 자동 저장: 일정 ${schedules.length}개, 태그 ${tags.length}개`, 
+              1);
+          }
+          
         } catch (serverError) {
           console.warn('⚠️ 서버 자동 저장 실패 (로컬은 저장됨):', serverError);
+          await logDalActivity('error', '서버 자동 저장 실패');
         }
         
       } catch (error) {
         console.error('❌ 자동 저장 실패:', error);
       }
-    }, 1000); // 1초 디바운싱
+    }, 1000);
     
     return () => clearTimeout(saveTimer);
   }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading]);
 
-  // 향상된 상태 업데이트 함수들
-  const updateSchedules = (newSchedules) => {
+  // ✨ 개선된 상태 업데이트 함수들 (DAL 로그 포함)
+  const updateSchedules = async (newSchedules) => {
+    const oldCount = schedules.length;
+    const newCount = newSchedules.length;
+    
     setSchedules(newSchedules);
+    
+    // 변화가 있을 때만 로그
+    if (oldCount !== newCount) {
+      const action = newCount > oldCount ? '추가' : '삭제';
+      await logDalActivity('schedule', `일정 ${action}: ${Math.abs(newCount - oldCount)}개`);
+    }
   };
 
-  const updateTags = (newTags) => {
+  const updateTags = async (newTags) => {
     setTags(newTags);
-    // 즉시 로컬 저장
     if (currentUser) {
       saveTagsToStorage(currentUser, newTags);
+      await logDalActivity('tag', `태그 업데이트: ${newTags.length}개`);
     }
   };
 
-  const updateTagItems = (newTagItems) => {
+  const updateTagItems = async (newTagItems) => {
     setTagItems(newTagItems);
-    // 즉시 로컬 저장
     if (currentUser) {
       saveTagItemsToStorage(currentUser, newTagItems);
+      await logDalActivity('tag_item', `태그 아이템 업데이트: ${newTagItems.length}개`);
     }
   };
 
-  const updateMonthlyPlans = (newPlans) => {
+  const updateMonthlyPlans = async (newPlans) => {
     setMonthlyPlans(newPlans);
-    // 즉시 로컬 저장
     if (currentUser) {
       saveMonthlyPlansToStorage(currentUser, newPlans);
+      await logDalActivity('monthly_plan', `월간 계획 업데이트: ${newPlans.length}개`);
     }
   };
 
-  const updateMonthlyGoals = (newGoals) => {
+  const updateMonthlyGoals = async (newGoals) => {
     setMonthlyGoals(newGoals);
-    // 즉시 로컬 저장
     if (currentUser) {
       saveMonthlyGoalsToStorage(currentUser, newGoals);
+      await logDalActivity('monthly_goal', `월간 목표 업데이트: ${newGoals.length}개`);
     }
   };
 
-  // 로그아웃 함수
-  const handleLogout = () => {
+  // ✨ 개선된 로그아웃 함수 (DAL 로그 포함)
+  const handleLogout = async () => {
+    if (currentUser) {
+      await logDalActivity('logout', '사용자 로그아웃');
+      
+      // DAL 구독 해제
+      if (dalSubscription) {
+        dalSubscription.unsubscribe();
+        setDalSubscription(null);
+      }
+    }
+    
     localStorage.removeItem('nickname');
     setIsLoggedIn(false);
     setCurrentUser('');
@@ -317,10 +438,18 @@ function Appcopy() {
     setMonthlyGoals([]);
   };
 
-  // 관리자 로그아웃 함수
   const handleAdminLogout = () => {
     handleLogout();
   };
+
+  // 컴포넌트 언마운트 시 정리
+  useEffect(() => {
+    return () => {
+      if (dalSubscription) {
+        dalSubscription.unsubscribe();
+      }
+    };
+  }, [dalSubscription]);
 
   // 로딩 중일 때 표시할 컴포넌트
   if (isLoading) {
@@ -330,6 +459,8 @@ function Appcopy() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-600">데이터를 불러오는 중...</p>
           <p className="text-sm text-gray-500 mt-2">서버에서 최신 데이터를 확인하고 있습니다...</p>
+          {/* ✨ DAL 상태 표시 */}
+          <p className="text-xs text-blue-500 mt-1">실시간 활동 로그 준비 중...</p>
         </div>
       </div>
     );
@@ -338,10 +469,9 @@ function Appcopy() {
   return (
     <Router>
       <Routes>
-        {/* 로그인 페이지 */}
+        {/* 기존 라우트들 */}
         <Route path="/login" element={<LogInPage />} />
         
-        {/* 루트 경로 - 로그인 상태와 권한에 따라 리다이렉트 */}
         <Route
           path="/"
           element={
@@ -355,7 +485,6 @@ function Appcopy() {
           }
         />
 
-        {/* 🎯 관리자 멤버 상세 캘린더 */}
         <Route
           path="/admin/member/:memberName"
           element={
@@ -369,7 +498,6 @@ function Appcopy() {
           }
         />
 
-        {/* 관리자 대시보드 */}
         <Route
           path="/admin"
           element={
@@ -385,7 +513,6 @@ function Appcopy() {
           }
         />
 
-        {/* 일반 사용자 보호된 라우트들 */}
         <Route
           path="/calendar"
           element={
@@ -404,7 +531,6 @@ function Appcopy() {
           }
         />
 
-        {/* 주간 캘린더 라우트 */}
         <Route
           path="/day/:date"
           element={
