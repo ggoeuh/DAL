@@ -166,40 +166,84 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
     return result;
   };
 
-  // ✨ 강화된 데이터 새로고침 함수
+  // ✨ 개선된 데이터 새로고침 함수 - localStorage 기반, 서버 호출 없음
   const refreshMemberData = () => {
-    console.log('🔄 멤버 데이터 새로고침 시작');
-    setLoading(true);
+    console.log('🔄 멤버 데이터 새로고침 시작 (localStorage만 사용)');
     
     try {
-      // 모든 사용자 목록 다시 로드
+      // 1단계: getAllUsers 함수로 멤버 찾기
       const foundMembers = getAllUsers();
-      console.log('👥 새로고침된 멤버 목록:', foundMembers);
+      console.log('👥 getAllUsers 결과:', foundMembers);
       
-      // 각 멤버의 데이터 존재 여부 재확인
-      const validMembers = foundMembers.filter(member => {
-        const userData = getUserData(member);
-        const hasData = userData && (
-          (userData.schedules && userData.schedules.length > 0) ||
-          (userData.tags && userData.tags.length > 0) ||
-          (userData.tagItems && userData.tagItems.length > 0)
-        );
-        console.log(`👤 ${member} 데이터 확인:`, hasData ? '✅ 있음' : '❌ 없음');
-        return hasData;
-      });
+      // 2단계: getAllUsers가 실패한 경우 직접 localStorage 스캔
+      if (foundMembers.length === 0) {
+        console.log('🔧 직접 localStorage 스캔으로 복구');
+        
+        const directUsers = new Set();
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.includes('-')) {
+            const [nickname, dataType] = key.split('-');
+            if (nickname && 
+                nickname !== 'nickname' && 
+                nickname !== 'userType' &&
+                !['교수님', 'admin', '관리자'].includes(nickname) &&
+                ['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'].includes(dataType)) {
+              directUsers.add(nickname);
+            }
+          }
+        }
+        
+        const directUserArray = Array.from(directUsers);
+        console.log('🔧 직접 스캔 결과:', directUserArray);
+        
+        if (directUserArray.length > 0) {
+          setMembers(directUserArray);
+          
+          // 통계도 자동 생성 (localStorage 기반)
+          const autoStats = {};
+          directUserArray.forEach(user => {
+            const userData = getUserData(user);
+            if (userData) {
+              autoStats[user] = {
+                schedules: userData.schedules?.length || 0,
+                tags: userData.tags?.length || 0,
+                tagItems: userData.tagItems?.length || 0,
+                monthlyPlans: userData.monthlyPlans?.length || 0,
+                monthlyGoals: userData.monthlyGoals?.length || 0,
+                lastActivity: '오늘'
+              };
+            }
+          });
+          setMemberStats(autoStats);
+          console.log('✅ 자동 복구 완료 (서버 호출 없음)');
+          return;
+        }
+      } else {
+        // getAllUsers가 성공한 경우
+        setMembers(foundMembers);
+        
+        // 통계 계산 (localStorage 기반)
+        const stats = {};
+        foundMembers.forEach(user => {
+          const userData = getUserData(user);
+          if (userData) {
+            stats[user] = {
+              schedules: userData.schedules?.length || 0,
+              tags: userData.tags?.length || 0,
+              tagItems: userData.tagItems?.length || 0,
+              monthlyPlans: userData.monthlyPlans?.length || 0,
+              monthlyGoals: userData.monthlyGoals?.length || 0,
+              lastActivity: '오늘'
+            };
+          }
+        });
+        setMemberStats(stats);
+        console.log('✅ 새로고침 완료 (서버 호출 없음)');
+      }
       
-      setMembers(validMembers);
-
-      // 각 멤버의 통계 데이터 재계산
-      const stats = getUserStats();
-      console.log('📊 새로고침된 통계:', stats);
-      setMemberStats(stats);
-      
-      console.log('✅ 멤버 데이터 새로고침 완료');
     } catch (error) {
       console.error('❌ 멤버 데이터 새로고침 실패:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -208,60 +252,64 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
     
     const loadMemberData = () => {
       try {
-        console.log('📦 getAllUsers 함수 호출');
+        console.log('📦 초기 멤버 데이터 로딩');
         
-        // ✨ localStorage 전체 상태 먼저 확인
-        console.log('🔍 localStorage 전체 상태:');
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          const value = localStorage.getItem(key);
-          if (key && key.includes('-')) {
-            console.log(`  ${key}: ${value?.length || 0} chars`);
-          }
-        }
-        
+        // 1단계: getAllUsers로 시도
         const foundMembers = getAllUsers();
         console.log('👥 getAllUsers 결과:', foundMembers);
         
+        // 2단계: 실패한 경우 자동 복구
         if (foundMembers.length === 0) {
-          console.warn('⚠️ 멤버가 감지되지 않았습니다. localStorage 상태를 확인하세요.');
+          console.log('🔧 초기 로딩에서 자동 복구 시작');
           
-          // 강제로 모든 사용자 키 스캔
-          const allKeys = [];
+          // 직접 localStorage 스캔
+          const directUsers = new Set();
           for (let i = 0; i < localStorage.length; i++) {
-            allKeys.push(localStorage.key(i));
-          }
-          console.log('🔍 모든 localStorage 키:', allKeys);
-          
-          // 사용자명으로 보이는 키들 찾기
-          const potentialUsers = new Set();
-          allKeys.forEach(key => {
+            const key = localStorage.key(i);
             if (key && key.includes('-')) {
-              const [nickname] = key.split('-');
-              if (nickname && nickname !== 'nickname' && nickname !== 'userType') {
-                potentialUsers.add(nickname);
+              const [nickname, dataType] = key.split('-');
+              if (nickname && 
+                  nickname !== 'nickname' && 
+                  nickname !== 'userType' &&
+                  !['교수님', 'admin', '관리자'].includes(nickname) &&
+                  ['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'].includes(dataType)) {
+                directUsers.add(nickname);
               }
             }
-          });
-          console.log('🔍 잠재적 사용자들:', Array.from(potentialUsers));
+          }
+          
+          const autoFoundMembers = Array.from(directUsers);
+          console.log('🔧 자동 복구로 발견된 멤버들:', autoFoundMembers);
+          
+          if (autoFoundMembers.length > 0) {
+            setMembers(autoFoundMembers);
+            
+            // 자동으로 통계도 생성
+            const autoStats = {};
+            autoFoundMembers.forEach(member => {
+              const userData = getUserData(member);
+              if (userData) {
+                autoStats[member] = {
+                  schedules: userData.schedules?.length || 0,
+                  tags: userData.tags?.length || 0,
+                  tagItems: userData.tagItems?.length || 0,
+                  monthlyPlans: userData.monthlyPlans?.length || 0,
+                  monthlyGoals: userData.monthlyGoals?.length || 0,
+                  lastActivity: '오늘'
+                };
+              }
+            });
+            setMemberStats(autoStats);
+            console.log('✅ 초기 자동 복구 완료:', autoStats);
+            setLoading(false);
+            return;
+          }
+        } else {
+          // getAllUsers가 정상 작동한 경우
+          setMembers(foundMembers);
         }
         
-        // 멤버별 데이터 상세 로그
-        foundMembers.forEach(member => {
-          const userData = getUserData(member);
-          console.log(`👤 ${member} 상세 데이터:`, {
-            schedules: userData?.schedules?.length || 0,
-            tags: userData?.tags?.length || 0,
-            tagItems: userData?.tagItems?.length || 0,
-            monthlyPlans: userData?.monthlyPlans?.length || 0,
-            monthlyGoals: userData?.monthlyGoals?.length || 0
-          });
-        });
-        
-        setMembers(foundMembers);
-
         // 각 멤버의 통계 데이터 계산
-        console.log('📊 getUserStats 함수 호출');
         const stats = getUserStats();
         console.log('📊 계산된 통계:', stats);
         setMemberStats(stats);
@@ -274,18 +322,27 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
       }
     };
 
-    // 초기 로딩
+    // ✅ 초기 로딩만 실행 (주기적 호출 제거)
     loadMemberData();
     
-    // ✨ 주기적 새로고침 (5초마다)
-    const refreshInterval = setInterval(() => {
-      console.log('🔄 주기적 데이터 새로고침');
-      refreshMemberData();
-    }, 5000);
+    // ✅ localStorage 변경 감지 이벤트 리스너 추가
+    const handleStorageChange = (e) => {
+      if (e.key && e.key.includes('-')) {
+        console.log('📦 localStorage 변경 감지:', e.key);
+        // 멤버 데이터 관련 변경만 감지
+        if (['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'].some(type => e.key.includes(type))) {
+          console.log('🔄 멤버 데이터 변경으로 인한 새로고침');
+          setTimeout(() => refreshMemberData(), 500); // 0.5초 후 새로고침
+        }
+      }
+    };
     
-    // 클린업
+    // ✅ 이벤트 리스너 등록
+    window.addEventListener('storage', handleStorageChange);
+    
+    // ✅ 클린업 (주기적 호출 제거)
     return () => {
-      clearInterval(refreshInterval);
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, [getAllUsers, getUserStats, getUserData]);
 
@@ -625,7 +682,7 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
             <span className="mr-2">🔧</span>
             관리자 도구
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <button
               onClick={() => {
                 const memberCount = members.length;
@@ -637,72 +694,6 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
               className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
               📊 시스템 현황
-            </button>
-            
-            {/* ✨ 긴급 디버그 버튼 추가 */}
-            <button
-              onClick={() => {
-                console.log('🚨 긴급 디버그 실행');
-                
-                // localStorage 전체 스캔
-                const allKeys = [];
-                for (let i = 0; i < localStorage.length; i++) {
-                  allKeys.push(localStorage.key(i));
-                }
-                
-                console.log('🔍 모든 localStorage 키:', allKeys);
-                
-                // 사용자 데이터로 보이는 키들
-                const userKeys = allKeys.filter(key => key && key.includes('-'));
-                console.log('👤 사용자 데이터 키들:', userKeys);
-                
-                // ✨ 직접 사용자 감지 (관리자 함수 우회)
-                const directUsers = new Set();
-                userKeys.forEach(key => {
-                  const [nickname, dataType] = key.split('-');
-                  if (nickname && 
-                      nickname !== 'nickname' && 
-                      nickname !== 'userType' &&
-                      !['교수님', 'admin', '관리자'].includes(nickname)) {
-                    directUsers.add(nickname);
-                  }
-                });
-                
-                console.log('🔧 직접 감지된 사용자들:', Array.from(directUsers));
-                
-                // getAllUsers 함수 직접 실행
-                const detectedUsers = getAllUsers();
-                console.log('👥 getAllUsers 결과:', detectedUsers);
-                
-                // ✨ 강제로 멤버 목록 업데이트
-                if (Array.from(directUsers).length > 0) {
-                  console.log('🔧 강제 멤버 목록 업데이트');
-                  setMembers(Array.from(directUsers));
-                  
-                  // 통계도 강제 업데이트
-                  const forceStats = {};
-                  Array.from(directUsers).forEach(user => {
-                    const userData = getUserData(user);
-                    if (userData) {
-                      forceStats[user] = {
-                        schedules: userData.schedules?.length || 0,
-                        tags: userData.tags?.length || 0,
-                        tagItems: userData.tagItems?.length || 0,
-                        monthlyPlans: userData.monthlyPlans?.length || 0,
-                        monthlyGoals: userData.monthlyGoals?.length || 0,
-                        lastActivity: '오늘'
-                      };
-                    }
-                  });
-                  setMemberStats(forceStats);
-                  console.log('🔧 강제 통계 업데이트:', forceStats);
-                }
-                
-                alert(`🚨 긴급 디버그 결과\n\n• 전체 키: ${allKeys.length}개\n• 사용자 키: ${userKeys.length}개\n• 직접 감지: ${Array.from(directUsers).length}명\n• getAllUsers: ${detectedUsers.length}명\n\n${Array.from(directUsers).length > 0 ? '✅ 강제 복구 완료!' : '❌ 사용자 없음'}\n\n콘솔을 확인하세요!`);
-              }}
-              className="bg-red-100 hover:bg-red-200 text-red-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
-            >
-              🚨 긴급 복구
             </button>
             
             <button
@@ -736,17 +727,17 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
             </button>
           </div>
           
-          {/* ✨ 실시간 상태 표시 추가 */}
+          {/* ✨ 실시간 상태 표시 수정 */}
           <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-            <h4 className="font-medium text-gray-700 mb-2">📡 실시간 상태</h4>
+            <h4 className="font-medium text-gray-700 mb-2">📡 시스템 상태</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-                <span>자동 새로고침: 활성</span>
+                <span>이벤트 기반 업데이트</span>
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
-                <span>데이터 연결: 정상</span>
+                <span>localStorage 연결: 정상</span>
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-yellow-400 rounded-full mr-2"></span>
@@ -754,19 +745,19 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-purple-400 rounded-full mr-2"></span>
-                <span>마지막 체크: 방금 전</span>
+                <span>서버 호출: 0회/분</span>
               </div>
             </div>
           </div>
           
-          {/* ✨ 추가 도움말 섹션 */}
+          {/* ✨ 업데이트된 도움말 섹션 */}
           <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-medium text-blue-800 mb-2">💡 사용 가이드</h4>
+            <h4 className="font-medium text-blue-800 mb-2">💡 시스템 특징</h4>
             <div className="text-sm text-blue-700 space-y-1">
-              <div>• <strong>캘린더 보기:</strong> 멤버의 상세한 일정과 활동을 확인할 수 있습니다</div>
-              <div>• <strong>달성률 보기:</strong> 월간 목표 대비 실제 활동 시간을 확인할 수 있습니다</div>
-              <div>• <strong>자동 새로고침:</strong> 5초마다 최신 데이터로 자동 업데이트됩니다</div>
-              <div>• <strong>데이터 보호:</strong> 관리자는 읽기 전용으로 멤버 데이터를 조회합니다</div>
+              <div>• <strong>이벤트 기반:</strong> localStorage 변경 시에만 자동 업데이트</div>
+              <div>• <strong>실시간 감지:</strong> 멤버 활동을 즉시 반영 (폴링 없음)</div>
+              <div>• <strong>자동 복구:</strong> 데이터 로딩 실패 시 자동으로 복구</div>
+              <div>• <strong>성능 최적화:</strong> 불필요한 서버 호출 제거</div>
             </div>
           </div>
         </div>
