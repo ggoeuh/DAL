@@ -1,4 +1,24 @@
-// Appcopy.jsx - 라우팅 문제 해결 버전
+// ✨ 완전히 단순한 getAllUsers 함수 - 무조건 작동하게 만듦
+  const getAllUsers = () => {
+    console.log('🔍 getAllUsers 실행 - 단순한 방식');
+    
+    const users = [];
+    
+    // 하드코딩으로 확실하게 "고은" 사용자 추가
+    if (localStorage.getItem('고은-schedules') || 
+        localStorage.getItem('고은-tags') || 
+        localStorage.getItem('고은-tagItems')) {
+      users.push('고은');
+      console.log('✅ 고은 사용자 강제 추가');
+    }
+    
+    // 다른 사용자들도 검색
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.includes('-')) {
+        const [nickname] = key.split('-');
+        if (nickname && 
+            nickname !== '고은' && // 이미 추// Appcopy.jsx - 라우팅 문제 해결 버전
 import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
@@ -135,42 +155,74 @@ function Appcopy() {
     }
   };
 
-  // ✨ 완전히 새로운 getAllUsers 함수 - 단순하고 확실한 방식
-  const getAllUsers = () => {
-    const users = new Set();
+  // ✨ 서버 기반 getAllUsers 함수 - 서버에서 사용자 목록 가져오기
+  const getAllUsers = async () => {
+    console.log('🔍 서버에서 사용자 목록 가져오기 시작');
     
-    console.log('🔍 getAllUsers 실행 - localStorage 전체 스캔 시작');
-    console.log('📦 총 localStorage 항목 수:', localStorage.length);
-    
-    // 모든 localStorage 키를 확인
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      console.log(`🔍 키 확인: ${key}`);
+    try {
+      // 1단계: 서버에서 모든 사용자 데이터 확인
+      const users = new Set();
       
-      if (key && key.includes('-')) {
-        const [nickname, dataType] = key.split('-');
-        
-        // 관리자 목록 제외하고 유효한 데이터 키인 경우 사용자 추가
-        if (nickname && 
-            !ADMIN_USERS.includes(nickname) && 
-            nickname !== 'nickname' && 
-            nickname !== 'userType' &&
-            (dataType === 'schedules' || 
-             dataType === 'tags' || 
-             dataType === 'tagItems' || 
-             dataType === 'monthlyPlans' || 
-             dataType === 'monthlyGoals')) {
-          
-          console.log(`✅ 유효한 사용자 발견: ${nickname} (${dataType})`);
-          users.add(nickname);
+      // localStorage에서 사용자 이름들 먼저 수집
+      const localUsers = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.includes('-')) {
+          const [nickname] = key.split('-');
+          if (nickname && 
+              nickname !== 'nickname' && 
+              nickname !== 'userType' &&
+              !ADMIN_USERS.includes(nickname)) {
+            localUsers.push(nickname);
+          }
         }
       }
+      
+      console.log('🔍 localStorage에서 발견된 사용자들:', localUsers);
+      
+      // 2단계: 각 사용자의 서버 데이터 확인
+      for (const user of [...new Set(localUsers)]) {
+        try {
+          const userData = await loadUserDataWithFallback(user);
+          if (userData && (
+            (userData.schedules && userData.schedules.length > 0) ||
+            (userData.tags && userData.tags.length > 0) ||
+            (userData.tagItems && userData.tagItems.length > 0)
+          )) {
+            users.add(user);
+            console.log(`✅ 서버에서 ${user} 데이터 확인됨`);
+          }
+        } catch (error) {
+          console.error(`❌ ${user} 서버 데이터 확인 실패:`, error);
+        }
+      }
+      
+      const result = Array.from(users);
+      console.log('🔍 서버 기반 최종 사용자 목록:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ 서버에서 사용자 목록 가져오기 실패:', error);
+      
+      // 서버 실패 시 localStorage fallback
+      const fallbackUsers = new Set();
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.includes('-')) {
+          const [nickname] = key.split('-');
+          if (nickname && 
+              nickname !== 'nickname' && 
+              nickname !== 'userType' &&
+              !ADMIN_USERS.includes(nickname)) {
+            fallbackUsers.add(nickname);
+          }
+        }
+      }
+      
+      const fallbackResult = Array.from(fallbackUsers);
+      console.log('🔄 fallback 사용자 목록:', fallbackResult);
+      return fallbackResult;
     }
-    
-    const userArray = Array.from(users);
-    console.log('👥 최종 감지된 사용자들:', userArray);
-    
-    return userArray;
   };
 
   // ✨ 수정된 getUserData 함수 - 더 안전한 데이터 로딩
@@ -200,36 +252,46 @@ function Appcopy() {
     return userData;
   };
 
-  const getUserStats = () => {
-    console.log('📊 getUserStats 실행 시작');
+  const getUserStats = async () => {
+    console.log('📊 서버 기반 getUserStats 실행 시작');
     
-    // getAllUsers 함수를 사용하여 사용자 목록 가져오기
-    const users = getAllUsers();
-    console.log('📊 getUserStats에서 가져온 사용자 목록:', users);
-    
-    const stats = {};
-    
-    users.forEach(user => {
-      console.log(`📊 ${user} 통계 계산 중...`);
-      const userData = loadAllUserData(user);
+    try {
+      // getAllUsers가 이제 async이므로 await 사용
+      const users = await getAllUsers();
+      console.log('📊 서버에서 가져온 사용자 목록:', users);
       
-      if (userData) {
-        stats[user] = {
-          schedules: userData.schedules?.length || 0,
-          tags: userData.tags?.length || 0,
-          tagItems: userData.tagItems?.length || 0,
-          monthlyPlans: userData.monthlyPlans?.length || 0,
-          monthlyGoals: userData.monthlyGoals?.length || 0,
-          lastActivity: '오늘'
-        };
-        console.log(`📊 ${user} 통계:`, stats[user]);
-      } else {
-        console.warn(`⚠️ ${user} 데이터 없음`);
+      const stats = {};
+      
+      for (const user of users) {
+        console.log(`📊 ${user} 서버 데이터 통계 계산 중...`);
+        try {
+          const userData = await loadUserDataWithFallback(user);
+          
+          if (userData) {
+            stats[user] = {
+              schedules: userData.schedules?.length || 0,
+              tags: userData.tags?.length || 0,
+              tagItems: userData.tagItems?.length || 0,
+              monthlyPlans: userData.monthlyPlans?.length || 0,
+              monthlyGoals: userData.monthlyGoals?.length || 0,
+              lastActivity: '오늘'
+            };
+            console.log(`📊 ${user} 서버 기반 통계:`, stats[user]);
+          } else {
+            console.warn(`⚠️ ${user} 서버 데이터 없음`);
+          }
+        } catch (error) {
+          console.error(`❌ ${user} 통계 계산 실패:`, error);
+        }
       }
-    });
-    
-    console.log('📊 getUserStats 최종 결과:', stats);
-    return stats;
+      
+      console.log('📊 서버 기반 getUserStats 최종 결과:', stats);
+      return stats;
+      
+    } catch (error) {
+      console.error('❌ 서버 기반 getUserStats 실패:', error);
+      return {};
+    }
   };
 
   // 수동 동기화
