@@ -36,7 +36,7 @@ const ProtectedRoute = ({ children }) => {
 // 관리자 전용 라우트 컴포넌트
 const AdminRoute = ({ children }) => {
   const nickname = localStorage.getItem('nickname');
-  const isAdmin = nickname === 'admin' || nickname === '관리자';
+  const isAdmin = nickname === 'admin' || nickname === '교수님';
   return isAdmin ? children : <Navigate to="/calendar" replace />;
 };
 
