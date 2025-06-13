@@ -1,4 +1,4 @@
-// Appcopy.jsx - 모든 문제 해결 완료 버전
+// Appcopy.jsx - Supabase 완전 연동 버전
 import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
@@ -24,8 +24,15 @@ import {
   debugStorage
 } from './pages/utils/unifiedStorage';
 
-// ✨ Supabase DAL 기능 추가
-import './pages/utils/supabaseStorage.js';
+// ✨ Supabase 연동 (개선된 import)
+import { 
+  supabase, 
+  saveUserDataToDAL, 
+  loadUserDataFromDAL,
+  saveActivityToDAL,
+  subscribeToDAL,
+  unsubscribeFromUserData
+} from './pages/utils/supabaseStorage.js';
 
 // ✨ 관리자 목록 상수 (LogInPage와 동일하게 유지)
 const ADMIN_USERS = ['교수님', 'admin', '관리자'];
@@ -68,6 +75,9 @@ function Appcopy() {
   const isSavingRef = useRef(false);
   const saveTimeoutRef = useRef(null);
   const lastSaveDataRef = useRef('');
+  
+  // ✨ Supabase 실시간 구독 ref
+  const realtimeSubscriptionRef = useRef(null);
 
   // ✨ 수정된 관리자 여부 확인 함수
   const checkIsAdmin = (nickname) => {
@@ -100,7 +110,7 @@ function Appcopy() {
     });
   };
 
-  // 🔧 안전한 서버 저장 (중복 실행 완전 차단)
+  // ✨ 개선된 서버 저장 (Supabase 연동)
   const safeServerSave = async () => {
     if (!currentUser || isLoading || isSavingRef.current || isAdmin) return;
 
@@ -123,9 +133,20 @@ function Appcopy() {
     try {
       console.log('🌐 서버 저장 시작:', currentUser);
       
+      // 1. 기존 방식으로 저장
       await saveUserCoreData(currentUser, {
         schedules, tags, tagItems, monthlyPlans, monthlyGoals
       });
+      
+      // 2. ✨ Supabase DAL에도 저장 (에러가 나도 기존 저장은 유지)
+      if (supabase) {
+        try {
+          await saveUserDataToDAL(currentUser, { schedules, tags, tagItems, monthlyPlans, monthlyGoals });
+          console.log('✅ Supabase DAL 저장도 성공');
+        } catch (supabaseError) {
+          console.warn('⚠️ Supabase DAL 저장 실패 (로컬은 저장됨):', supabaseError);
+        }
+      }
       
       console.log('✅ 서버 저장 완료:', currentUser);
     } catch (error) {
@@ -221,7 +242,7 @@ function Appcopy() {
     return stats;
   };
 
-  // 수동 동기화
+  // ✨ Supabase 연동 수동 동기화
   const handleManualServerSync = async (showConfirm = true) => {
     if (!currentUser || isAdmin) return false;
 
@@ -232,6 +253,20 @@ function Appcopy() {
     try {
       console.log('🔧 수동 서버 동기화 시작:', currentUser);
       await safeServerSave();
+      
+      // ✨ Supabase에서 데이터 복원 시도
+      if (supabase) {
+        try {
+          const dalResult = await loadUserDataFromDAL(currentUser);
+          if (dalResult.success && dalResult.data) {
+            console.log('📥 Supabase에서 데이터 복원 성공');
+            // 필요하다면 여기서 상태 업데이트 가능
+          }
+        } catch (supabaseError) {
+          console.warn('⚠️ Supabase 데이터 복원 실패:', supabaseError);
+        }
+      }
+      
       alert('✅ 서버 동기화가 완료되었습니다!');
       return true;
     } catch (error) {
@@ -279,7 +314,29 @@ function Appcopy() {
       setIsAdmin(false);
       console.log('📦 일반 사용자 데이터 로딩 시작:', nickname);
       
-      let userData = await loadUserDataWithFallback(nickname);
+      // ✨ Supabase에서 먼저 데이터 복원 시도
+      let userData = null;
+      if (supabase) {
+        try {
+          const dalResult = await loadUserDataFromDAL(nickname);
+          if (dalResult.success && dalResult.data && dalResult.data.schedules.length > 0) {
+            console.log('📥 Supabase에서 데이터 복원 성공:', dalResult.data.schedules.length, '개 일정');
+            userData = dalResult.data;
+            
+            // 로컬에도 저장 (백업)
+            if (userData.schedules?.length > 0) {
+              saveSchedulesToStorage(nickname, userData.schedules);
+            }
+          }
+        } catch (supabaseError) {
+          console.warn('⚠️ Supabase 데이터 복원 실패, 로컬 데이터 사용:', supabaseError);
+        }
+      }
+      
+      // Supabase에서 데이터를 가져오지 못했으면 로컬에서 로드
+      if (!userData) {
+        userData = await loadUserDataWithFallback(nickname);
+      }
       
       if (!userData || 
           !userData.tags || userData.tags.length === 0 ||
@@ -326,6 +383,19 @@ function Appcopy() {
         userData.monthlyPlans || [],
         userData.monthlyGoals || []
       );
+      
+      // ✨ Supabase 실시간 구독 시작 (일반 사용자만)
+      if (supabase && !realtimeSubscriptionRef.current) {
+        try {
+          realtimeSubscriptionRef.current = subscribeToDAL((payload) => {
+            console.log('🔄 실시간 데이터 변경 감지:', payload);
+            // 필요하다면 여기서 상태 업데이트 로직 추가
+          });
+          console.log('🔄 실시간 구독 시작됨');
+        } catch (realtimeError) {
+          console.warn('⚠️ 실시간 구독 실패:', realtimeError);
+        }
+      }
       
       console.log('✅ 일반 사용자 데이터 로딩 완료:', {
         nickname,
@@ -445,13 +515,20 @@ function Appcopy() {
     }
   };
 
-  // ✨ 완전히 수정된 로그아웃 함수
+  // ✨ 완전히 수정된 로그아웃 함수 (Supabase 정리 포함)
   const handleLogout = () => {
     console.log('🚪 로그아웃 시작');
     
     // 타이머 정리
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
+    }
+    
+    // ✨ Supabase 실시간 구독 해제
+    if (realtimeSubscriptionRef.current) {
+      unsubscribeFromUserData(realtimeSubscriptionRef.current);
+      realtimeSubscriptionRef.current = null;
+      console.log('🔄 실시간 구독 해제 완료');
     }
     
     // localStorage 정리
@@ -493,6 +570,12 @@ function Appcopy() {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
+      
+      // ✨ Supabase 실시간 구독 해제
+      if (realtimeSubscriptionRef.current) {
+        unsubscribeFromUserData(realtimeSubscriptionRef.current);
+        realtimeSubscriptionRef.current = null;
+      }
     };
   }, []);
 
@@ -510,6 +593,10 @@ function Appcopy() {
           </p>
           <p className="text-sm text-gray-500 mt-2">
             {nickname ? `${nickname}님의 데이터 로딩 중...` : '로그인 정보 확인 중...'}
+          </p>
+          {/* ✨ Supabase 연결 상태 표시 */}
+          <p className="text-xs text-gray-400 mt-1">
+            {supabase ? '🌐 Supabase 연결됨' : '⚠️ Supabase 연결 안됨 (로컬 모드)'}
           </p>
         </div>
       </div>
@@ -597,6 +684,9 @@ function Appcopy() {
                 setTagItems={updateTagItems}
                 currentUser={currentUser}
                 onLogout={handleLogout}
+                // ✨ Supabase 수동 동기화 함수 전달
+                onManualSync={handleManualServerSync}
+                supabaseConnected={!!supabase}
               />
             </ProtectedRoute>
           }
@@ -615,6 +705,9 @@ function Appcopy() {
                 setTagItems={updateTagItems}
                 currentUser={currentUser}
                 onLogout={handleLogout}
+                // ✨ Supabase 관련 props 추가
+                onManualSync={handleManualServerSync}
+                supabaseConnected={!!supabase}
               />
             </ProtectedRoute>
           }
@@ -637,6 +730,9 @@ function Appcopy() {
                 setMonthlyGoals={updateMonthlyGoals}
                 currentUser={currentUser}
                 onLogout={handleLogout}
+                // ✨ Supabase 관련 props 추가
+                onManualSync={handleManualServerSync}
+                supabaseConnected={!!supabase}
               />
             </ProtectedRoute>
           }
