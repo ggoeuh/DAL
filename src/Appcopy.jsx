@@ -1,24 +1,4 @@
-// ✨ 완전히 단순한 getAllUsers 함수 - 무조건 작동하게 만듦
-  const getAllUsers = () => {
-    console.log('🔍 getAllUsers 실행 - 단순한 방식');
-    
-    const users = [];
-    
-    // 하드코딩으로 확실하게 "고은" 사용자 추가
-    if (localStorage.getItem('고은-schedules') || 
-        localStorage.getItem('고은-tags') || 
-        localStorage.getItem('고은-tagItems')) {
-      users.push('고은');
-      console.log('✅ 고은 사용자 강제 추가');
-    }
-    
-    // 다른 사용자들도 검색
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.includes('-')) {
-        const [nickname] = key.split('-');
-        if (nickname && 
-            nickname !== '고은' && // 이미 추// Appcopy.jsx - 라우팅 문제 해결 버전
+// Appcopy.jsx - 라우팅 문제 해결 버전 (빌드 에러 수정)
 import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
@@ -225,8 +205,8 @@ function Appcopy() {
     }
   };
 
-  // ✨ 수정된 getUserData 함수 - 더 안전한 데이터 로딩
-  const getUserData = (nickname) => {
+  // ✨ 수정된 getUserData 함수 - 서버 데이터 우선
+  const getUserData = async (nickname) => {
     if (!nickname) {
       console.warn('⚠️ getUserData: nickname이 없음');
       return {
@@ -238,18 +218,25 @@ function Appcopy() {
       };
     }
 
-    console.log('📦 getUserData 호출:', nickname);
-    const userData = loadAllUserData(nickname);
-    console.log('📦 로드된 데이터:', {
-      nickname,
-      schedules: userData.schedules?.length || 0,
-      tags: userData.tags?.length || 0,
-      tagItems: userData.tagItems?.length || 0,
-      monthlyPlans: userData.monthlyPlans?.length || 0,
-      monthlyGoals: userData.monthlyGoals?.length || 0
-    });
-    
-    return userData;
+    console.log('📦 getUserData 서버 호출:', nickname);
+    try {
+      const userData = await loadUserDataWithFallback(nickname);
+      console.log('📦 서버에서 로드된 데이터:', {
+        nickname,
+        schedules: userData?.schedules?.length || 0,
+        tags: userData?.tags?.length || 0,
+        tagItems: userData?.tagItems?.length || 0,
+        monthlyPlans: userData?.monthlyPlans?.length || 0,
+        monthlyGoals: userData?.monthlyGoals?.length || 0
+      });
+      
+      return userData;
+    } catch (error) {
+      console.error(`❌ ${nickname} 서버 데이터 로드 실패:`, error);
+      
+      // fallback to localStorage
+      return loadAllUserData(nickname);
+    }
   };
 
   const getUserStats = async () => {
@@ -265,7 +252,7 @@ function Appcopy() {
       for (const user of users) {
         console.log(`📊 ${user} 서버 데이터 통계 계산 중...`);
         try {
-          const userData = await loadUserDataWithFallback(user);
+          const userData = await getUserData(user);
           
           if (userData) {
             stats[user] = {
@@ -337,10 +324,10 @@ function Appcopy() {
     console.log('📦 일반 사용자 데이터 로딩 시작:', nickname);
     
     try {
-      // ✨ 더 강력한 데이터 로딩 - 여러 소스에서 시도
+      // ✨ 더 강력한 데이터 로딩 - 서버 우선
       let userData = null;
       
-      // 1차: 기본 로딩 시도
+      // 1차: 서버에서 로딩 시도
       userData = await loadUserDataWithFallback(nickname);
       
       // 2차: 직접 localStorage에서 로딩 시도
