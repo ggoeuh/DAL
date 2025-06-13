@@ -1,4 +1,4 @@
-// utils/supabaseStorage.js - 쿼리 오류 수정 버전
+// utils/supabaseStorage.js - 새로운 DAL 스키마에 맞춘 버전
 
 import { createClient } from '@supabase/supabase-js'
 
@@ -29,7 +29,7 @@ try {
 
 export const supabase = supabaseClient;
 
-// ✨ 수정된 saveUserDataToDAL - 더 안전한 쿼리
+// ✨ 새로운 DAL 스키마에 맞춘 saveUserDataToDAL
 export const saveUserDataToDAL = async (nickname, userData) => {
   if (!supabase) {
     console.warn('⚠️ Supabase가 초기화되지 않았습니다');
@@ -41,39 +41,36 @@ export const saveUserDataToDAL = async (nickname, userData) => {
     
     const activities = [];
     
-    // 일정 데이터 변환
+    // 일정 데이터 변환 - 새로운 스키마에 맞춤
     if (userData.schedules && userData.schedules.length > 0) {
       userData.schedules.forEach(schedule => {
-        const parseTime = (time) => {
-          const [h, m] = time.split(':').map(Number);
-          return h * 60 + m;
-        };
-        
-        const startMinutes = parseTime(schedule.start);
-        const endMinutes = parseTime(schedule.end);
-        const duration = endMinutes - startMinutes;
-        
         activities.push({
           user_name: nickname,
-          activity_type: schedule.tag || 'Unknown',
-          description: `${schedule.title || 'No Title'} | ${schedule.date} ${schedule.start}-${schedule.end}${schedule.description ? ' | ' + schedule.description : ''}`,
-          duration: duration,
-          completed: true
+          tag: schedule.tag || 'Unknown',
+          tag_type: schedule.tagType || schedule.tag || 'Unknown',
+          title: schedule.title || 'No Title',
+          description: schedule.description || '',
+          start_time: schedule.start || '00:00',
+          end_time: schedule.end || '00:00',
+          date: schedule.date || new Date().toISOString().split('T')[0]
         });
       });
     }
     
-    // 월간 목표 데이터 변환
+    // 월간 목표 데이터 변환 - 새로운 스키마에 맞춤
     if (userData.monthlyGoals && userData.monthlyGoals.length > 0) {
       userData.monthlyGoals.forEach(monthGoal => {
         if (monthGoal.goals && monthGoal.goals.length > 0) {
           monthGoal.goals.forEach(goal => {
             activities.push({
               user_name: nickname,
-              activity_type: 'MONTHLY_GOAL',
-              description: `${monthGoal.month} 월간목표: ${goal.tagType} - ${goal.targetHours}`,
-              duration: 0,
-              completed: false
+              tag: 'MONTHLY_GOAL',
+              tag_type: goal.tagType || 'Unknown',
+              title: `${monthGoal.month} 월간목표`,
+              description: `목표 시간: ${goal.targetHours}`,
+              start_time: '00:00',
+              end_time: goal.targetHours || '00:00',
+              date: `${monthGoal.month}-01` // 월의 첫 번째 날로 설정
             });
           });
         }
@@ -81,7 +78,7 @@ export const saveUserDataToDAL = async (nickname, userData) => {
     }
     
     if (activities.length > 0) {
-      // ✨ 기존 데이터 삭제 (안전한 방식)
+      // 기존 데이터 삭제 (안전한 방식)
       const { error: deleteError } = await supabase
         .from('DAL')
         .delete()
@@ -115,7 +112,7 @@ export const saveUserDataToDAL = async (nickname, userData) => {
   }
 };
 
-// ✨ 수정된 loadUserDataFromDAL - 안전한 쿼리
+// ✨ 새로운 DAL 스키마에 맞춘 loadUserDataFromDAL
 export const loadUserDataFromDAL = async (nickname) => {
   if (!supabase) {
     console.warn('⚠️ Supabase가 초기화되지 않았습니다');
@@ -125,7 +122,7 @@ export const loadUserDataFromDAL = async (nickname) => {
   try {
     console.log('🎯 사용자 데이터를 DAL에서 불러오기 시작:', nickname);
     
-    // ✨ 안전한 SELECT 쿼리 (count 함수 사용 안 함)
+    // 새로운 스키마에 맞춘 SELECT 쿼리
     const { data, error } = await supabase
       .from('DAL')
       .select('*')
@@ -144,55 +141,38 @@ export const loadUserDataFromDAL = async (nickname) => {
     
     if (data && data.length > 0) {
       data.forEach(activity => {
-        if (activity.activity_type === 'MONTHLY_GOAL') {
+        if (activity.tag === 'MONTHLY_GOAL') {
           // 월간 목표 파싱
           try {
-            const description = activity.description;
-            const monthMatch = description.match(/(\d{4}-\d{2})/);
-            const goalMatch = description.match(/월간목표: (.+?) - (.+)/);
+            const dateStr = activity.date;
+            const month = dateStr ? dateStr.substring(0, 7) : new Date().toISOString().slice(0, 7); // YYYY-MM 형식
             
-            if (monthMatch && goalMatch) {
-              const month = monthMatch[1];
-              const tagType = goalMatch[1];
-              const targetHours = goalMatch[2];
-              
-              let monthGoal = monthlyGoals.find(mg => mg.month === month);
-              if (!monthGoal) {
-                monthGoal = { month, goals: [] };
-                monthlyGoals.push(monthGoal);
-              }
-              
-              monthGoal.goals.push({ tagType, targetHours });
+            let monthGoal = monthlyGoals.find(mg => mg.month === month);
+            if (!monthGoal) {
+              monthGoal = { month, goals: [] };
+              monthlyGoals.push(monthGoal);
             }
+            
+            monthGoal.goals.push({
+              tagType: activity.tag_type || 'Unknown',
+              targetHours: activity.end_time || '00:00'
+            });
           } catch (parseError) {
             console.warn('월간 목표 파싱 실패:', parseError);
           }
         } else {
           // 일반 일정 파싱
           try {
-            const description = activity.description;
-            const parts = description.split(' | ');
-            
-            if (parts.length >= 2) {
-              const title = parts[0];
-              const dateTimePart = parts[1];
-              const desc = parts[2] || '';
-              
-              const dateTimeMatch = dateTimePart.match(/(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})-(\d{2}:\d{2})/);
-              
-              if (dateTimeMatch) {
-                schedules.push({
-                  id: activity.id,
-                  title: title,
-                  description: desc,
-                  tag: activity.activity_type,
-                  tagType: activity.activity_type,
-                  date: dateTimeMatch[1],
-                  start: dateTimeMatch[2],
-                  end: dateTimeMatch[3]
-                });
-              }
-            }
+            schedules.push({
+              id: activity.id,
+              title: activity.title || 'No Title',
+              description: activity.description || '',
+              tag: activity.tag || 'Unknown',
+              tagType: activity.tag_type || activity.tag || 'Unknown',
+              date: activity.date || new Date().toISOString().split('T')[0],
+              start: activity.start_time || '00:00',
+              end: activity.end_time || '00:00'
+            });
           } catch (parseError) {
             console.warn('일정 파싱 실패:', parseError);
           }
@@ -217,10 +197,10 @@ export const loadUserDataFromDAL = async (nickname) => {
   }
 };
 
-// ✨ 수정된 개발자 도구 - 안전한 연결 테스트
+// ✨ 새로운 스키마에 맞춘 개발자 도구
 if (typeof window !== 'undefined') {
   window.supabaseUtils = {
-    // ✨ 수정된 연결 테스트 (count 함수 대신 limit 사용)
+    // 연결 테스트
     testConnection: async () => {
       if (!supabase) {
         console.error('❌ Supabase 초기화 실패');
@@ -231,7 +211,6 @@ if (typeof window !== 'undefined') {
       try {
         console.log('🔍 Supabase 연결 테스트 시작...');
         
-        // ✨ count(*) 대신 단순한 select 사용
         const { data, error } = await supabase
           .from('DAL')
           .select('id')
@@ -251,9 +230,9 @@ if (typeof window !== 'undefined') {
       }
     },
     
-    // ✨ 향상된 DAL 테스트
+    // ✨ 새로운 스키마에 맞춘 DAL 테스트
     testDAL: async () => {
-      console.log('🧪 DAL 테스트 시작');
+      console.log('🧪 DAL 테스트 시작 (새로운 스키마)');
       
       if (!supabase) {
         console.error('❌ Supabase 초기화 실패');
@@ -276,13 +255,16 @@ if (typeof window !== 'undefined') {
         
         console.log('✅ DAL 테이블 접근 성공');
         
-        // 2단계: 테스트 데이터 저장
+        // 2단계: 새로운 스키마에 맞춘 테스트 데이터 저장
         const testData = {
           user_name: '테스트유저_' + Date.now(),
-          activity_type: '테스트',
-          description: 'DAL 연결 테스트 - ' + new Date().toLocaleString(),
-          duration: 5,
-          completed: true
+          tag: '테스트',
+          tag_type: '기타',
+          title: 'DAL 연결 테스트',
+          description: '새로운 스키마 테스트 - ' + new Date().toLocaleString(),
+          start_time: '09:00',
+          end_time: '10:00',
+          date: new Date().toISOString().split('T')[0]
         };
         
         const { data: insertData, error: insertError } = await supabase
@@ -324,7 +306,7 @@ if (typeof window !== 'undefined') {
           console.log('✅ 테스트 데이터 정리 완료');
         }
         
-        alert('✅ DAL 테스트 완료!\n\n- 테이블 접근: 성공\n- 데이터 저장: 성공\n- 데이터 조회: 성공\n- 데이터 삭제: 성공');
+        alert('✅ 새로운 스키마 DAL 테스트 완료!\n\n- 테이블 접근: 성공\n- 데이터 저장: 성공\n- 데이터 조회: 성공\n- 데이터 삭제: 성공');
         return true;
         
       } catch (error) {
@@ -352,21 +334,31 @@ if (typeof window !== 'undefined') {
       return result;
     },
     
-    // ✨ 사용자 데이터 동기화 테스트 (안전한 버전)
+    // ✨ 새로운 스키마에 맞춘 사용자 데이터 동기화 테스트
     testUserDataSync: async (nickname = '테스트유저_' + Date.now()) => {
-      console.log('🧪 사용자 데이터 동기화 테스트 시작:', nickname);
+      console.log('🧪 사용자 데이터 동기화 테스트 시작 (새로운 스키마):', nickname);
       
       const testUserData = {
         schedules: [
           {
             id: Date.now(),
             title: 'DAL 테스트 일정',
-            description: 'Supabase 연동 테스트',
+            description: 'Supabase 연동 테스트 (새로운 스키마)',
             tag: '테스트',
             tagType: '기타',
             date: new Date().toISOString().split('T')[0],
             start: '09:00',
             end: '10:00'
+          },
+          {
+            id: Date.now() + 1,
+            title: '점심 시간',
+            description: '맛있는 점심 먹기',
+            tag: '식사',
+            tagType: '일상',
+            date: new Date().toISOString().split('T')[0],
+            start: '12:00',
+            end: '13:00'
           }
         ],
         monthlyGoals: [
@@ -374,7 +366,8 @@ if (typeof window !== 'undefined') {
             month: new Date().toISOString().slice(0, 7),
             goals: [
               { tagType: '공부', targetHours: '02:00' },
-              { tagType: '운동', targetHours: '01:30' }
+              { tagType: '운동', targetHours: '01:30' },
+              { tagType: '독서', targetHours: '01:00' }
             ]
           }
         ]
@@ -389,6 +382,9 @@ if (typeof window !== 'undefined') {
           throw new Error('저장 실패: ' + saveResult.error);
         }
         
+        // 잠깐 대기 (데이터 저장 완료 보장)
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         // 불러오기 테스트
         const loadResult = await loadUserDataFromDAL(nickname);
         console.log('불러오기 결과:', loadResult);
@@ -397,13 +393,18 @@ if (typeof window !== 'undefined') {
           throw new Error('불러오기 실패: ' + loadResult.error);
         }
         
+        // 결과 검증
+        const savedSchedules = loadResult.data?.schedules?.length || 0;
+        const savedGoals = loadResult.data?.monthlyGoals?.length || 0;
+        const totalGoalItems = loadResult.data?.monthlyGoals?.reduce((sum, mg) => sum + (mg.goals?.length || 0), 0) || 0;
+        
         // 정리
         await supabase
           .from('DAL')
           .delete()
           .eq('user_name', nickname);
         
-        alert(`✅ 사용자 데이터 동기화 테스트 성공!\n\n저장: ${saveResult.data?.length || 0}개 활동\n불러오기: ${loadResult.data?.schedules?.length || 0}개 일정, ${loadResult.data?.monthlyGoals?.length || 0}개 월간목표`);
+        alert(`✅ 새로운 스키마 사용자 데이터 동기화 테스트 성공!\n\n저장된 활동: ${saveResult.data?.length || 0}개\n불러온 일정: ${savedSchedules}개\n불러온 월간목표: ${savedGoals}개 (총 ${totalGoalItems}개 항목)`);
         
         return { saveResult, loadResult };
         
@@ -412,14 +413,64 @@ if (typeof window !== 'undefined') {
         alert('❌ 테스트 실패: ' + error.message);
         return { success: false, error: error.message };
       }
+    },
+    
+    // ✨ 스키마 확인 도구
+    checkSchema: async () => {
+      if (!supabase) {
+        console.error('❌ Supabase 초기화 실패');
+        return false;
+      }
+      
+      try {
+        console.log('🔍 DAL 테이블 스키마 확인...');
+        
+        // 테이블의 모든 컬럼 정보 조회
+        const { data, error } = await supabase
+          .from('DAL')
+          .select('*')
+          .limit(1);
+        
+        if (error) {
+          throw error;
+        }
+        
+        console.log('✅ 예상 스키마 구조:');
+        console.log('- id: BIGSERIAL PRIMARY KEY');
+        console.log('- user_name: TEXT NOT NULL');
+        console.log('- tag: TEXT');
+        console.log('- tag_type: TEXT');
+        console.log('- title: TEXT');
+        console.log('- description: TEXT');
+        console.log('- start_time: TEXT');
+        console.log('- end_time: TEXT');
+        console.log('- date: DATE');
+        console.log('- created_at: TIMESTAMPTZ DEFAULT NOW()');
+        
+        if (data && data.length > 0) {
+          console.log('✅ 실제 데이터 샘플:', data[0]);
+          console.log('✅ 사용 가능한 컬럼:', Object.keys(data[0]));
+        } else {
+          console.log('ℹ️ 테이블에 데이터가 없습니다 (정상)');
+        }
+        
+        alert('✅ 스키마 확인 완료! 콘솔을 확인하세요.');
+        return true;
+        
+      } catch (error) {
+        console.error('❌ 스키마 확인 실패:', error);
+        alert('❌ 스키마 확인 실패: ' + error.message);
+        return false;
+      }
     }
   };
   
   if (supabase) {
-    console.log('🚀 수정된 Supabase 유틸리티가 준비되었습니다!');
+    console.log('🚀 새로운 스키마에 맞춘 Supabase 유틸리티가 준비되었습니다!');
     console.log('사용법:');
     console.log('  supabaseUtils.checkEnv() - 환경변수 확인');
     console.log('  supabaseUtils.testConnection() - 연결 테스트');
+    console.log('  supabaseUtils.checkSchema() - 스키마 확인');
     console.log('  supabaseUtils.testDAL() - DAL 테이블 테스트');
     console.log('  supabaseUtils.testUserDataSync() - 사용자 데이터 동기화 테스트');
   } else {
