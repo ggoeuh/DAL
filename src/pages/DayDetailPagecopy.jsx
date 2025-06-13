@@ -217,30 +217,18 @@ const WeeklyCalendar = ({
       : PASTEL_COLORS[safeTags.length % PASTEL_COLORS.length];
   };
 
-  // 포커스 날짜 변경 핸들러 - 클릭한 날짜를 중심으로 새로운 주간 생성
+  // 포커스 날짜 변경 핸들러 - 원본과 동일하게 되돌림
   const handleDayFocus = (dayIndex) => {
     if (dayIndex === focusedDayIndex) return;
     
-    // 클릭한 날짜를 가져옴
-    const clickedDate = currentWeek[dayIndex];
+    setFocusedDayIndex(dayIndex);
     
-    // 클릭한 날짜를 기준으로 새로운 주간 생성 (일요일부터 토요일까지)
-    const newWeek = Array(7).fill().map((_, i) => {
-      const date = new Date(clickedDate);
-      date.setDate(clickedDate.getDate() - clickedDate.getDay() + i);
-      return date;
-    });
-    
-    setCurrentWeek(newWeek);
-    setFocusedDayIndex(clickedDate.getDay()); // 클릭한 날짜의 요일 인덱스
-    
-    // 새로운 visible days 계산
     const newVisibleDays = [];
     const focusPosition = 3;
     
     for (let i = 0; i < 5; i++) {
       const offset = i - focusPosition;
-      const newIndex = (clickedDate.getDay() + offset + 7) % 7;
+      const newIndex = (dayIndex + offset + 7) % 7;
       newVisibleDays.push(newIndex);
     }
     
