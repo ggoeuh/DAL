@@ -656,15 +656,53 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
                 const userKeys = allKeys.filter(key => key && key.includes('-'));
                 console.log('👤 사용자 데이터 키들:', userKeys);
                 
+                // ✨ 직접 사용자 감지 (관리자 함수 우회)
+                const directUsers = new Set();
+                userKeys.forEach(key => {
+                  const [nickname, dataType] = key.split('-');
+                  if (nickname && 
+                      nickname !== 'nickname' && 
+                      nickname !== 'userType' &&
+                      !['교수님', 'admin', '관리자'].includes(nickname)) {
+                    directUsers.add(nickname);
+                  }
+                });
+                
+                console.log('🔧 직접 감지된 사용자들:', Array.from(directUsers));
+                
                 // getAllUsers 함수 직접 실행
                 const detectedUsers = getAllUsers();
-                console.log('👥 감지된 사용자들:', detectedUsers);
+                console.log('👥 getAllUsers 결과:', detectedUsers);
                 
-                alert(`🚨 긴급 디버그 결과\n\n• 전체 키: ${allKeys.length}개\n• 사용자 키: ${userKeys.length}개\n• 감지된 멤버: ${detectedUsers.length}명\n\n콘솔을 확인하세요!`);
+                // ✨ 강제로 멤버 목록 업데이트
+                if (Array.from(directUsers).length > 0) {
+                  console.log('🔧 강제 멤버 목록 업데이트');
+                  setMembers(Array.from(directUsers));
+                  
+                  // 통계도 강제 업데이트
+                  const forceStats = {};
+                  Array.from(directUsers).forEach(user => {
+                    const userData = getUserData(user);
+                    if (userData) {
+                      forceStats[user] = {
+                        schedules: userData.schedules?.length || 0,
+                        tags: userData.tags?.length || 0,
+                        tagItems: userData.tagItems?.length || 0,
+                        monthlyPlans: userData.monthlyPlans?.length || 0,
+                        monthlyGoals: userData.monthlyGoals?.length || 0,
+                        lastActivity: '오늘'
+                      };
+                    }
+                  });
+                  setMemberStats(forceStats);
+                  console.log('🔧 강제 통계 업데이트:', forceStats);
+                }
+                
+                alert(`🚨 긴급 디버그 결과\n\n• 전체 키: ${allKeys.length}개\n• 사용자 키: ${userKeys.length}개\n• 직접 감지: ${Array.from(directUsers).length}명\n• getAllUsers: ${detectedUsers.length}명\n\n${Array.from(directUsers).length > 0 ? '✅ 강제 복구 완료!' : '❌ 사용자 없음'}\n\n콘솔을 확인하세요!`);
               }}
               className="bg-red-100 hover:bg-red-200 text-red-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
             >
-              🚨 긴급 디버그
+              🚨 긴급 복구
             </button>
             
             <button
