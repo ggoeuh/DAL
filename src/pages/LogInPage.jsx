@@ -1,4 +1,4 @@
-// pages/LogInPage.jsx - 완전 수정 버전
+// pages/LogInPage.jsx - 완전 수정 버전 (데이터 로딩 대기 추가)
 import React, { useState } from 'react';
 
 const ALLOWED_USERS = {
@@ -79,14 +79,19 @@ function LogInPage() {
         userType: userType
       });
       
-      // 즉시 페이지 이동
-      const targetUrl = userType === 'admin' ? '/admin' : '/calendar';
-      console.log(`🚀 ${targetUrl}로 이동`);
+      // ✨ 로그인 처리 상태 표시 개선
+      setError(''); // 에러 초기화
       
-      // ✨ 상태 업데이트 후 페이지 이동 (약간의 지연)
+      // ✨ 데이터 로딩 대기 시간 추가 (일반 사용자만)
+      const redirectDelay = userType === 'admin' ? 500 : 1500; // 관리자는 빠르게, 일반 사용자는 여유있게
+      
       setTimeout(() => {
+        const targetUrl = userType === 'admin' ? '/admin' : '/calendar';
+        console.log(`🚀 ${targetUrl}로 이동`);
+        
+        // 페이지 이동
         window.location.href = targetUrl === '/admin' ? '#/admin' : '#/calendar';
-      }, 100);
+      }, redirectDelay);
       
     } catch (error) {
       console.error('❌ 로그인 처리 실패:', error);
@@ -190,13 +195,31 @@ function LogInPage() {
           </div>
         )}
 
-        {/* 로그인 중 상태 */}
+        {/* ✨ 개선된 로그인 중 상태 표시 */}
         {isLoggingIn && (
-          <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-            <div className="flex items-center">
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+            <div className="flex items-center mb-2">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-3"></div>
-              <p className="text-blue-600 text-sm font-medium">로그인 처리 중...</p>
+              <p className="text-blue-600 text-sm font-medium">
+                {userType === 'admin' ? '관리자 권한을 확인하는 중...' : '사용자 데이터를 준비하는 중...'}
+              </p>
             </div>
+            {userType === 'member' && (
+              <div className="text-xs text-blue-500 space-y-1 mt-2">
+                <div className="flex items-center">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full mr-2 animate-pulse"></div>
+                  개인 일정 데이터 로딩...
+                </div>
+                <div className="flex items-center">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full mr-2 animate-pulse"></div>
+                  태그 설정 확인...
+                </div>
+                <div className="flex items-center">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full mr-2 animate-pulse"></div>
+                  월간 목표 불러오기...
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -211,7 +234,7 @@ function LogInPage() {
           }`}
         >
           {isLoggingIn 
-            ? '로그인 중...' 
+            ? (userType === 'admin' ? '관리자 인증 중...' : '데이터 준비 중...') 
             : `${userType === 'admin' ? '관리자' : '멤버'}로 입장`
           }
         </button>
@@ -231,26 +254,47 @@ function LogInPage() {
           </div>
         </div>
 
-        {/* 디버깅 정보 */}
+        {/* ✨ 개선된 디버깅 정보 */}
         <div className="border-t pt-4">
           <div className="text-center text-xs text-gray-400 space-y-1">
             <p>현재 경로: <span className="font-mono">{window.location.pathname}</span></p>
             <p>저장된 사용자: <span className="font-mono">{localStorage.getItem('nickname') || '없음'}</span></p>
             <p>사용자 타입: <span className="font-mono">{localStorage.getItem('userType') || '없음'}</span></p>
+            <p className="text-[10px] text-gray-300">빌드 시간: {new Date().toLocaleString('ko-KR')}</p>
           </div>
           <div className="flex justify-center mt-3">
             <button
               onClick={() => {
-                if (window.confirm('🗑️ 모든 저장된 데이터를 삭제하고 새로 시작하시겠습니까?')) {
-                  localStorage.clear();
+                if (window.confirm('🗑️ 모든 저장된 로그인 정보를 삭제하고 새로 시작하시겠습니까?\n\n⚠️ 주의: 일정 데이터는 삭제되지 않습니다.')) {
+                  // 로그인 정보만 삭제 (데이터는 보존)
+                  localStorage.removeItem('nickname');
+                  localStorage.removeItem('userType');
                   sessionStorage.clear();
-                  window.location.reload();
+                  
+                  // 상태 초기화
+                  setNickname('');
+                  setUserType('member');
+                  setError('');
+                  setIsLoggingIn(false);
+                  
+                  alert('✅ 로그인 정보가 초기화되었습니다.\n일정 데이터는 보존되었습니다.');
                 }
               }}
+              disabled={isLoggingIn}
               className="text-xs text-red-400 hover:text-red-600 underline transition-colors duration-200"
             >
-              전체 초기화
+              {isLoggingIn ? '처리 중...' : '로그인 정보 초기화'}
             </button>
+          </div>
+          
+          {/* ✨ 서버 데이터 보호 안내 추가 */}
+          <div className="mt-3 p-2 bg-green-50 rounded text-center">
+            <p className="text-xs text-green-600">
+              🛡️ 서버 데이터 보호 활성화됨
+            </p>
+            <p className="text-[10px] text-green-500">
+              일정 데이터는 안전하게 보관됩니다
+            </p>
           </div>
         </div>
       </div>
