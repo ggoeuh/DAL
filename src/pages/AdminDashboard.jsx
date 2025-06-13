@@ -1,4 +1,4 @@
-// pages/AdminDashboard.jsx - 데이터 로딩 문제 해결 버전
+// pages/AdminDashboard.jsx - 서버 연동 완전 수정 버전
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadUserDataWithFallback, loadAllUserData } from './utils/unifiedStorage';
@@ -6,8 +6,9 @@ import { loadUserDataWithFallback, loadAllUserData } from './utils/unifiedStorag
 const AdminDashboard = ({ currentUser, onLogout }) => {
   const [members, setMembers] = useState([]);
   const [memberStats, setMemberStats] = useState({});
-  const [memberData, setMemberData] = useState({}); // ✨ 멤버별 실제 데이터 캐시
+  const [memberData, setMemberData] = useState({}); // 멤버별 실제 데이터 캐시
   const [loading, setLoading] = useState(true);
+  const [progressData, setProgressData] = useState({}); // 진행률 데이터 캐시
   const navigate = useNavigate();
 
   // 파스텔 색상 팔레트 (CalendarPage와 동일)
@@ -24,12 +25,13 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
   ];
 
-  // ✨ 서버에서 사용자 목록 가져오기 (개선된 버전)
+  // ✨ 서버에서 사용자 목록 가져오기 (완전 수정)
   const getServerUsers = async () => {
-    console.log('🔍 AdminDashboard에서 직접 서버 사용자 검색');
+    console.log('🔍 AdminDashboard에서 서버 사용자 검색');
     
     try {
       const users = new Set();
+      const userDataCache = {};
       
       // 1단계: localStorage에서 사용자 이름 수집
       const localUsers = [];
@@ -48,12 +50,12 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       
       console.log('📦 localStorage 사용자들:', [...new Set(localUsers)]);
       
-      // 2단계: 각 사용자의 서버 데이터 확인 및 캐시
-      const userDataCache = {};
-      
+      // 2단계: 각 사용자의 서버 데이터 확인
       for (const user of [...new Set(localUsers)]) {
         try {
           console.log(`🔍 ${user} 서버 데이터 확인 중...`);
+          
+          // ✨ 서버에서 데이터 로드
           const userData = await loadUserDataWithFallback(user);
           
           if (userData && (
@@ -62,17 +64,34 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             (userData.tagItems && userData.tagItems.length > 0)
           )) {
             users.add(user);
-            userDataCache[user] = userData; // ✨ 데이터 캐시
+            userDataCache[user] = userData; // 캐시에 저장
             console.log(`✅ ${user} 서버 데이터 확인됨:`, {
               schedules: userData.schedules?.length || 0,
               tags: userData.tags?.length || 0,
-              tagItems: userData.tagItems?.length || 0
+              tagItems: userData.tagItems?.length || 0,
+              monthlyGoals: userData.monthlyGoals?.length || 0
             });
           } else {
             console.log(`❌ ${user} 서버 데이터 없음`);
           }
         } catch (error) {
           console.error(`❌ ${user} 서버 확인 실패:`, error);
+          
+          // 서버 실패 시 localStorage fallback
+          try {
+            const fallbackData = loadAllUserData(user);
+            if (fallbackData && (
+              (fallbackData.schedules && fallbackData.schedules.length > 0) ||
+              (fallbackData.tags && fallbackData.tags.length > 0) ||
+              (fallbackData.tagItems && fallbackData.tagItems.length > 0)
+            )) {
+              users.add(user);
+              userDataCache[user] = fallbackData;
+              console.log(`🔄 ${user} localStorage fallback 성공`);
+            }
+          } catch (fallbackError) {
+            console.error(`❌ ${user} fallback도 실패:`, fallbackError);
+          }
         }
       }
       
@@ -89,8 +108,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   };
 
-  // ✨ 캐시된 데이터를 사용하는 getUserData 함수
-  const getUserData = useCallback((nickname) => {
+  // ✨ 서버 우선 getUserData 함수
+  const getUserData = useCallback(async (nickname) => {
     if (!nickname) {
       console.warn('⚠️ getUserData: nickname이 없음');
       return {
@@ -108,20 +127,49 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       return memberData[nickname];
     }
 
-    // 캐시에 없으면 localStorage에서 시도
-    console.log(`📦 ${nickname} localStorage에서 데이터 로드`);
+    // ✨ 서버에서 데이터 로드
+    console.log(`📦 ${nickname} 서버에서 데이터 로드`);
     try {
-      return loadAllUserData(nickname);
+      const userData = await loadUserDataWithFallback(nickname);
+      
+      if (userData) {
+        console.log(`📦 ${nickname} 서버 데이터 로드 성공:`, {
+          schedules: userData.schedules?.length || 0,
+          tags: userData.tags?.length || 0,
+          tagItems: userData.tagItems?.length || 0,
+          monthlyPlans: userData.monthlyPlans?.length || 0,
+          monthlyGoals: userData.monthlyGoals?.length || 0
+        });
+        
+        // 캐시에도 저장
+        setMemberData(prev => ({...prev, [nickname]: userData}));
+        return userData;
+      }
     } catch (error) {
-      console.error(`❌ ${nickname} 데이터 로드 실패:`, error);
-      return {
-        schedules: [],
-        tags: [],
-        tagItems: [],
-        monthlyPlans: [],
-        monthlyGoals: []
-      };
+      console.error(`❌ ${nickname} 서버 데이터 로드 실패:`, error);
     }
+
+    // 서버 실패 시 localStorage fallback
+    console.log(`🔄 ${nickname} localStorage fallback 시도`);
+    try {
+      const fallbackData = loadAllUserData(nickname);
+      if (fallbackData) {
+        console.log(`🔄 ${nickname} localStorage 데이터 로드 성공`);
+        setMemberData(prev => ({...prev, [nickname]: fallbackData}));
+        return fallbackData;
+      }
+    } catch (fallbackError) {
+      console.error(`❌ ${nickname} localStorage fallback 실패:`, fallbackError);
+    }
+
+    // 모든 방법 실패 시 빈 데이터 반환
+    return {
+      schedules: [],
+      tags: [],
+      tagItems: [],
+      monthlyPlans: [],
+      monthlyGoals: []
+    };
   }, [memberData]);
 
   // 태그 색상 가져오기 (CalendarPage와 동일)
@@ -130,11 +178,17 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     return tag ? tag.color : PASTEL_COLORS[0];
   };
 
-  // ✨ 개선된 태그별 목표 달성률 계산 함수 (동기식)
-  const calculateTagProgress = useCallback((member) => {
+  // ✨ 비동기 태그별 목표 달성률 계산 함수
+  const calculateTagProgress = useCallback(async (member) => {
     console.log('📊 태그 진행률 계산 시작:', member);
     
-    const userData = getUserData(member); // ✨ 이제 동기식으로 호출
+    // 캐시된 진행률 데이터 확인
+    if (progressData[member]) {
+      console.log(`📊 ${member} 캐시된 진행률 사용`);
+      return progressData[member];
+    }
+    
+    const userData = await getUserData(member);
     if (!userData || !userData.schedules) {
       console.warn('⚠️ 사용자 데이터 없음:', member);
       return [];
@@ -205,13 +259,25 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
     console.log('📊 월간 태그 총계:', monthlyTagTotals);
 
-    // 월간 목표 불러오기
+    // ✨ 개선된 월간 목표 불러오기
     const loadMonthlyGoals = () => {
       try {
         const currentMonthKey = currentMonth;
-        const allGoals = monthlyGoals;
-        const found = allGoals.find(goal => goal.month === currentMonthKey);
-        return found?.goals || [];
+        console.log('🎯 목표 검색:', { currentMonthKey, monthlyGoals });
+        
+        if (!monthlyGoals || monthlyGoals.length === 0) {
+          console.log('❌ 월간 목표 배열이 비어있음');
+          return [];
+        }
+        
+        const found = monthlyGoals.find(goal => {
+          console.log('🔍 목표 월 비교:', { goalMonth: goal.month, currentMonth: currentMonthKey, match: goal.month === currentMonthKey });
+          return goal.month === currentMonthKey;
+        });
+        
+        const result = found?.goals || [];
+        console.log('🎯 최종 월간 목표:', result);
+        return result;
       } catch (error) {
         console.error('월간 목표 불러오기 실패:', error);
         return [];
@@ -265,10 +331,14 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     });
 
     console.log('📊 최종 진행률 결과:', result);
+    
+    // 진행률 데이터 캐시
+    setProgressData(prev => ({...prev, [member]: result}));
+    
     return result;
-  }, [getUserData, getTagColor]);
+  }, [getUserData, progressData]);
 
-  // ✨ 서버 기반 통계 계산 (캐시 사용)
+  // ✨ 서버 기반 통계 계산
   const getServerStats = useCallback(async (userList) => {
     console.log('📊 AdminDashboard에서 직접 서버 통계 계산');
     
@@ -278,8 +348,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       try {
         console.log(`📊 ${user} 서버 통계 계산 중...`);
         
-        // 캐시된 데이터 또는 getUserData 사용
-        const userData = getUserData(user);
+        const userData = await getUserData(user);
         
         if (userData) {
           stats[user] = {
@@ -307,7 +376,12 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     
     try {
       setLoading(true);
-      const serverUsers = await getServerUsers(); // ✨ 이미 데이터 캐시됨
+      
+      // 캐시 초기화
+      setMemberData({});
+      setProgressData({});
+      
+      const serverUsers = await getServerUsers();
       console.log('🔄 새로고침: 서버 사용자들:', serverUsers);
       
       if (serverUsers.length > 0) {
@@ -323,24 +397,23 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   };
 
-  // ✨ 초기 데이터 로딩 개선
+  // ✨ 초기 데이터 로딩
   useEffect(() => {
-    console.log('🚀 AdminDashboard 직접 서버 연동 시작');
+    console.log('🚀 AdminDashboard 서버 연동 시작');
     
     const loadServerData = async () => {
       try {
         setLoading(true);
         console.log('📦 서버에서 직접 멤버 데이터 로딩');
         
-        // 1단계: 서버에서 사용자 목록 가져오기 (데이터도 함께 캐시)
+        // 서버에서 사용자 목록 가져오기 (데이터도 함께 캐시)
         const serverUsers = await getServerUsers();
         console.log('👥 서버에서 가져온 사용자들:', serverUsers);
         
         if (serverUsers.length > 0) {
-          // 즉시 상태 업데이트
           setMembers(serverUsers);
           
-          // 2단계: 서버에서 통계 계산 (캐시된 데이터 사용)
+          // 서버에서 통계 계산 (캐시된 데이터 사용)
           const serverStats = await getServerStats(serverUsers);
           console.log('📊 서버 기반 통계:', serverStats);
           setMemberStats(serverStats);
@@ -348,45 +421,6 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           console.log('✅ 서버 기반 데이터 로딩 완료');
         } else {
           console.warn('⚠️ 서버에서 사용자를 찾을 수 없음');
-          
-          // 강제로 localStorage 직접 스캔 (최후의 수단)
-          console.log('🔧 강제 localStorage 스캔 시작');
-          const forceUsers = [];
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.includes('-schedules')) {
-              const [nickname] = key.split('-');
-              if (nickname && !['교수님', 'admin', '관리자'].includes(nickname)) {
-                forceUsers.push(nickname);
-              }
-            }
-          }
-          
-          if (forceUsers.length > 0) {
-            console.log('🔧 강제 스캔 결과:', forceUsers);
-            setMembers(forceUsers);
-            
-            // 강제 통계 생성
-            const forceStats = {};
-            const forceDataCache = {};
-            for (const user of forceUsers) {
-              const userData = loadAllUserData(user);
-              if (userData) {
-                forceDataCache[user] = userData; // ✨ 캐시 추가
-                forceStats[user] = {
-                  schedules: userData.schedules?.length || 0,
-                  tags: userData.tags?.length || 0,
-                  tagItems: userData.tagItems?.length || 0,
-                  monthlyPlans: userData.monthlyPlans?.length || 0,
-                  monthlyGoals: userData.monthlyGoals?.length || 0,
-                  lastActivity: '오늘'
-                };
-              }
-            }
-            setMemberData(forceDataCache); // ✨ 캐시 설정
-            setMemberStats(forceStats);
-            console.log('🔧 강제 통계 완료:', forceStats);
-          }
         }
         
       } catch (error) {
@@ -396,7 +430,6 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       }
     };
 
-    // 초기 로딩
     loadServerData();
     
     // localStorage 변경 감지
@@ -405,7 +438,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         console.log('📦 localStorage 변경 감지:', e.key);
         if (['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'].some(type => e.key.includes(type))) {
           console.log('🔄 멤버 데이터 변경으로 인한 새로고침');
-          setTimeout(() => loadServerData(), 1000);
+          setTimeout(() => refreshMemberData(), 1000);
         }
       }
     };
@@ -415,13 +448,13 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     return () => {
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, []); // 의존성 제거
+  }, []);
 
-  const handleMemberAction = (memberName, actionType) => {
+  const handleMemberAction = async (memberName, actionType) => {
     console.log('🔍 멤버 액션 시작:', { memberName, actionType });
     
     // 데이터 검증
-    const userData = getUserData(memberName);
+    const userData = await getUserData(memberName);
     console.log('🔍 이동 전 데이터 검증:', {
       memberName,
       userData: !!userData,
@@ -433,7 +466,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     
     if (!userData || !userData.schedules) {
       alert(`❌ ${memberName}님의 데이터를 찾을 수 없습니다.\n\n다음을 확인해주세요:\n- 해당 멤버가 로그인한 적이 있는가?\n- 일정 데이터가 존재하는가?\n\n새로고침 후 다시 시도해보세요.`);
-      refreshMemberData(); // 즉시 새로고침
+      await refreshMemberData();
       return;
     }
     
@@ -450,7 +483,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
   // 관리자용 데이터 관리 함수들
   const handleDataDebug = () => {
-    const result = window.confirm('⚠️ 모든 localStorage 데이터를 콘솔에 출력하시겠습니까?');
+    const result = window.confirm('⚠️ 모든 데이터를 콘솔에 출력하시겠습니까?');
     if (result) {
       console.log('=== localStorage 전체 데이터 ===');
       for (let i = 0; i < localStorage.length; i++) {
@@ -463,15 +496,17 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         }
       }
       
-      // ✨ 캐시된 데이터도 출력
       console.log('=== 캐시된 멤버 데이터 ===');
       console.log(memberData);
+      
+      console.log('=== 캐시된 진행률 데이터 ===');
+      console.log(progressData);
       
       alert('✅ 콘솔에 데이터가 출력되었습니다. 개발자 도구를 확인하세요.');
     }
   };
 
-  const handleUserDataReset = (memberName) => {
+  const handleUserDataReset = async (memberName) => {
     const result = window.confirm(`⚠️ ${memberName}님의 모든 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`);
     if (result) {
       // 사용자별 데이터 삭제
@@ -488,8 +523,14 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         console.log(`삭제됨: ${key}`);
       });
       
-      // ✨ 캐시에서도 제거
+      // 캐시에서도 제거
       setMemberData(prev => {
+        const newData = { ...prev };
+        delete newData[memberName];
+        return newData;
+      });
+      
+      setProgressData(prev => {
         const newData = { ...prev };
         delete newData[memberName];
         return newData;
@@ -497,8 +538,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       
       alert(`✅ ${memberName}님의 데이터가 삭제되었습니다. (${keysToDelete.length}개 항목)`);
       
-      // 데이터 새로고침
-      refreshMemberData();
+      await refreshMemberData();
     }
   };
 
@@ -523,8 +563,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         localStorage.removeItem(key);
       });
       
-      // ✨ 캐시 초기화
+      // 캐시 초기화
       setMemberData({});
+      setProgressData({});
       
       alert(`✅ 모든 캘린더 데이터가 삭제되었습니다. (${keysToDelete.length}개 항목)`);
       window.location.reload();
@@ -536,8 +577,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">멤버 데이터를 불러오는 중...</p>
-          <p className="text-sm text-gray-500 mt-2">localStorage에서 사용자 정보를 검색하고 있습니다.</p>
+          <p className="text-gray-600">서버에서 멤버 데이터를 불러오는 중...</p>
+          <p className="text-sm text-gray-500 mt-2">서버 API를 통해 최신 데이터를 가져오고 있습니다.</p>
         </div>
       </div>
     );
@@ -576,7 +617,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             <span>•</span>
             <span>마지막 업데이트: {new Date().toLocaleString('ko-KR')}</span>
             <span>•</span>
-            <span>캐시된 데이터: {Object.keys(memberData).length}명</span>
+            <span>서버 기반 데이터</span>
           </div>
         </div>
 
@@ -592,7 +633,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
               <h4 className="font-semibold mb-2">💡 도움말</h4>
               <ul className="text-sm text-gray-600 space-y-1">
                 <li>• 멤버가 로그인하면 자동으로 감지됩니다</li>
-                <li>• localStorage에 저장된 데이터를 실시간으로 조회합니다</li>
+                <li>• 서버에서 실시간으로 데이터를 조회합니다</li>
                 <li>• 각 멤버의 데이터는 독립적으로 관리됩니다</li>
               </ul>
             </div>
@@ -624,79 +665,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                   {/* 멤버 통계 - 태그별 목표 달성률 */}
                   <div className="p-6">
                     <h4 className="font-semibold text-gray-700 mb-3">🎯 이번 달 목표 달성률</h4>
-                    {(() => {
-                      const tagProgress = calculateTagProgress(member);
-                      
-                      if (tagProgress.length === 0) {
-                        return (
-                          <div className="text-center py-4">
-                            <div className="text-gray-400 text-3xl mb-2">📊</div>
-                            <p className="text-gray-500 text-sm">설정된 목표가 없습니다</p>
-                          </div>
-                        );
-                      }
-                      
-                      return (
-                        <div className="space-y-3">
-                          {tagProgress.map((progress, index) => (
-                            <div key={index} className={`${progress.tagColor.bg} ${progress.tagColor.border} rounded-lg p-4 border-2`}>
-                              {/* 태그명과 퍼센테이지를 같은 행 상단에 배치 */}
-                              <div className="flex items-center justify-between mb-3">
-                                <span className={`text-sm font-semibold ${progress.tagColor.text}`}>
-                                  {progress.tagName}
-                                </span>
-                                <span className={`text-lg font-bold ${
-                                  progress.percentage >= 100 ? 'text-green-600' :
-                                  progress.percentage >= 70 ? 'text-blue-600' :
-                                  progress.percentage >= 30 ? 'text-yellow-600' : 'text-red-600'
-                                }`}>
-                                  {progress.percentage}%
-                                </span>
-                              </div>
-                              
-                              {/* 시간 정보 */}
-                              <div className="space-y-1 mb-3">
-                                <div className="flex justify-between text-sm text-gray-600">
-                                  <span>실제:</span>
-                                  <span className={`font-semibold ${progress.tagColor.text}`}>{progress.actualTime}</span>
-                                </div>
-                                <div className="flex justify-between text-sm text-gray-600">
-                                  <span>목표:</span>
-                                  <span className={`font-semibold ${progress.tagColor.text}`}>{progress.targetTime}</span>
-                                </div>
-                              </div>
-                              
-                              {/* 진행률 바 */}
-                              <div className="w-full bg-white rounded-full h-2">
-                                <div 
-                                  className={`h-2 rounded-full transition-all duration-300 ${
-                                    progress.percentage >= 100 ? 'bg-green-500' :
-                                    progress.percentage >= 75 ? 'bg-blue-500' :
-                                    progress.percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500'
-                                  }`}
-                                  style={{ width: `${Math.min(progress.percentage, 100)}%` }}
-                                ></div>
-                              </div>
-                            </div>
-                          ))}
-                          
-                          {/* 전체 평균 달성률 */}
-                          <div className="pt-2 border-t border-gray-200">
-                            <div className="flex justify-between items-center text-sm">
-                              <span className="text-gray-600 flex items-center">
-                                <span className="mr-2">📈</span>
-                                평균 달성률
-                              </span>
-                              <span className="font-bold text-gray-800">
-                                {tagProgress.length > 0 
-                                  ? Math.round(tagProgress.reduce((sum, p) => sum + p.percentage, 0) / tagProgress.length)
-                                  : 0}%
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
+                    <MemberProgressDisplay member={member} calculateTagProgress={calculateTagProgress} />
                   </div>
                   
                   {/* 액션 버튼들 */}
@@ -706,20 +675,6 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                       <button
                         onClick={() => {
                           console.log('🔍 캘린더 보기 버튼 클릭:', member);
-                          // 데이터 미리 검증
-                          const userData = getUserData(member);
-                          if (!userData || !userData.schedules) {
-                            alert(`❌ ${member}님의 데이터를 찾을 수 없습니다.\n먼저 해당 멤버가 로그인하여 데이터를 생성해야 합니다.`);
-                            return;
-                          }
-                          
-                          console.log('🔍 데이터 확인됨, 페이지 이동:', {
-                            member,
-                            schedules: userData.schedules?.length || 0,
-                            tags: userData.tags?.length || 0,
-                            tagItems: userData.tagItems?.length || 0
-                          });
-                          
                           handleMemberAction(member, 'detailed-calendar');
                         }}
                         className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
@@ -729,8 +684,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                       </button>
                       
                       <button
-                        onClick={() => {
-                          const tagProgress = calculateTagProgress(member);
+                        onClick={async () => {
+                          const tagProgress = await calculateTagProgress(member);
                           if (tagProgress.length === 0) {
                             alert(`📊 ${member}님 상세 정보\n\n• 설정된 월간 목표가 없습니다\n• 목표를 설정하면 달성률을 확인할 수 있습니다`);
                           } else {
@@ -748,7 +703,6 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                         상세 달성률 보기
                       </button>
                       
-                      {/* 개별 사용자 데이터 삭제 버튼 */}
                       <button
                         onClick={() => handleUserDataReset(member)}
                         className="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
@@ -821,11 +775,11 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
-                <span>데이터 캐시: 활성</span>
+                <span>서버 연동: 활성</span>
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-blue-400 rounded-full mr-2"></span>
-                <span>localStorage 연결: 정상</span>
+                <span>데이터 캐시: 정상</span>
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-yellow-400 rounded-full mr-2"></span>
@@ -833,41 +787,143 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
               </div>
               <div className="flex items-center">
                 <span className="w-2 h-2 bg-purple-400 rounded-full mr-2"></span>
-                <span>캐시 상태: {Object.keys(memberData).length}/{members.length}</span>
+                <span>진행률 캐시: {Object.keys(progressData).length}명</span>
               </div>
             </div>
           </div>
           
           {/* 개선된 도움말 섹션 */}
           <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-medium text-blue-800 mb-2">💡 시스템 개선사항</h4>
+            <h4 className="font-medium text-blue-800 mb-2">💡 시스템 개선사항 (v2.0)</h4>
             <div className="text-sm text-blue-700 space-y-1">
-              <div>• <strong>데이터 캐시:</strong> 멤버 데이터를 메모리에 캐시하여 빠른 접근</div>
-              <div>• <strong>동기식 처리:</strong> calculateTagProgress 함수 비동기 문제 해결</div>
-              <div>• <strong>실시간 감지:</strong> localStorage 변경 시 자동 업데이트</div>
-              <div>• <strong>오류 복구:</strong> 데이터 로딩 실패 시 자동 fallback</div>
+              <div>• <strong>서버 우선 로딩:</strong> loadUserDataWithFallback을 통한 서버 데이터 우선 접근</div>
+              <div>• <strong>이중 캐시 시스템:</strong> 멤버 데이터 + 진행률 데이터 별도 캐시</div>
+              <div>• <strong>비동기 진행률 계산:</strong> 서버 데이터 로딩 후 정확한 목표 달성률 계산</div>
+              <div>• <strong>Fallback 복구:</strong> 서버 실패 시 localStorage 자동 fallback</div>
             </div>
           </div>
         </div>
         
         {/* 시스템 정보 푸터 */}
         <div className="mt-8 text-center text-xs text-gray-500 space-y-1">
-          <div>관리자 대시보드 v1.1 | 데이터 캐시 시스템 적용</div>
-          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: localStorage + 메모리 캐시</div>
+          <div>관리자 대시보드 v2.0 | 서버 연동 + 이중 캐시 시스템</div>
+          <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: 서버 API + localStorage fallback</div>
           <div className="flex justify-center items-center space-x-4 mt-2">
             <span className="flex items-center">
               <span className="w-2 h-2 bg-green-400 rounded-full mr-1"></span>
-              시스템 정상
+              서버 연동
             </span>
             <span className="flex items-center">
               <span className="w-2 h-2 bg-blue-400 rounded-full mr-1"></span>
-              데이터 캐시 활성
+              이중 캐시 활성
             </span>
             <span className="flex items-center">
               <span className="w-2 h-2 bg-purple-400 rounded-full mr-1"></span>
-              실시간 동기화
+              비동기 처리
             </span>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ✨ 멤버 진행률 표시 컴포넌트
+const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
+  const [tagProgress, setTagProgress] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadProgress = async () => {
+      try {
+        setLoading(true);
+        const progress = await calculateTagProgress(member);
+        setTagProgress(progress);
+      } catch (error) {
+        console.error(`❌ ${member} 진행률 로딩 실패:`, error);
+        setTagProgress([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProgress();
+  }, [member, calculateTagProgress]);
+
+  if (loading) {
+    return (
+      <div className="text-center py-4">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2"></div>
+        <p className="text-gray-500 text-sm">목표 달성률 계산 중...</p>
+      </div>
+    );
+  }
+
+  if (tagProgress.length === 0) {
+    return (
+      <div className="text-center py-4">
+        <div className="text-gray-400 text-3xl mb-2">📊</div>
+        <p className="text-gray-500 text-sm">설정된 목표가 없습니다</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {tagProgress.map((progress, index) => (
+        <div key={index} className={`${progress.tagColor.bg} ${progress.tagColor.border} rounded-lg p-4 border-2`}>
+          {/* 태그명과 퍼센테이지를 같은 행 상단에 배치 */}
+          <div className="flex items-center justify-between mb-3">
+            <span className={`text-sm font-semibold ${progress.tagColor.text}`}>
+              {progress.tagName}
+            </span>
+            <span className={`text-lg font-bold ${
+              progress.percentage >= 100 ? 'text-green-600' :
+              progress.percentage >= 70 ? 'text-blue-600' :
+              progress.percentage >= 30 ? 'text-yellow-600' : 'text-red-600'
+            }`}>
+              {progress.percentage}%
+            </span>
+          </div>
+          
+          {/* 시간 정보 */}
+          <div className="space-y-1 mb-3">
+            <div className="flex justify-between text-sm text-gray-600">
+              <span>실제:</span>
+              <span className={`font-semibold ${progress.tagColor.text}`}>{progress.actualTime}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600">
+              <span>목표:</span>
+              <span className={`font-semibold ${progress.tagColor.text}`}>{progress.targetTime}</span>
+            </div>
+          </div>
+          
+          {/* 진행률 바 */}
+          <div className="w-full bg-white rounded-full h-2">
+            <div 
+              className={`h-2 rounded-full transition-all duration-300 ${
+                progress.percentage >= 100 ? 'bg-green-500' :
+                progress.percentage >= 75 ? 'bg-blue-500' :
+                progress.percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+              }`}
+              style={{ width: `${Math.min(progress.percentage, 100)}%` }}
+            ></div>
+          </div>
+        </div>
+      ))}
+      
+      {/* 전체 평균 달성률 */}
+      <div className="pt-2 border-t border-gray-200">
+        <div className="flex justify-between items-center text-sm">
+          <span className="text-gray-600 flex items-center">
+            <span className="mr-2">📈</span>
+            평균 달성률
+          </span>
+          <span className="font-bold text-gray-800">
+            {tagProgress.length > 0 
+              ? Math.round(tagProgress.reduce((sum, p) => sum + p.percentage, 0) / tagProgress.length)
+              : 0}%
+          </span>
         </div>
       </div>
     </div>
