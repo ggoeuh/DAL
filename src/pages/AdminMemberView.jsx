@@ -1,4 +1,4 @@
-// pages/AdminMemberView.jsx - 서버 연동 수정 버전
+// AdminMemberView.jsx - 월간 목표 표시 문제 해결 버전
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { loadUserDataWithFallback, loadAllUserData } from './utils/unifiedStorage';
@@ -16,7 +16,7 @@ const AdminMemberView = ({ currentUser, onLogout }) => {
     memberName
   });
 
-  // ✨ 서버에서 멤버 데이터 로딩
+  // ✨ 하이브리드 데이터 로딩으로 수정
   useEffect(() => {
     console.log('🔍 AdminMemberView useEffect 실행:', { memberName });
     
@@ -31,51 +31,94 @@ const AdminMemberView = ({ currentUser, onLogout }) => {
         setLoading(true);
         setError(null);
         
-        console.log('🔍 서버에서 멤버 데이터 로딩 시작:', memberName);
+        console.log('🔍 하이브리드 데이터 로딩 시작:', memberName);
         
-        // ✨ 서버에서 데이터 우선 로드
-        let data = null;
+        let serverData = null;
+        let localData = null;
         
+        // 1단계: 서버에서 데이터 로드 시도
         try {
-          data = await loadUserDataWithFallback(memberName);
-          console.log('✅ 서버에서 데이터 로드 성공:', {
+          serverData = await loadUserDataWithFallback(memberName);
+          console.log('✅ 서버 데이터 로드 성공:', {
             memberName,
-            schedules: data?.schedules?.length || 0,
-            tags: data?.tags?.length || 0,
-            tagItems: data?.tagItems?.length || 0,
-            monthlyGoals: data?.monthlyGoals?.length || 0
+            schedules: serverData?.schedules?.length || 0,
+            tags: serverData?.tags?.length || 0,
+            tagItems: serverData?.tagItems?.length || 0,
+            monthlyGoals: serverData?.monthlyGoals?.length || 0
           });
         } catch (serverError) {
-          console.error('❌ 서버 로드 실패, localStorage 시도:', serverError);
-          
-          // 서버 실패 시 localStorage fallback
-          try {
-            data = loadAllUserData(memberName);
-            console.log('🔄 localStorage에서 데이터 로드 성공:', {
-              memberName,
-              schedules: data?.schedules?.length || 0,
-              tags: data?.tags?.length || 0,
-              tagItems: data?.tagItems?.length || 0,
-              monthlyGoals: data?.monthlyGoals?.length || 0
-            });
-          } catch (localError) {
-            console.error('❌ localStorage 로드도 실패:', localError);
-            throw new Error('서버와 로컬 저장소 모두에서 데이터 로드 실패');
+          console.error('⚠️ 서버 로드 실패, localStorage 시도:', serverError);
+        }
+        
+        // 2단계: localStorage에서 데이터 로드 시도
+        try {
+          localData = loadAllUserData(memberName);
+          console.log('✅ 로컬 데이터 로드 성공:', {
+            memberName,
+            schedules: localData?.schedules?.length || 0,
+            tags: localData?.tags?.length || 0,
+            tagItems: localData?.tagItems?.length || 0,
+            monthlyGoals: localData?.monthlyGoals?.length || 0
+          });
+        } catch (localError) {
+          console.error('⚠️ 로컬 로드 실패:', localError);
+        }
+        
+        // 3단계: 데이터 존재 여부 확인
+        if (!serverData && !localData) {
+          throw new Error('서버와 로컬 저장소 모두에서 데이터 로드 실패');
+        }
+        
+        // 4단계: 하이브리드 데이터 생성 (AdminDashboard와 동일한 로직)
+        const hybridData = {
+          // 일정: 서버 우선, 없으면 로컬
+          schedules: (serverData?.schedules?.length > 0) 
+            ? serverData.schedules 
+            : (localData?.schedules || []),
+            
+          // 태그: 서버 우선, 없으면 로컬  
+          tags: (serverData?.tags?.length > 0) 
+            ? serverData.tags 
+            : (localData?.tags || []),
+            
+          // 태그 아이템: 서버 우선, 없으면 로컬
+          tagItems: (serverData?.tagItems?.length > 0) 
+            ? serverData.tagItems 
+            : (localData?.tagItems || []),
+            
+          // 월간 계획: 서버 우선, 없으면 로컬
+          monthlyPlans: (serverData?.monthlyPlans?.length > 0) 
+            ? serverData.monthlyPlans 
+            : (localData?.monthlyPlans || []),
+            
+          // ✨ 핵심 수정: 월간 목표는 로컬 우선! (localStorage에 최신 목표가 있음)
+          monthlyGoals: (localData?.monthlyGoals?.length > 0) 
+            ? localData.monthlyGoals 
+            : (serverData?.monthlyGoals || [])
+        };
+        
+        console.log('🎯 하이브리드 최종 데이터:', {
+          memberName,
+          schedules: hybridData.schedules?.length || 0,
+          tags: hybridData.tags?.length || 0,
+          tagItems: hybridData.tagItems?.length || 0,
+          monthlyPlans: hybridData.monthlyPlans?.length || 0,
+          monthlyGoals: hybridData.monthlyGoals?.length || 0,
+          monthlyGoalsSource: (localData?.monthlyGoals?.length > 0) ? 'localStorage' : 'server',
+          dataStatus: {
+            serverAvailable: !!serverData,
+            localAvailable: !!localData,
+            hasMonthlyGoals: hybridData.monthlyGoals?.length > 0
           }
-        }
+        });
         
-        // 데이터 검증
-        if (!data) {
-          throw new Error('데이터가 없습니다');
-        }
-        
-        // 기본 구조 보장
+        // 5단계: 기본 구조 보장 (배열이 아닌 경우 빈 배열로 초기화)
         const validatedData = {
-          schedules: Array.isArray(data.schedules) ? data.schedules : [],
-          tags: Array.isArray(data.tags) ? data.tags : [],
-          tagItems: Array.isArray(data.tagItems) ? data.tagItems : [],
-          monthlyPlans: Array.isArray(data.monthlyPlans) ? data.monthlyPlans : [],
-          monthlyGoals: Array.isArray(data.monthlyGoals) ? data.monthlyGoals : []
+          schedules: Array.isArray(hybridData.schedules) ? hybridData.schedules : [],
+          tags: Array.isArray(hybridData.tags) ? hybridData.tags : [],
+          tagItems: Array.isArray(hybridData.tagItems) ? hybridData.tagItems : [],
+          monthlyPlans: Array.isArray(hybridData.monthlyPlans) ? hybridData.monthlyPlans : [],
+          monthlyGoals: Array.isArray(hybridData.monthlyGoals) ? hybridData.monthlyGoals : []
         };
         
         console.log('✅ 데이터 검증 완료:', {
@@ -83,13 +126,17 @@ const AdminMemberView = ({ currentUser, onLogout }) => {
           validatedData: Object.keys(validatedData).reduce((acc, key) => {
             acc[key] = validatedData[key].length;
             return acc;
-          }, {})
+          }, {}),
+          monthlyGoalsDetails: validatedData.monthlyGoals.map(mg => ({
+            month: mg.month,
+            goalsCount: mg.goals?.length || 0
+          }))
         });
         
         setMemberData(validatedData);
         
       } catch (error) {
-        console.error('❌ 멤버 데이터 로딩 최종 실패:', error);
+        console.error('❌ 하이브리드 데이터 로딩 최종 실패:', error);
         setError(error.message || '데이터 로딩 실패');
         setMemberData(null);
       } finally {
@@ -109,8 +156,8 @@ const AdminMemberView = ({ currentUser, onLogout }) => {
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">서버에서 {memberName}님의 데이터를 불러오는 중...</p>
-          <p className="text-sm text-gray-500 mt-2">서버 API 호출 중...</p>
+          <p className="text-gray-600">하이브리드 방식으로 {memberName}님의 데이터를 불러오는 중...</p>
+          <p className="text-sm text-gray-500 mt-2">서버 + localStorage 통합 로딩...</p>
         </div>
       </div>
     );
@@ -155,9 +202,9 @@ const AdminMemberView = ({ currentUser, onLogout }) => {
         <div className="p-8">
           <div className="bg-white rounded-lg shadow p-6 text-center max-w-md mx-auto">
             <div className="text-red-400 text-6xl mb-4">⚠️</div>
-            <h3 className="text-xl font-semibold text-gray-600 mb-2">데이터 로딩 실패</h3>
+            <h3 className="text-xl font-semibold text-gray-600 mb-2">하이브리드 데이터 로딩 실패</h3>
             <p className="text-gray-500 mb-4">
-              {memberName}님의 데이터를 불러올 수 없습니다.
+              {memberName}님의 데이터를 서버와 로컬 저장소에서 불러올 수 없습니다.
             </p>
             {error && (
               <div className="bg-red-50 border border-red-200 rounded p-3 mb-4">
@@ -168,7 +215,7 @@ const AdminMemberView = ({ currentUser, onLogout }) => {
               <h4 className="font-semibold mb-2">💡 해결 방법</h4>
               <ul className="text-sm text-gray-600 space-y-1">
                 <li>• 해당 멤버가 로그인한 적이 있는지 확인</li>
-                <li>• 서버 연결 상태 확인</li>
+                <li>• 서버 연결 상태와 localStorage 상태 확인</li>
                 <li>• 브라우저를 새로고침하고 다시 시도</li>
                 <li>• 대시보드에서 다시 접근</li>
               </ul>
@@ -193,14 +240,14 @@ const AdminMemberView = ({ currentUser, onLogout }) => {
     );
   }
 
-  console.log('✅ AdminMemberView: DetailedCalendar 렌더링 준비 완료');
+  console.log('✅ AdminMemberView: DetailedCalendar 렌더링 준비 완료 (하이브리드 데이터)');
 
   // DetailedCalendar에 전달할 props 준비
   const detailedCalendarProps = {
     schedules: memberData.schedules || [],
     tags: memberData.tags || [],
     tagItems: memberData.tagItems || [],
-    monthlyGoals: memberData.monthlyGoals || [],
+    monthlyGoals: memberData.monthlyGoals || [], // ✨ localStorage 우선 데이터
     monthlyPlans: memberData.monthlyPlans || [],
     currentUser: memberName, // 조회 대상 멤버 이름
     isAdminView: true, // 관리자 뷰 모드
@@ -208,12 +255,13 @@ const AdminMemberView = ({ currentUser, onLogout }) => {
     onBackToDashboard: handleBackToDashboard
   };
 
-  console.log('🔍 DetailedCalendar props:', {
+  console.log('🔍 DetailedCalendar props (하이브리드):', {
     memberName,
     schedulesCount: detailedCalendarProps.schedules.length,
     tagsCount: detailedCalendarProps.tags.length,
     tagItemsCount: detailedCalendarProps.tagItems.length,
-    monthlyGoalsCount: detailedCalendarProps.monthlyGoals.length,
+    monthlyGoalsCount: detailedCalendarProps.monthlyGoals.length, // ✨ 이제 목표가 보여야 함
+    monthlyGoalsData: detailedCalendarProps.monthlyGoals,
     isAdminView: detailedCalendarProps.isAdminView
   });
 
