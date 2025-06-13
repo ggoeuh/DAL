@@ -1,7 +1,8 @@
-// pages/DetailedCalendar.jsx - 서버 연동 강화 버전
+// pages/DetailedCalendar.jsx - 완전 서버 기반 버전
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { saveUserDataToDAL, loadUserDataFromDAL } from './utils/supabaseStorage.js';
+import { loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
+
 // 파스텔 색상 팔레트
 const PASTEL_COLORS = [
   { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-200" },
@@ -165,9 +166,8 @@ const ScheduleDetailModal = ({ isOpen, onClose, schedule, tagColor }) => {
 };
 
 // ✨ 서버 데이터 새로고침 컴포넌트
-const ServerDataRefresher = ({ currentUser, onDataRefresh, isAdminView }) => {
+const ServerDataRefresher = ({ currentUser, onDataRefresh, isAdminView, lastSyncTime }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
 
   const handleRefresh = async () => {
     if (isRefreshing || !currentUser || !onDataRefresh) return;
@@ -177,11 +177,12 @@ const ServerDataRefresher = ({ currentUser, onDataRefresh, isAdminView }) => {
       console.log('🔄 서버 데이터 새로고침 시작:', currentUser);
 
       // 서버에서 최신 데이터 로드
-      const freshData = await loadUserDataWithFallback(currentUser);
-      if (freshData) {
-        onDataRefresh(freshData);
-        setLastRefresh(new Date());
+      const result = await loadUserDataFromDAL(currentUser);
+      if (result.success && result.data) {
+        onDataRefresh(result.data);
         console.log('✅ 서버 데이터 새로고침 완료');
+      } else {
+        throw new Error(result.error || '서버 데이터 로드 실패');
       }
     } catch (error) {
       console.error('❌ 서버 데이터 새로고침 실패:', error);
@@ -195,7 +196,7 @@ const ServerDataRefresher = ({ currentUser, onDataRefresh, isAdminView }) => {
 
   return (
     <div className="flex items-center gap-2 text-sm text-gray-600">
-      <span>마지막 새로고침: {lastRefresh.toLocaleTimeString('ko-KR')}</span>
+      <span>마지막 새로고침: {lastSyncTime ? lastSyncTime.toLocaleTimeString('ko-KR') : '없음'}</span>
       <button
         onClick={handleRefresh}
         disabled={isRefreshing}
@@ -220,15 +221,20 @@ const DetailedCalendar = ({
   monthlyPlans: initialMonthlyPlans = [],
   currentUser = 'demo-user',
   isAdminView = false,
+  isServerBased = false,
   onLogout = () => {},
-  onBackToDashboard = null
+  onBackToDashboard = null,
+  onRefresh = null,
+  lastSyncTime = null
 }) => {
   // ✨ 서버 동기화를 위한 로컬 상태
-  const [schedules, setSchedules] = useState(initialSchedules);
-  const [tags, setTags] = useState(initialTags);
-  const [tagItems, setTagItems] = useState(initialTagItems);
-  const [monthlyGoals, setMonthlyGoals] = useState(initialMonthlyGoals);
-  const [monthlyPlans, setMonthlyPlans] = useState(initialMonthlyPlans);
+  const [schedules, setSchedules] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [tagItems, setTagItems] = useState([]);
+  const [monthlyGoals, setMonthlyGoals] = useState([]);
+  const [monthlyPlans, setMonthlyPlans] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(lastSyncTime || new Date());
   
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedSchedule, setSelectedSchedule] = useState(null);
@@ -241,32 +247,100 @@ const DetailedCalendar = ({
   });
   const navigate = useNavigate();
 
-  // ✨ props 변경 시 로컬 상태 업데이트
-  useEffect(() => {
-    console.log('📊 DetailedCalendar props 업데이트:', {
-      currentUser,
-      isAdminView,
-      schedules: initialSchedules?.length || 0,
-      tags: initialTags?.length || 0,
-      tagItems: initialTagItems?.length || 0,
-      monthlyGoals: initialMonthlyGoals?.length || 0
-    });
+  // ✨ 서버에서 데이터 로드
+  const loadDataFromServer = async () => {
+    if (!currentUser || !supabase) return;
 
-    setSchedules(initialSchedules);
-    setTags(initialTags);
-    setTagItems(initialTagItems);
-    setMonthlyGoals(initialMonthlyGoals);
-    setMonthlyPlans(initialMonthlyPlans);
-  }, [initialSchedules, initialTags, initialTagItems, initialMonthlyGoals, initialMonthlyPlans]);
+    try {
+      setLoading(true);
+      console.log('🌐 서버에서 데이터 로드 시작:', currentUser);
+
+      const result = await loadUserDataFromDAL(currentUser);
+      
+      if (result.success && result.data) {
+        const serverData = result.data;
+        
+        console.log('✅ 서버 데이터 로드 성공:', {
+          schedules: serverData.schedules?.length || 0,
+          tags: serverData.tags?.length || 0,
+          tagItems: serverData.tagItems?.length || 0,
+          monthlyGoals: serverData.monthlyGoals?.length || 0
+        });
+
+        setSchedules(serverData.schedules || []);
+        setTags(serverData.tags || []);
+        setTagItems(serverData.tagItems || []);
+        setMonthlyGoals(serverData.monthlyGoals || []);
+        setMonthlyPlans(serverData.monthlyPlans || []);
+        setLastRefresh(new Date());
+      } else {
+        console.warn('⚠️ 서버 데이터 없음:', result.error);
+        // 빈 데이터로 초기화
+        setSchedules([]);
+        setTags([]);
+        setTagItems([]);
+        setMonthlyGoals([]);
+        setMonthlyPlans([]);
+      }
+    } catch (error) {
+      console.error('❌ 서버 데이터 로드 실패:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✨ 초기 데이터 로드 (서버 기반 모드인 경우)
+  useEffect(() => {
+    if (isServerBased) {
+      console.log('🌐 서버 기반 모드 - 서버에서 데이터 로드');
+      loadDataFromServer();
+    } else {
+      console.log('📦 props 기반 모드 - 전달받은 데이터 사용');
+      setSchedules(initialSchedules);
+      setTags(initialTags);
+      setTagItems(initialTagItems);
+      setMonthlyGoals(initialMonthlyGoals);
+      setMonthlyPlans(initialMonthlyPlans);
+    }
+  }, [currentUser, isServerBased]);
+
+  // ✨ props 변경 시 로컬 상태 업데이트 (비서버 모드)
+  useEffect(() => {
+    if (!isServerBased) {
+      console.log('📊 DetailedCalendar props 업데이트:', {
+        currentUser,
+        isAdminView,
+        schedules: initialSchedules?.length || 0,
+        tags: initialTags?.length || 0,
+        tagItems: initialTagItems?.length || 0,
+        monthlyGoals: initialMonthlyGoals?.length || 0
+      });
+
+      setSchedules(initialSchedules);
+      setTags(initialTags);
+      setTagItems(initialTagItems);
+      setMonthlyGoals(initialMonthlyGoals);
+      setMonthlyPlans(initialMonthlyPlans);
+    }
+  }, [initialSchedules, initialTags, initialTagItems, initialMonthlyGoals, initialMonthlyPlans, isServerBased]);
 
   // ✨ 서버 데이터 새로고침 핸들러
-  const handleDataRefresh = (freshData) => {
-    console.log('🔄 새로운 데이터 적용:', freshData);
-    setSchedules(freshData.schedules || []);
-    setTags(freshData.tags || []);
-    setTagItems(freshData.tagItems || []);
-    setMonthlyGoals(freshData.monthlyGoals || []);
-    setMonthlyPlans(freshData.monthlyPlans || []);
+  const handleDataRefresh = async (freshData = null) => {
+    if (freshData) {
+      console.log('🔄 새로운 데이터 적용:', freshData);
+      setSchedules(freshData.schedules || []);
+      setTags(freshData.tags || []);
+      setTagItems(freshData.tagItems || []);
+      setMonthlyGoals(freshData.monthlyGoals || []);
+      setMonthlyPlans(freshData.monthlyPlans || []);
+      setLastRefresh(new Date());
+    } else if (isServerBased) {
+      // 직접 서버에서 로드
+      await loadDataFromServer();
+    } else if (onRefresh) {
+      // 부모 컴포넌트의 새로고침 함수 호출
+      onRefresh();
+    }
   };
 
   // 데이터 통계 계산
@@ -286,10 +360,7 @@ const DetailedCalendar = ({
     }, 0);
 
     // 사용된 태그 타입 수 계산
-    const usedTagTypes = new Set(currentMonthSchedules.map(schedule => {
-      const tagItem = tagItems.find(item => item.tagName === schedule.tag);
-      return tagItem ? tagItem.tagType : (schedule.tagType || "기타");
-    }));
+    const usedTagTypes = new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"));
 
     setDataStats({
       totalSchedules: schedules.length,
@@ -307,7 +378,7 @@ const DetailedCalendar = ({
   const safeMonthlyGoals = Array.isArray(monthlyGoals) ? monthlyGoals : [];
 
   // ✨ 데이터 없음 상태 처리 개선
-  if (safeSchedules.length === 0 && safeTags.length === 0 && safeTagItems.length === 0) {
+  if (!loading && safeSchedules.length === 0 && safeTags.length === 0 && safeTagItems.length === 0) {
     return (
       <div className="min-h-screen bg-gray-100">
         {/* 관리자 네비게이션 바 */}
@@ -328,7 +399,7 @@ const DetailedCalendar = ({
                   <h1 className="text-xl font-bold">
                     👑 {currentUser}님의 상세 캘린더
                   </h1>
-                  <p className="text-red-200 text-sm">관리자 모드 - 데이터 없음</p>
+                  <p className="text-red-200 text-sm">관리자 모드 - 데이터 없음 (서버 기반)</p>
                 </div>
               </div>
               <div className="flex items-center space-x-4">
@@ -336,6 +407,7 @@ const DetailedCalendar = ({
                   currentUser={currentUser}
                   onDataRefresh={handleDataRefresh}
                   isAdminView={isAdminView}
+                  lastSyncTime={lastRefresh}
                 />
                 <span className="text-red-200 text-sm">
                   {new Date().toLocaleDateString('ko-KR')}
@@ -356,41 +428,30 @@ const DetailedCalendar = ({
         {/* 데이터 없음 메시지 */}
         <div className="flex items-center justify-center min-h-screen bg-gray-100">
           <div className="bg-white rounded-lg shadow-lg p-12 text-center max-w-md">
-            <div className="text-gray-400 text-6xl mb-6">📅</div>
+            <div className="text-gray-400 text-6xl mb-6">🌐</div>
             <h3 className="text-2xl font-semibold text-gray-600 mb-3">
-              데이터가 없습니다
+              서버에 데이터가 없습니다
             </h3>
             <p className="text-gray-500 mb-6">
-              <strong>{currentUser}님</strong>의 캘린더 데이터를 찾을 수 없습니다.
+              <strong>{currentUser}님</strong>의 캘린더 데이터를 Supabase 서버에서 찾을 수 없습니다.
             </p>
             <div className="bg-gray-50 rounded-lg p-4 text-left mb-6">
               <h4 className="font-semibold mb-2">💡 확인 사항</h4>
               <ul className="text-sm text-gray-600 space-y-1">
-                <li>• 해당 멤버가 로그인한 적이 있는지 확인</li>
+                <li>• 해당 멤버가 로그인하여 데이터를 서버에 저장했는지 확인</li>
                 <li>• 일정을 등록한 적이 있는지 확인</li>
-                <li>• 서버 연결 상태 확인</li>
-                <li>• 브라우저 데이터가 삭제되지 않았는지 확인</li>
+                <li>• Supabase 서버 연결 상태 확인</li>
+                <li>• 네트워크 연결 상태 확인</li>
               </ul>
             </div>
             <div className="flex gap-2">
-              {isAdminView && (
-                <button
-                  onClick={async () => {
-                    try {
-                      const freshData = await loadUserDataWithFallback(currentUser);
-                      if (freshData) {
-                        handleDataRefresh(freshData);
-                      }
-                    } catch (error) {
-                      console.error('새로고침 실패:', error);
-                      alert('데이터 새로고침에 실패했습니다.');
-                    }
-                  }}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium transition-colors"
-                >
-                  🔄 데이터 새로고침
-                </button>
-              )}
+              <button
+                onClick={() => handleDataRefresh()}
+                disabled={loading}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium transition-colors disabled:opacity-50"
+              >
+                {loading ? '🔄 로딩...' : '🔄 서버 새로고침'}
+              </button>
               {onBackToDashboard && (
                 <button
                   onClick={onBackToDashboard}
@@ -422,8 +483,7 @@ const DetailedCalendar = ({
     const totals = {};
     
     currentMonthSchedules.forEach(schedule => {
-      const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
-      const tagType = tagItem ? tagItem.tagType : (schedule.tagType || "기타");
+      const tagType = schedule.tagType || "기타";
       
       if (!totals[tagType]) {
         totals[tagType] = 0;
@@ -452,10 +512,10 @@ const DetailedCalendar = ({
     return Math.round((actual / goal) * 100);
   };
 
-  // 태그 색상 가져오기
+  // 태그 색상 가져오기 (해시 기반)
   const getTagColor = (tagType) => {
-    const tag = safeTags.find(t => t.tagType === tagType);
-    return tag ? tag.color : PASTEL_COLORS[0];
+    const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+    return PASTEL_COLORS[index];
   };
 
   // 특정 날짜의 일정들 가져오기
@@ -491,10 +551,7 @@ const DetailedCalendar = ({
   
   // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
   const goalTagTypes = currentMonthGoalsData.map(goal => goal.tagType);
-  const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => {
-    const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
-    return tagItem ? tagItem.tagType : (schedule.tagType || "기타");
-  }))];
+  const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"))];
   
   const allTagTypes = [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
 
@@ -518,7 +575,7 @@ const DetailedCalendar = ({
                 <h1 className="text-xl font-bold">
                   👑 {currentUser}님의 상세 캘린더 (읽기 전용)
                 </h1>
-                <p className="text-red-200 text-sm">관리자 모드 - 서버 연동</p>
+                <p className="text-red-200 text-sm">관리자 모드 - 서버 기반</p>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -526,6 +583,7 @@ const DetailedCalendar = ({
                 currentUser={currentUser}
                 onDataRefresh={handleDataRefresh}
                 isAdminView={isAdminView}
+                lastSyncTime={lastRefresh}
               />
               <span className="text-red-200 text-sm">
                 {new Date().toLocaleDateString('ko-KR')}
@@ -543,19 +601,22 @@ const DetailedCalendar = ({
         </nav>
       )}
 
-      {/* 관리자 모드 알림 배너 */}
-      {isAdminView && (
-        <div className="bg-red-50 border-l-4 border-red-400 p-4 shadow-sm">
+      {/* 서버 기반 모드 알림 배너 */}
+      {(isAdminView || isServerBased) && (
+        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 shadow-sm">
           <div className="flex items-start">
             <div className="flex-shrink-0">
-              <span className="text-red-400 text-xl">⚠️</span>
+              <span className="text-blue-400 text-xl">🌐</span>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">관리자 모드 (읽기 전용)</h3>
-              <div className="mt-1 text-sm text-red-700">
+              <h3 className="text-sm font-medium text-blue-800">
+                {isAdminView ? '관리자 모드 (읽기 전용)' : '서버 기반 모드'}
+              </h3>
+              <div className="mt-1 text-sm text-blue-700">
                 <p>
-                  <strong>{currentUser}님</strong>의 상세한 일정 정보를 서버에서 실시간으로 조회하고 있습니다. 
-                  <strong> 일정을 클릭하면 상세 정보를 확인할 수 있습니다.</strong>
+                  <strong>{currentUser}님</strong>의 상세한 일정 정보를 Supabase 서버에서 실시간으로 조회하고 있습니다. 
+                  {isAdminView && <strong> 일정을 클릭하면 상세 정보를 확인할 수 있습니다.</strong>}
+                  {lastRefresh && ` (마지막 동기화: ${lastRefresh.toLocaleTimeString('ko-KR')})`}
                 </p>
               </div>
             </div>
@@ -589,6 +650,7 @@ const DetailedCalendar = ({
               <div>{isAdminView ? `조회 대상: ${currentUser}` : `사용자: ${currentUser}`}</div>
               <div className="text-xs text-gray-500">
                 이번 달: {dataStats.currentMonthSchedules}개 일정 | 총 {dataStats.totalTime}
+                {isServerBased && ' | 서버 기반'}
               </div>
             </div>
             <button
@@ -597,6 +659,15 @@ const DetailedCalendar = ({
             >
               오늘
             </button>
+            {isServerBased && (
+              <button
+                onClick={() => handleDataRefresh()}
+                disabled={loading}
+                className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
+              >
+                {loading ? '🔄 로딩...' : '🔄 새로고침'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -696,8 +767,7 @@ const DetailedCalendar = ({
                   {/* 일정 목록 */}
                   <div className="space-y-1">
                     {daySchedules.map((schedule) => {
-                      const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
-                      const tagType = tagItem ? tagItem.tagType : (schedule.tagType || "기타");
+                      const tagType = schedule.tagType || "기타";
                       const tagColor = getTagColor(tagType);
                       
                       return (
@@ -745,8 +815,7 @@ const DetailedCalendar = ({
           onClose={() => setIsDetailModalOpen(false)}
           schedule={selectedSchedule}
           tagColor={selectedSchedule ? (() => {
-            const tagItem = safeTagItems.find(item => item.tagName === selectedSchedule.tag);
-            const tagType = tagItem ? tagItem.tagType : (selectedSchedule.tagType || "기타");
+            const tagType = selectedSchedule.tagType || "기타";
             return getTagColor(tagType);
           })() : PASTEL_COLORS[0]}
         />
@@ -757,7 +826,7 @@ const DetailedCalendar = ({
             <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
               <span className="mr-2">🎯</span>
               {formatDate(currentDate, 'yyyy년 M월')} 목표 달성률
-              {isAdminView && (
+              {isServerBased && (
                 <span className="ml-2 text-sm text-gray-500">(서버 데이터 기반)</span>
               )}
             </h3>
@@ -852,11 +921,19 @@ const DetailedCalendar = ({
           </div>
           
           <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <h4 className="font-medium text-green-800 mb-2">📊 이번 달 통계 {isAdminView && '(서버 기반)'}</h4>
+            <h4 className="font-medium text-green-800 mb-2">
+              📊 이번 달 통계 
+              {isServerBased && ' (서버 기반)'}
+            </h4>
             <div className="text-green-700 text-sm space-y-1">
               <div>총 일정: {dataStats.currentMonthSchedules}개</div>
               <div>활동 시간: {dataStats.totalTime}</div>
               <div>활동 유형: {dataStats.tagTypes}개</div>
+              {lastRefresh && (
+                <div className="text-xs text-green-600">
+                  마지막 업데이트: {lastRefresh.toLocaleTimeString('ko-KR')}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -889,7 +966,8 @@ const DetailedCalendar = ({
                   const percentage = calculatePercentage(actualMinutes, goalMinutes);
                   return sum + percentage;
                 }, 0) / allTagTypes.length) : 0}%\n\n` +
-                `조회 시간: ${new Date().toLocaleString('ko-KR')}`
+                `조회 시간: ${new Date().toLocaleString('ko-KR')}\n` +
+                `데이터 소스: Supabase 서버`
               );
             }}
             className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition duration-200"
@@ -898,22 +976,12 @@ const DetailedCalendar = ({
             <span className="text-lg">📊</span>
           </button>
           <button
-            onClick={async () => {
-              try {
-                const freshData = await loadUserDataWithFallback(currentUser);
-                if (freshData) {
-                  handleDataRefresh(freshData);
-                  alert('✅ 서버에서 최신 데이터를 가져왔습니다!');
-                }
-              } catch (error) {
-                console.error('서버 새로고침 실패:', error);
-                alert('❌ 서버 데이터 새로고침에 실패했습니다.');
-              }
-            }}
-            className="bg-green-600 hover:bg-green-700 text-white p-3 rounded-full shadow-lg transition duration-200"
+            onClick={() => handleDataRefresh()}
+            disabled={loading}
+            className="bg-green-600 hover:bg-green-700 text-white p-3 rounded-full shadow-lg transition duration-200 disabled:opacity-50"
             title="서버 데이터 새로고침"
           >
-            <span className="text-lg">🔄</span>
+            <span className="text-lg">{loading ? '⏳' : '🔄'}</span>
           </button>
         </div>
       )}
