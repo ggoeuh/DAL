@@ -130,7 +130,7 @@ const WeeklyCalendar = ({
     const newVisibleDays = [];
     for (let i = 0; i < 5; i++) {
       const offset = i - focusPosition;
-      const newIndex = (initialDate.getDay() + offset + 7) % 7;
+      const newIndex = (focusedDayIndex + offset + 7) % 7;
       newVisibleDays.push(newIndex);
     }
     return newVisibleDays;
@@ -217,7 +217,7 @@ const WeeklyCalendar = ({
       : PASTEL_COLORS[safeTags.length % PASTEL_COLORS.length];
   };
 
-  // 포커스 날짜 변경 핸들러 - 원본과 동일하게 되돌림
+  // 포커스 날짜 변경 핸들러 - 원본과 동일
   const handleDayFocus = (dayIndex) => {
     if (dayIndex === focusedDayIndex) return;
     
