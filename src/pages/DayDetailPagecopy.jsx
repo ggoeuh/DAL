@@ -130,7 +130,7 @@ const WeeklyCalendar = ({
     const newVisibleDays = [];
     for (let i = 0; i < 5; i++) {
       const offset = i - focusPosition;
-      const newIndex = (focusedDayIndex + offset + 7) % 7;
+      const newIndex = (initialDate.getDay() + offset + 7) % 7;
       newVisibleDays.push(newIndex);
     }
     return newVisibleDays;
