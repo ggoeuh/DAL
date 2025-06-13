@@ -126,11 +126,19 @@ const WeeklyCalendar = ({
   const [focusedDayIndex, setFocusedDayIndex] = useState(today.getDay());
   
   const [visibleDays, setVisibleDays] = useState(() => {
-    const focusPosition = 3;
+    const focusPosition = 2; // 가운데 위치
     const newVisibleDays = [];
     for (let i = 0; i < 5; i++) {
       const offset = i - focusPosition;
-      const newIndex = (focusedDayIndex + offset + 7) % 7;
+      let newIndex = focusedDayIndex + offset;
+      
+      // 0-6 범위를 벗어나지 않도록 조정
+      if (newIndex < 0) {
+        newIndex = 7 + newIndex;
+      } else if (newIndex >= 7) {
+        newIndex = newIndex - 7;
+      }
+      
       newVisibleDays.push(newIndex);
     }
     return newVisibleDays;
@@ -224,11 +232,19 @@ const WeeklyCalendar = ({
     setFocusedDayIndex(dayIndex);
     
     const newVisibleDays = [];
-    const focusPosition = 3;
+    const focusPosition = 2; // 가운데 위치
     
     for (let i = 0; i < 5; i++) {
       const offset = i - focusPosition;
-      const newIndex = (dayIndex + offset + 7) % 7;
+      let newIndex = dayIndex + offset;
+      
+      // 0-6 범위를 벗어나지 않도록 조정
+      if (newIndex < 0) {
+        newIndex = 7 + newIndex;
+      } else if (newIndex >= 7) {
+        newIndex = newIndex - 7;
+      }
+      
       newVisibleDays.push(newIndex);
     }
     
@@ -775,10 +791,18 @@ const WeeklyCalendar = ({
     setFocusedDayIndex(currentDate.getDay());
     
     const newVisibleDays = [];
-    const focusPosition = 3;
+    const focusPosition = 2; // 가운데 위치
     for (let i = 0; i < 5; i++) {
       const offset = i - focusPosition;
-      const newIndex = (currentDate.getDay() + offset + 7) % 7;
+      let newIndex = currentDate.getDay() + offset;
+      
+      // 0-6 범위를 벗어나지 않도록 조정
+      if (newIndex < 0) {
+        newIndex = 7 + newIndex;
+      } else if (newIndex >= 7) {
+        newIndex = newIndex - 7;
+      }
+      
       newVisibleDays.push(newIndex);
     }
     setVisibleDays(newVisibleDays);
@@ -977,7 +1001,7 @@ const WeeklyCalendar = ({
                 <div className="w-10 flex-shrink-0 bg-white border-r border-gray-200" />
                 {visibleDays.map((dayIndex, i) => {
                   const date = currentWeek[dayIndex];
-                  const isFocusDay = i === 3;
+                  const isFocusDay = i === 2; // 가운데가 포커스
                   return (
                     <div
                       key={dayIndex}
@@ -1013,7 +1037,7 @@ const WeeklyCalendar = ({
                 <div className="flex flex-1 min-w-0">
                   {visibleDays.map((dayIndex, i) => {
                     const date = currentWeek[dayIndex];
-                    const isFocusDay = i === 3;
+                    const isFocusDay = i === 2; // 가운데가 포커스
                     const dateSchedules = filterSchedulesByDate(safeSchedules, date);
 
                     return (
