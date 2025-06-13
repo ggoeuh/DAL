@@ -1,7 +1,7 @@
 // pages/AdminDashboard.jsx - 서버 직접 연동 버전
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loadUserDataWithFallback, loadAllUserData } from '../utils/unifiedStorage';
+import { loadUserDataWithFallback, loadAllUserData } from './utils/unifiedStorage';
 
 const AdminDashboard = ({ currentUser, onLogout }) => {
   const [members, setMembers] = useState([]);
