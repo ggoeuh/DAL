@@ -1,18 +1,109 @@
-// utils/supabaseStorage.js - Supabase 기반 스토리지 시스템
+// utils/supabaseStorage.js - Vite + Supabase 기반 스토리지 시스템
 
 import { createClient } from '@supabase/supabase-js'
 
-// Supabase 설정
-const supabaseUrl = 'YOUR_SUPABASE_URL'
-const supabaseKey = 'YOUR_SUPABASE_ANON_KEY'
+// Vite 환경변수에서 Supabase 설정 가져오기
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+// 개발 중 fallback 값 (환경변수가 없을 때 사용)
+const fallbackUrl = 'https://hbrnjzclvtreppxzsspv.supabase.co'
+const fallbackKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhicm5qemNsdnRyZXBweHpzc3B2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NjY5OTgsImV4cCI6MjA2NTM0Mjk5OH0.txgsa7O_kzdeI2RjM1CEiIW6Zt419gr0o2BgULdTcQc'
+
+// Supabase 클라이언트 생성
+export const supabase = createClient(
+  supabaseUrl || fallbackUrl,
+  supabaseKey || fallbackKey
+)
+
+// 연결 상태 확인 로그
+console.log('🌐 Vite + Supabase 초기화:', {
+  url: supabaseUrl ? '✅ 환경변수 사용' : '⚠️ fallback 사용',
+  key: supabaseKey ? '✅ 환경변수 사용' : '⚠️ fallback 사용',
+  actualUrl: supabaseUrl || fallbackUrl
+})
 
 // =========================
 // 🌐 Supabase 데이터 함수들
 // =========================
 
-// 서버에서 사용자 데이터 불러오기
+// DAL 테이블에 활동 저장
+export const saveActivityToDAL = async (activityData) => {
+  try {
+    console.log('🎯 DAL에 활동 저장 시작:', activityData);
+    
+    const { data, error } = await supabase
+      .from('DAL')
+      .insert([activityData])
+      .select();
+
+    if (error) {
+      throw error;
+    }
+    
+    console.log('✅ DAL 활동 저장 성공:', data);
+    return { success: true, data };
+    
+  } catch (error) {
+    console.error('❌ DAL 활동 저장 실패:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// DAL 테이블에서 활동 목록 불러오기
+export const loadActivitiesFromDAL = async (userId = null) => {
+  try {
+    console.log('🎯 DAL에서 활동 불러오기 시작:', userId);
+    
+    let query = supabase
+      .from('DAL')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    // 특정 사용자 필터링
+    if (userId) {
+      query = query.eq('user_name', userId);
+    }
+    
+    const { data, error } = await query;
+
+    if (error) {
+      throw error;
+    }
+    
+    console.log('✅ DAL 활동 불러오기 성공:', data?.length || 0, '개');
+    return { success: true, data: data || [] };
+    
+  } catch (error) {
+    console.error('❌ DAL 활동 불러오기 실패:', error);
+    return { success: false, data: [], error: error.message };
+  }
+};
+
+// DAL 테이블에서 활동 삭제
+export const deleteActivityFromDAL = async (activityId) => {
+  try {
+    console.log('🎯 DAL에서 활동 삭제 시작:', activityId);
+    
+    const { error } = await supabase
+      .from('DAL')
+      .delete()
+      .eq('id', activityId);
+
+    if (error) {
+      throw error;
+    }
+    
+    console.log('✅ DAL 활동 삭제 성공');
+    return { success: true };
+    
+  } catch (error) {
+    console.error('❌ DAL 활동 삭제 실패:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// 서버에서 사용자 데이터 불러오기 (기존 시스템용)
 export const loadFromSupabase = async (nickname) => {
   if (!nickname) {
     console.error('❌ Supabase 불러오기 실패: 사용자명이 없습니다');
@@ -57,7 +148,7 @@ export const loadFromSupabase = async (nickname) => {
   }
 };
 
-// Supabase에 사용자 데이터 저장
+// Supabase에 사용자 데이터 저장 (기존 시스템용)
 export const saveToSupabase = async (nickname, data) => {
   if (!nickname) {
     console.error('❌ Supabase 저장 실패: 사용자명이 없습니다');
@@ -101,7 +192,32 @@ export const saveToSupabase = async (nickname, data) => {
 // 🔄 실시간 데이터 동기화
 // =========================
 
-// 실시간 데이터 변경 감지
+// DAL 테이블 실시간 구독
+export const subscribeToDAL = (callback) => {
+  console.log('🔄 DAL 실시간 구독 시작');
+
+  const subscription = supabase
+    .channel('dal_changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'DAL'
+      },
+      (payload) => {
+        console.log('🔄 DAL 실시간 변경 감지:', payload);
+        if (callback) {
+          callback(payload);
+        }
+      }
+    )
+    .subscribe();
+
+  return subscription;
+};
+
+// 실시간 데이터 변경 감지 (기존 시스템용)
 export const subscribeToUserData = (nickname, callback) => {
   if (!nickname) return null;
 
@@ -138,89 +254,114 @@ export const unsubscribeFromUserData = (subscription) => {
 };
 
 // =========================
-// 🔧 마이그레이션 도구들
-// =========================
-
-// 기존 로컬 데이터를 Supabase로 마이그레이션
-export const migrateLocalToSupabase = async (nickname) => {
-  if (!nickname) {
-    console.error('❌ 마이그레이션 실패: 사용자명이 없습니다');
-    return false;
-  }
-
-  try {
-    console.log('🚀 로컬 → Supabase 마이그레이션 시작:', nickname);
-    
-    // 기존 로컬 데이터 수집
-    const localData = {
-      schedules: loadSchedulesFromStorage(nickname),
-      tags: loadTagsFromStorage(nickname),
-      tagItems: loadTagItemsFromStorage(nickname),
-      monthlyPlans: loadMonthlyPlansFromStorage(nickname),
-      monthlyGoals: loadMonthlyGoalsFromStorage(nickname)
-    };
-    
-    console.log('📦 로컬 데이터 수집 완료:', localData);
-    
-    // Supabase에 저장
-    const success = await saveToSupabase(nickname, localData);
-    
-    if (success) {
-      console.log('✅ 마이그레이션 성공:', nickname);
-      
-      // 마이그레이션 성공 시 로컬 데이터 백업
-      const backupKey = `${nickname}_migration_backup_${Date.now()}`;
-      localStorage.setItem(backupKey, JSON.stringify(localData));
-      
-      return true;
-    } else {
-      throw new Error('Supabase 저장 실패');
-    }
-    
-  } catch (error) {
-    console.error('❌ 마이그레이션 실패:', error);
-    return false;
-  }
-};
-
-// 기존 서버 데이터를 Supabase로 마이그레이션 (기존 API 사용)
-export const migrateServerToSupabase = async (nickname) => {
-  if (!nickname) return false;
-
-  try {
-    console.log('🚀 서버 → Supabase 마이그레이션 시작:', nickname);
-    
-    // 기존 서버에서 데이터 로드
-    const serverData = await loadFromServer(nickname); // 기존 함수 사용
-    
-    if (!serverData) {
-      console.log('📭 서버에 데이터가 없습니다:', nickname);
-      return false;
-    }
-    
-    // Supabase에 저장
-    const success = await saveToSupabase(nickname, serverData);
-    
-    if (success) {
-      console.log('✅ 서버 → Supabase 마이그레이션 성공:', nickname);
-      return true;
-    } else {
-      throw new Error('Supabase 저장 실패');
-    }
-    
-  } catch (error) {
-    console.error('❌ 서버 → Supabase 마이그레이션 실패:', error);
-    return false;
-  }
-};
-
-// =========================
 // 🔗 기존 코드와의 호환성
 // =========================
 
 // 기존 함수들을 Supabase 버전으로 래핑
 export const loadFromServer = loadFromSupabase;
 export const saveToServer = saveToSupabase;
+
+// 기존 로컬 스토리지 함수들을 import (unifiedStorage.js에서)
+// 이 함수들은 기존 unifiedStorage.js에서 가져와야 합니다
+const loadSchedulesFromStorage = (nickname) => {
+  try {
+    const data = localStorage.getItem(`${nickname}-schedules`);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error('로컬 스케줄 로드 실패:', error);
+    return [];
+  }
+};
+
+const loadTagsFromStorage = (nickname) => {
+  try {
+    const data = localStorage.getItem(`${nickname}-tags`);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error('로컬 태그 로드 실패:', error);
+    return [];
+  }
+};
+
+const loadTagItemsFromStorage = (nickname) => {
+  try {
+    const data = localStorage.getItem(`${nickname}-tagItems`);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error('로컬 태그 아이템 로드 실패:', error);
+    return [];
+  }
+};
+
+const loadMonthlyPlansFromStorage = (nickname) => {
+  try {
+    const data = localStorage.getItem(`${nickname}-monthlyPlans`);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error('로컬 월간 계획 로드 실패:', error);
+    return [];
+  }
+};
+
+const loadMonthlyGoalsFromStorage = (nickname) => {
+  try {
+    const data = localStorage.getItem(`${nickname}-monthlyGoals`);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error('로컬 월간 목표 로드 실패:', error);
+    return [];
+  }
+};
+
+const saveSchedulesToStorage = (nickname, data) => {
+  try {
+    localStorage.setItem(`${nickname}-schedules`, JSON.stringify(data));
+  } catch (error) {
+    console.error('로컬 스케줄 저장 실패:', error);
+  }
+};
+
+const saveTagsToStorage = (nickname, data) => {
+  try {
+    localStorage.setItem(`${nickname}-tags`, JSON.stringify(data));
+  } catch (error) {
+    console.error('로컬 태그 저장 실패:', error);
+  }
+};
+
+const saveTagItemsToStorage = (nickname, data) => {
+  try {
+    localStorage.setItem(`${nickname}-tagItems`, JSON.stringify(data));
+  } catch (error) {
+    console.error('로컬 태그 아이템 저장 실패:', error);
+  }
+};
+
+const saveMonthlyPlansToStorage = (nickname, data) => {
+  try {
+    localStorage.setItem(`${nickname}-monthlyPlans`, JSON.stringify(data));
+  } catch (error) {
+    console.error('로컬 월간 계획 저장 실패:', error);
+  }
+};
+
+const saveMonthlyGoalsToStorage = (nickname, data) => {
+  try {
+    localStorage.setItem(`${nickname}-monthlyGoals`, JSON.stringify(data));
+  } catch (error) {
+    console.error('로컬 월간 목표 저장 실패:', error);
+  }
+};
+
+const saveToLocalStorage = (nickname, data) => {
+  try {
+    const key = `${nickname}_backup`;
+    localStorage.setItem(key, JSON.stringify(data));
+    console.log('💾 로컬 백업 저장 완료');
+  } catch (error) {
+    console.error('❌ 로컬 백업 저장 실패:', error);
+  }
+};
 
 // 통합 데이터 로딩 (Supabase 우선, 로컬 백업)
 export const loadAllUserData = async (nickname) => {
@@ -320,33 +461,59 @@ export const saveUserCoreData = async (nickname, { schedules, tags, tagItems, mo
 
 if (typeof window !== 'undefined') {
   window.supabaseUtils = {
-    // 마이그레이션
-    migrateToSupabase: async (nickname) => {
-      if (!nickname) {
-        console.log('사용법: supabaseUtils.migrateToSupabase("사용자명")');
-        return;
-      }
+    // DAL 테스트 함수들
+    testDAL: async () => {
+      console.log('🧪 DAL 테스트 시작');
       
-      const localSuccess = await migrateLocalToSupabase(nickname);
-      const serverSuccess = await migrateServerToSupabase(nickname);
+      // 테스트 데이터 저장
+      const testActivity = {
+        user_name: '테스트유저',
+        activity_type: '테스트',
+        description: 'DAL 연결 테스트',
+        duration: 5,
+        completed: true
+      };
       
-      if (localSuccess || serverSuccess) {
-        alert('✅ Supabase 마이그레이션 완료!');
-        window.location.reload();
-      } else {
-        alert('❌ 마이그레이션 실패!');
+      const saveResult = await saveActivityToDAL(testActivity);
+      console.log('저장 결과:', saveResult);
+      
+      // 데이터 불러오기
+      const loadResult = await loadActivitiesFromDAL();
+      console.log('불러오기 결과:', loadResult);
+      
+      return { saveResult, loadResult };
+    },
+    
+    // Supabase 연결 테스트
+    testConnection: async () => {
+      try {
+        const { data, error } = await supabase
+          .from('DAL')
+          .select('count(*)')
+          .limit(1);
+        
+        if (error) throw error;
+        
+        console.log('✅ Supabase 연결 성공');
+        console.log('환경변수 상태:', {
+          url: import.meta.env.VITE_SUPABASE_URL ? '✅ 설정됨' : '❌ 없음',
+          key: import.meta.env.VITE_SUPABASE_ANON_KEY ? '✅ 설정됨' : '❌ 없음'
+        });
+        alert('✅ Supabase 연결 성공!');
+        return true;
+      } catch (error) {
+        console.error('❌ Supabase 연결 실패:', error);
+        alert('❌ Supabase 연결 실패: ' + error.message);
+        return false;
       }
     },
     
     // 실시간 테스트
-    testRealtime: (nickname) => {
-      if (!nickname) {
-        console.log('사용법: supabaseUtils.testRealtime("사용자명")');
-        return;
-      }
+    testRealtime: () => {
+      console.log('🔄 DAL 실시간 테스트 시작 (30초)');
       
-      const subscription = subscribeToUserData(nickname, (payload) => {
-        console.log('🔄 실시간 데이터 변경:', payload);
+      const subscription = subscribeToDAL((payload) => {
+        console.log('🔄 실시간 변경 감지:', payload);
         alert('실시간 데이터 변경 감지!');
       });
       
@@ -355,33 +522,23 @@ if (typeof window !== 'undefined') {
         console.log('🔄 실시간 테스트 종료');
       }, 30000);
       
-      console.log('🔄 30초간 실시간 테스트 중...');
+      return subscription;
     },
     
-    // Supabase 연결 테스트
-    testConnection: async () => {
-      try {
-        const { data, error } = await supabase
-          .from('user_data')
-          .select('count(*)')
-          .limit(1);
-        
-        if (error) throw error;
-        
-        console.log('✅ Supabase 연결 성공');
-        alert('✅ Supabase 연결 성공!');
-        return true;
-      } catch (error) {
-        console.error('❌ Supabase 연결 실패:', error);
-        alert('❌ Supabase 연결 실패!');
-        return false;
-      }
+    // 환경변수 확인
+    checkEnv: () => {
+      console.log('🔍 환경변수 확인:');
+      console.log('VITE_SUPABASE_URL:', import.meta.env.VITE_SUPABASE_URL);
+      console.log('VITE_SUPABASE_ANON_KEY:', import.meta.env.VITE_SUPABASE_ANON_KEY ? '설정됨' : '없음');
+      console.log('현재 사용 중인 URL:', supabaseUrl || fallbackUrl);
+      console.log('현재 사용 중인 키:', supabaseKey ? '환경변수' : 'fallback');
     }
   };
   
-  console.log('🚀 Supabase 유틸리티가 준비되었습니다!');
+  console.log('🚀 Vite + Supabase 유틸리티가 준비되었습니다!');
   console.log('사용법:');
-  console.log('  supabaseUtils.migrateToSupabase("사용자명") - 마이그레이션');
   console.log('  supabaseUtils.testConnection() - 연결 테스트');
-  console.log('  supabaseUtils.testRealtime("사용자명") - 실시간 테스트');
+  console.log('  supabaseUtils.testDAL() - DAL 테이블 테스트');
+  console.log('  supabaseUtils.testRealtime() - 실시간 테스트');
+  console.log('  supabaseUtils.checkEnv() - 환경변수 확인');
 }
