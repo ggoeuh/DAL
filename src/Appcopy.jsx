@@ -7,6 +7,8 @@ import DayDetailPagecopy from './pages/DayDetailPagecopy'; // pages 폴더 안�
 import MonthlyPlanPage from './pages/MonthlyPlanPage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminMemberView from './pages/AdminMemberView';
+// 기존 import들 밑에 추가
+import './utils/supabaseStorage.js';
 // 기존 dataAPI 대신 개선된 unifiedStorage 사용
 import {
   loadAllUserData,
