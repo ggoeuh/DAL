@@ -1,25 +1,28 @@
-// utils/supabaseStorage.js - 보안 문제 해결된 버전
+// utils/supabaseStorage.js - 문법 오류 수정된 버전
 
 import { createClient } from '@supabase/supabase-js'
 
-// Vite 환경변수에서만 값 가져오기 (fallback 제거)
+// Vite 환경변수에서 값 가져오기
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// 환경변수 확인
-if (!supabaseUrl || !supabaseKey) {
-  console.error('❌ Supabase 환경변수가 설정되지 않았습니다');
-  console.log('필요한 환경변수: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY');
-  
-  // 환경변수가 없으면 빈 객체로 초기화 (빌드 실패 방지)
-  export const supabase = null;
-} else {
-  // Supabase 클라이언트 생성
-  export const supabase = createClient(supabaseUrl, supabaseKey);
-  
-  // 연결 상태 확인 로그
-  console.log('🌐 Supabase 초기화 성공');
+// Supabase 클라이언트 생성 (환경변수가 없어도 빌드는 성공하도록)
+let supabaseClient = null;
+
+try {
+  if (supabaseUrl && supabaseKey) {
+    supabaseClient = createClient(supabaseUrl, supabaseKey);
+    console.log('🌐 Supabase 초기화 성공');
+  } else {
+    console.warn('⚠️ Supabase 환경변수가 설정되지 않았습니다');
+    console.log('필요한 환경변수: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY');
+  }
+} catch (error) {
+  console.error('❌ Supabase 초기화 실패:', error);
 }
+
+// export는 최상위 레벨에서만 사용
+export const supabase = supabaseClient;
 
 // =========================
 // 🌐 Supabase 데이터 함수들
@@ -117,9 +120,52 @@ export const deleteActivityFromDAL = async (activityId) => {
 };
 
 // =========================
+// 🔄 실시간 데이터 동기화
+// =========================
+
+// DAL 테이블 실시간 구독
+export const subscribeToDAL = (callback) => {
+  if (!supabase) {
+    console.error('❌ Supabase가 초기화되지 않았습니다');
+    return null;
+  }
+
+  console.log('🔄 DAL 실시간 구독 시작');
+
+  const subscription = supabase
+    .channel('dal_changes')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'DAL'
+      },
+      (payload) => {
+        console.log('🔄 DAL 실시간 변경 감지:', payload);
+        if (callback) {
+          callback(payload);
+        }
+      }
+    )
+    .subscribe();
+
+  return subscription;
+};
+
+// 실시간 구독 해제
+export const unsubscribeFromUserData = (subscription) => {
+  if (subscription) {
+    subscription.unsubscribe();
+    console.log('🔄 실시간 구독 해제');
+  }
+};
+
+// =========================
 // 🛠️ 개발자 도구들
 // =========================
 
+// 브라우저 환경에서만 실행
 if (typeof window !== 'undefined') {
   window.supabaseUtils = {
     // Supabase 연결 테스트
@@ -151,7 +197,7 @@ if (typeof window !== 'undefined') {
     // 환경변수 확인
     checkEnv: () => {
       console.log('🔍 환경변수 확인:');
-      console.log('VITE_SUPABASE_URL:', supabaseUrl ? '✅ 설정됨' : '❌ 없음');
+      console.log('VITE_SUPABASE_URL:', supabaseUrl || '❌ 없음');
       console.log('VITE_SUPABASE_ANON_KEY:', supabaseKey ? '✅ 설정됨' : '❌ 없음');
       console.log('Supabase 객체:', supabase ? '✅ 초기화됨' : '❌ 초기화 실패');
       
@@ -165,6 +211,7 @@ if (typeof window !== 'undefined') {
     testDAL: async () => {
       if (!supabase) {
         console.error('❌ Supabase 초기화 실패');
+        alert('❌ Supabase가 초기화되지 않았습니다');
         return false;
       }
 
@@ -187,17 +234,41 @@ if (typeof window !== 'undefined') {
       console.log('불러오기 결과:', loadResult);
       
       return { saveResult, loadResult };
+    },
+    
+    // 실시간 테스트
+    testRealtime: () => {
+      if (!supabase) {
+        console.error('❌ Supabase 초기화 실패');
+        return null;
+      }
+
+      console.log('🔄 DAL 실시간 테스트 시작 (30초)');
+      
+      const subscription = subscribeToDAL((payload) => {
+        console.log('🔄 실시간 변경 감지:', payload);
+        alert('실시간 데이터 변경 감지!');
+      });
+      
+      setTimeout(() => {
+        unsubscribeFromUserData(subscription);
+        console.log('🔄 실시간 테스트 종료');
+      }, 30000);
+      
+      return subscription;
     }
   };
   
-  // 환경변수 상태에 따른 초기화 메시지
+  // 초기화 상태에 따른 메시지
   if (supabase) {
     console.log('🚀 Supabase 유틸리티가 준비되었습니다!');
     console.log('사용법:');
     console.log('  supabaseUtils.checkEnv() - 환경변수 확인');
     console.log('  supabaseUtils.testConnection() - 연결 테스트');
     console.log('  supabaseUtils.testDAL() - DAL 테이블 테스트');
+    console.log('  supabaseUtils.testRealtime() - 실시간 테스트');
   } else {
     console.warn('⚠️ Supabase 초기화 실패 - 환경변수를 확인하세요');
+    console.log('브라우저에서 supabaseUtils.checkEnv()로 환경변수 상태 확인 가능');
   }
 }
