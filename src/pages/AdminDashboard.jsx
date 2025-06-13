@@ -1,7 +1,41 @@
 // AdminDashboard.jsx - 스마트 데이터 병합 수정 버전
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loadUserDataWithFallback, loadAllUserData, saveUserCoreData } from './utils/unifiedStorage';
+// ✨ 올바른 Supabase 함수들로 수정
+import { 
+  saveUserDataToDAL, 
+  loadUserDataFromDAL 
+} from './utils/supabaseStorage';
+// localStorage 함수들 (필요시 별도 파일에서 import)
+const loadAllUserData = (nickname) => {
+  try {
+    const userData = {
+      schedules: [],
+      tags: [],
+      tagItems: [],
+      monthlyPlans: [],
+      monthlyGoals: []
+    };
+    
+    const dataTypes = ['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'];
+    dataTypes.forEach(type => {
+      try {
+        const key = `${nickname}-${type}`;
+        const data = localStorage.getItem(key);
+        if (data) {
+          userData[type] = JSON.parse(data);
+        }
+      } catch (error) {
+        console.error(`❌ ${type} 로컬 불러오기 실패:`, error);
+      }
+    });
+    
+    return userData;
+  } catch (error) {
+    console.error('❌ 전체 사용자 데이터 불러오기 실패:', error);
+    return { schedules: [], tags: [], tagItems: [], monthlyPlans: [], monthlyGoals: [] };
+  }
+};
 
 const AdminDashboard = ({ currentUser, onLogout }) => {
   const [members, setMembers] = useState([]);
@@ -25,13 +59,21 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
   ];
 
-  // ✨ 자동 서버 동기화 함수
+  // ✨ Supabase 자동 서버 동기화 함수
   const autoSyncToServer = async (userName, localData) => {
     try {
       console.log(`🔄 ${userName} 자동 서버 동기화 시작`);
-      await saveUserCoreData(userName, localData);
-      console.log(`✅ ${userName} 자동 서버 동기화 완료`);
-      return true;
+      
+      // ✨ 올바른 Supabase 함수 호출
+      const result = await saveUserDataToDAL(userName, localData);
+      
+      if (result.success) {
+        console.log(`✅ ${userName} 자동 서버 동기화 완료`);
+        return true;
+      } else {
+        console.error(`❌ ${userName} 자동 서버 동기화 실패:`, result.error);
+        return false;
+      }
     } catch (error) {
       console.error(`❌ ${userName} 자동 서버 동기화 실패:`, error);
       return false;
@@ -71,13 +113,17 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           // 서버에서 데이터 확인
           let serverData = null;
           try {
-            serverData = await loadUserDataWithFallback(user);
-            console.log(`📥 ${user} 서버 데이터:`, {
-              schedules: serverData?.schedules?.length || 0,
-              tags: serverData?.tags?.length || 0,
-              tagItems: serverData?.tagItems?.length || 0,
-              monthlyGoals: serverData?.monthlyGoals?.length || 0
-            });
+            // ✨ 올바른 Supabase 함수 호출
+            const result = await loadUserDataFromDAL(user);
+            if (result.success) {
+              serverData = result.data;
+              console.log(`📥 ${user} 서버 데이터:`, {
+                schedules: serverData?.schedules?.length || 0,
+                tags: serverData?.tags?.length || 0,
+                tagItems: serverData?.tagItems?.length || 0,
+                monthlyGoals: serverData?.monthlyGoals?.length || 0
+              });
+            }
           } catch (serverError) {
             console.warn(`⚠️ ${user} 서버 접근 실패:`, serverError);
           }
@@ -238,14 +284,18 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     
     // 1단계: 서버에서 데이터 로드
     try {
-      serverData = await loadUserDataWithFallback(nickname);
-      console.log(`📦 ${nickname} 서버 데이터:`, {
-        schedules: serverData?.schedules?.length || 0,
-        tags: serverData?.tags?.length || 0,
-        tagItems: serverData?.tagItems?.length || 0,
-        monthlyPlans: serverData?.monthlyPlans?.length || 0,
-        monthlyGoals: serverData?.monthlyGoals?.length || 0
-      });
+      // ✨ 올바른 Supabase 함수 호출
+      const result = await loadUserDataFromDAL(nickname);
+      if (result.success) {
+        serverData = result.data;
+        console.log(`📦 ${nickname} 서버 데이터:`, {
+          schedules: serverData?.schedules?.length || 0,
+          tags: serverData?.tags?.length || 0,
+          tagItems: serverData?.tagItems?.length || 0,
+          monthlyPlans: serverData?.monthlyPlans?.length || 0,
+          monthlyGoals: serverData?.monthlyGoals?.length || 0
+        });
+      }
     } catch (error) {
       console.error(`❌ ${nickname} 서버 데이터 로드 실패:`, error);
     }
