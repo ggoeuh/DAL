@@ -166,103 +166,58 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
     return result;
   };
 
-  // ✨ 개선된 데이터 새로고침 함수 - localStorage 기반, 서버 호출 없음
-  const refreshMemberData = () => {
-    console.log('🔄 멤버 데이터 새로고침 시작 (localStorage만 사용)');
+  // ✨ 서버 기반 데이터 새로고침 함수
+  const refreshMemberData = async () => {
+    console.log('🔄 서버 기반 멤버 데이터 새로고침 시작');
     
     try {
-      // 1단계: getAllUsers 함수로 멤버 찾기
-      const foundMembers = getAllUsers();
-      console.log('👥 getAllUsers 결과:', foundMembers);
+      // 서버에서 최신 사용자 목록 가져오기
+      const foundMembers = await getAllUsers();
+      console.log('👥 새로고침: 서버에서 가져온 사용자들:', foundMembers);
       
-      // 2단계: getAllUsers가 실패한 경우 직접 localStorage 스캔
-      if (foundMembers.length === 0) {
-        console.log('🔧 직접 localStorage 스캔으로 복구');
-        
-        const directUsers = new Set();
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.includes('-')) {
-            const [nickname, dataType] = key.split('-');
-            if (nickname && 
-                nickname !== 'nickname' && 
-                nickname !== 'userType' &&
-                !['교수님', 'admin', '관리자'].includes(nickname) &&
-                ['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'].includes(dataType)) {
-              directUsers.add(nickname);
-            }
-          }
-        }
-        
-        const directUserArray = Array.from(directUsers);
-        console.log('🔧 직접 스캔 결과:', directUserArray);
-        
-        if (directUserArray.length > 0) {
-          setMembers(directUserArray);
-          
-          // 통계도 자동 생성 (localStorage 기반)
-          const autoStats = {};
-          directUserArray.forEach(user => {
-            const userData = getUserData(user);
-            if (userData) {
-              autoStats[user] = {
-                schedules: userData.schedules?.length || 0,
-                tags: userData.tags?.length || 0,
-                tagItems: userData.tagItems?.length || 0,
-                monthlyPlans: userData.monthlyPlans?.length || 0,
-                monthlyGoals: userData.monthlyGoals?.length || 0,
-                lastActivity: '오늘'
-              };
-            }
-          });
-          setMemberStats(autoStats);
-          console.log('✅ 자동 복구 완료 (서버 호출 없음)');
-          return;
-        }
-      } else {
-        // getAllUsers가 성공한 경우
+      if (foundMembers.length > 0) {
         setMembers(foundMembers);
         
-        // 통계 계산 (localStorage 기반)
-        const stats = {};
-        foundMembers.forEach(user => {
-          const userData = getUserData(user);
-          if (userData) {
-            stats[user] = {
-              schedules: userData.schedules?.length || 0,
-              tags: userData.tags?.length || 0,
-              tagItems: userData.tagItems?.length || 0,
-              monthlyPlans: userData.monthlyPlans?.length || 0,
-              monthlyGoals: userData.monthlyGoals?.length || 0,
-              lastActivity: '오늘'
-            };
-          }
-        });
+        // 서버에서 최신 통계 계산
+        const stats = await getUserStats();
+        console.log('📊 새로고침: 서버 기반 통계:', stats);
         setMemberStats(stats);
-        console.log('✅ 새로고침 완료 (서버 호출 없음)');
+        
+        console.log('✅ 서버 기반 새로고침 완료');
+      } else {
+        console.log('⚠️ 새로고침에서 멤버를 찾을 수 없음');
       }
       
     } catch (error) {
-      console.error('❌ 멤버 데이터 새로고침 실패:', error);
+      console.error('❌ 서버 기반 새로고침 실패:', error);
     }
   };
 
   useEffect(() => {
-    console.log('🚀 AdminDashboard 초기화 시작');
+    console.log('🚀 AdminDashboard 초기화 시작 (서버 기반)');
     
-    const loadMemberData = () => {
+    const loadMemberData = async () => {
       try {
-        console.log('📦 초기 멤버 데이터 로딩');
+        setLoading(true);
+        console.log('📦 서버에서 멤버 데이터 로딩');
         
-        // 1단계: getAllUsers로 시도
-        const foundMembers = getAllUsers();
-        console.log('👥 getAllUsers 결과:', foundMembers);
+        // 1단계: 서버에서 사용자 목록 가져오기
+        const foundMembers = await getAllUsers();
+        console.log('👥 서버에서 가져온 사용자들:', foundMembers);
         
-        // 2단계: 실패한 경우 자동 복구
-        if (foundMembers.length === 0) {
-          console.log('🔧 초기 로딩에서 자동 복구 시작');
+        if (foundMembers.length > 0) {
+          setMembers(foundMembers);
           
-          // 직접 localStorage 스캔
+          // 2단계: 서버에서 통계 데이터 계산
+          const stats = await getUserStats();
+          console.log('📊 서버 기반 계산된 통계:', stats);
+          setMemberStats(stats);
+          
+          console.log('✅ 서버 기반 멤버 데이터 로딩 완료');
+        } else {
+          console.warn('⚠️ 서버에서 멤버를 찾을 수 없음');
+          
+          // fallback: localStorage 직접 스캔
           const directUsers = new Set();
           for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
@@ -278,18 +233,18 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
             }
           }
           
-          const autoFoundMembers = Array.from(directUsers);
-          console.log('🔧 자동 복구로 발견된 멤버들:', autoFoundMembers);
+          const fallbackUsers = Array.from(directUsers);
+          console.log('🔧 fallback 사용자들:', fallbackUsers);
           
-          if (autoFoundMembers.length > 0) {
-            setMembers(autoFoundMembers);
+          if (fallbackUsers.length > 0) {
+            setMembers(fallbackUsers);
             
-            // 자동으로 통계도 생성
-            const autoStats = {};
-            autoFoundMembers.forEach(member => {
-              const userData = getUserData(member);
+            // fallback 통계 생성
+            const fallbackStats = {};
+            for (const user of fallbackUsers) {
+              const userData = getUserData(user);
               if (userData) {
-                autoStats[member] = {
+                fallbackStats[user] = {
                   schedules: userData.schedules?.length || 0,
                   tags: userData.tags?.length || 0,
                   tagItems: userData.tagItems?.length || 0,
@@ -298,31 +253,20 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
                   lastActivity: '오늘'
                 };
               }
-            });
-            setMemberStats(autoStats);
-            console.log('✅ 초기 자동 복구 완료:', autoStats);
-            setLoading(false);
-            return;
+            }
+            setMemberStats(fallbackStats);
+            console.log('🔧 fallback 통계 완료:', fallbackStats);
           }
-        } else {
-          // getAllUsers가 정상 작동한 경우
-          setMembers(foundMembers);
         }
         
-        // 각 멤버의 통계 데이터 계산
-        const stats = getUserStats();
-        console.log('📊 계산된 통계:', stats);
-        setMemberStats(stats);
-        
-        console.log('✅ 멤버 데이터 로딩 완료');
-        setLoading(false);
       } catch (error) {
-        console.error('❌ 멤버 데이터 로딩 실패:', error);
+        console.error('❌ 서버 기반 멤버 데이터 로딩 실패:', error);
+      } finally {
         setLoading(false);
       }
     };
 
-    // ✅ 초기 로딩만 실행 (주기적 호출 제거)
+    // 초기 로딩
     loadMemberData();
     
     // ✅ localStorage 변경 감지 이벤트 리스너 추가
@@ -332,7 +276,7 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
         // 멤버 데이터 관련 변경만 감지
         if (['schedules', 'tags', 'tagItems', 'monthlyPlans', 'monthlyGoals'].some(type => e.key.includes(type))) {
           console.log('🔄 멤버 데이터 변경으로 인한 새로고침');
-          setTimeout(() => refreshMemberData(), 500); // 0.5초 후 새로고침
+          setTimeout(() => loadMemberData(), 1000); // 1초 후 새로고침
         }
       }
     };
@@ -340,7 +284,7 @@ const AdminDashboard = ({ currentUser, onLogout, getAllUsers, getUserStats, getU
     // ✅ 이벤트 리스너 등록
     window.addEventListener('storage', handleStorageChange);
     
-    // ✅ 클린업 (주기적 호출 제거)
+    // 클린업
     return () => {
       window.removeEventListener('storage', handleStorageChange);
     };
