@@ -1,5 +1,5 @@
-// Appcopy.jsx - 디바운싱 제거, 즉시 저장 버전
-import React, { useState, useEffect } from "react";
+// Appcopy.jsx - 무한 루프 해결, 안전한 저장 버전
+import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
 import CalendarPage from './pages/CalendarPage';
@@ -53,9 +53,13 @@ function Appcopy() {
 
   // ✨ DAL 관련 상태들
   const [dalSubscription, setDalSubscription] = useState(null);
-  const [lastActivityTime, setLastActivityTime] = useState(Date.now());
+  
+  // 🔧 무한 루프 방지용 레퍼런스
+  const isSavingRef = useRef(false);
+  const lastSaveTimeRef = useRef(0);
+  const saveTimeoutRef = useRef(null);
 
-  // DAL 활동 로그 저장 함수
+  // DAL 활동 로그 저장 함수 (throttled)
   const logDalActivity = async (activityType, description, duration = null) => {
     if (!currentUser) return;
 
@@ -85,7 +89,6 @@ function Appcopy() {
 
             if (!error) {
               console.log('✅ DAL 활동 로그 저장 성공:', { activityType, description });
-              setLastActivityTime(Date.now());
             } else {
               console.warn('⚠️ DAL 로그 저장 실패:', error);
             }
@@ -99,6 +102,53 @@ function Appcopy() {
     }
   };
 
+  // 🔧 안전한 저장 함수 (중복 실행 방지)
+  const safelySaveData = async (immediate = false) => {
+    if (!currentUser || isLoading) return;
+    
+    // 이미 저장 중이면 중단
+    if (isSavingRef.current) {
+      console.log('⚠️ 이미 저장 중 - 스킵');
+      return;
+    }
+
+    // 너무 자주 저장하는 것 방지 (최소 500ms 간격)
+    const now = Date.now();
+    if (!immediate && (now - lastSaveTimeRef.current) < 500) {
+      console.log('⚠️ 저장 간격 너무 짧음 - 스킵');
+      return;
+    }
+
+    isSavingRef.current = true;
+    lastSaveTimeRef.current = now;
+
+    try {
+      // 로컬 저장 (즉시)
+      saveSchedulesToStorage(currentUser, schedules);
+      saveTagsToStorage(currentUser, tags);
+      saveTagItemsToStorage(currentUser, tagItems);
+      saveMonthlyPlansToStorage(currentUser, monthlyPlans);
+      saveMonthlyGoalsToStorage(currentUser, monthlyGoals);
+      
+      console.log('💾 로컬 저장 완료:', currentUser);
+
+      // 서버 저장 (백그라운드, 에러 무시)
+      try {
+        await saveUserCoreData(currentUser, {
+          schedules, tags, tagItems, monthlyPlans, monthlyGoals
+        });
+        console.log('🌐 서버 저장 완료:', currentUser);
+      } catch (serverError) {
+        console.warn('⚠️ 서버 저장 실패 (로컬은 저장됨):', serverError);
+      }
+
+    } catch (error) {
+      console.error('❌ 저장 실패:', error);
+    } finally {
+      isSavingRef.current = false;
+    }
+  };
+
   // 실시간 DAL 구독 설정
   const setupDalSubscription = () => {
     if (!currentUser || dalSubscription) return;
@@ -108,7 +158,7 @@ function Appcopy() {
         if (window.supabase && !dalSubscription) {
           const supabase = window.supabase.createClient(
             'https://hbrnjzclvtreppxzsspv.supabase.co',
-            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhicm5qemNsdnRyZXBweHpzc3B2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NjY5OTgsImV4cCI6MjA2NTM0Mjk5NH0.txgsa7O_kzdeI2RjM1CEiIW6Zt419gr0o2BgULdTcQc'
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhicm5qemNsdnRyZXBweHpzc3B2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk3NjY5OTgsImV4cCI6MjA2NTM0Mjk5OH0.txgsa7O_kzdeI2RjM1CEiIW6Zt419gr0o2BgULdTcQc'
           );
 
           const subscription = supabase
@@ -122,7 +172,6 @@ function Appcopy() {
               }, 
               (payload) => {
                 console.log('🔄 DAL 실시간 변화 감지:', payload);
-                setLastActivityTime(Date.now());
               }
             )
             .subscribe();
@@ -179,7 +228,7 @@ function Appcopy() {
     return stats;
   };
 
-  // ✨ 개선된 수동 동기화
+  // 수동 동기화
   const handleManualServerSync = async (showConfirm = true) => {
     if (!currentUser) return false;
 
@@ -189,23 +238,10 @@ function Appcopy() {
 
     try {
       console.log('🔧 수동 서버 동기화 시작:', currentUser);
-      
-      const success = await saveUserCoreData(currentUser, {
-        schedules,
-        tags,
-        tagItems,
-        monthlyPlans,
-        monthlyGoals
-      });
-      
-      if (success) {
-        await logDalActivity('sync', '수동 서버 동기화 완료');
-        console.log('✅ 수동 서버 동기화 완료:', currentUser);
-        alert('✅ 서버 동기화가 완료되었습니다!');
-        return true;
-      } else {
-        throw new Error('서버 동기화 실패');
-      }
+      await safelyServerSave(true); // 강제 저장
+      await logDalActivity('sync', '수동 서버 동기화 완료');
+      alert('✅ 서버 동기화가 완료되었습니다!');
+      return true;
     } catch (error) {
       console.error('❌ 수동 서버 동기화 실패:', error);
       await logDalActivity('error', '서버 동기화 실패');
@@ -232,42 +268,23 @@ function Appcopy() {
         userData = {
           schedules: userData?.schedules || [],
           tags: [
-            { tagType: '공부', color: { bg: 'bg-blue-100', text: 'text-blue-800' } },
-            { tagType: '운동', color: { bg: 'bg-green-100', text: 'text-green-800' } },
-            { tagType: '취미', color: { bg: 'bg-purple-100', text: 'text-purple-800' } },
-            { tagType: '업무', color: { bg: 'bg-red-100', text: 'text-red-800' } }
+            { tagType: '수업', color: { bg: 'bg-blue-100', text: 'text-blue-800' } },
+            { tagType: '개인', color: { bg: 'bg-green-100', text: 'text-green-800' } },
+            { tagType: 'Lab', color: { bg: 'bg-purple-100', text: 'text-purple-800' } },
+            { tagType: '연구', color: { bg: 'bg-red-100', text: 'text-red-800' } }
           ],
           tagItems: [
-            { tagType: '공부', tagName: '독서' },
-            { tagType: '공부', tagName: '강의 수강' },
-            { tagType: '공부', tagName: '과제' },
-            { tagType: '운동', tagName: '조깅' },
-            { tagType: '운동', tagName: '헬스장' },
-            { tagType: '취미', tagName: '음악 감상' },
-            { tagType: '취미', tagName: '영화 관람' },
-            { tagType: '업무', tagName: '회의' },
-            { tagType: '업무', tagName: '프로젝트' }
+            { tagType: '수업', tagName: '과제' },
+            { tagType: '개인', tagName: '운동' },
+            { tagType: 'Lab', tagName: '업무' },
+            { tagType: '연구', tagName: '회의' },
           ],
           monthlyPlans: userData?.monthlyPlans || [],
           monthlyGoals: userData?.monthlyGoals || []
         };
-        
-        // 기본 데이터 저장
-        saveSchedulesToStorage(nickname, userData.schedules);
-        saveTagsToStorage(nickname, userData.tags);
-        saveTagItemsToStorage(nickname, userData.tagItems);
-        saveMonthlyPlansToStorage(nickname, userData.monthlyPlans);
-        saveMonthlyGoalsToStorage(nickname, userData.monthlyGoals);
-        
-        // 서버에도 백업
-        try {
-          await saveUserCoreData(nickname, userData);
-          console.log('✅ 기본 데이터 서버 백업 완료');
-        } catch (error) {
-          console.warn('⚠️ 기본 데이터 서버 백업 실패 (로컬에는 저장됨):', error);
-        }
       }
       
+      // 상태 설정 (한 번에)
       setSchedules(userData.schedules || []);
       setTags(userData.tags || []);
       setTagItems(userData.tagItems || []);
@@ -320,62 +337,51 @@ function Appcopy() {
     checkLoginStatus();
   }, []);
 
-  // 🚀 수정된 즉시 저장 (디바운싱 제거)
+  // 🔧 안전한 자동 저장 (디바운싱 포함)
   useEffect(() => {
     if (!currentUser || isLoading) return;
     
-    // 즉시 로컬 저장 - 지연 없음!
-    try {
-      saveSchedulesToStorage(currentUser, schedules);
-      saveTagsToStorage(currentUser, tags);
-      saveTagItemsToStorage(currentUser, tagItems);
-      saveMonthlyPlansToStorage(currentUser, monthlyPlans);
-      saveMonthlyGoalsToStorage(currentUser, monthlyGoals);
-      
-      console.log('💾 즉시 로컬 저장 완료:', currentUser);
-    } catch (error) {
-      console.error('❌ 로컬 저장 실패:', error);
+    // 기존 타이머 취소
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
     
-    // 서버는 백그라운드에서 (에러가 나도 사용자에게 영향 없음)
-    saveUserCoreData(currentUser, {
-      schedules, tags, tagItems, monthlyPlans, monthlyGoals
-    }).then(() => {
-      console.log('🌐 서버 저장 완료:', currentUser);
-      
-      // DAL 활동 로그 (데이터 변경 시에만)
-      const totalItems = schedules.length + tags.length + tagItems.length + 
-                        monthlyPlans.length + monthlyGoals.length;
-      
-      if (totalItems > 0) {
-        logDalActivity('auto_save', 
-          `데이터 자동 저장: 일정 ${schedules.length}개, 태그 ${tags.length}개`);
-      }
-      
-    }).catch(serverError => {
-      console.warn('⚠️ 서버 저장 실패 (로컬은 저장됨):', serverError);
-      logDalActivity('error', '서버 자동 저장 실패');
-    });
+    // 500ms 디바운싱으로 과도한 저장 방지
+    saveTimeoutRef.current = setTimeout(() => {
+      safelyServerSave();
+    }, 500);
     
+    // 클린업
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading]);
 
-  // ✨ 개선된 상태 업데이트 함수들 (즉시 DAL 로그)
+  // 🔧 개선된 상태 업데이트 함수들 (즉시 로컬 저장 + DAL 로그)
   const updateSchedules = (newSchedules) => {
     const oldCount = schedules.length;
     const newCount = newSchedules.length;
     
     setSchedules(newSchedules);
     
-    // 변화가 있을 때만 로그
-    if (oldCount !== newCount && currentUser) {
-      const action = newCount > oldCount ? '추가' : '삭제';
-      logDalActivity('schedule', `일정 ${action}: ${Math.abs(newCount - oldCount)}개`);
+    // 즉시 로컬 저장 (서버 저장은 useEffect에서)
+    if (currentUser) {
+      saveSchedulesToStorage(currentUser, newSchedules);
+      
+      // 변화가 있을 때만 로그
+      if (oldCount !== newCount) {
+        const action = newCount > oldCount ? '추가' : '삭제';
+        logDalActivity('schedule', `일정 ${action}: ${Math.abs(newCount - oldCount)}개`);
+      }
     }
   };
 
   const updateTags = (newTags) => {
     setTags(newTags);
     if (currentUser) {
+      saveTagsToStorage(currentUser, newTags);
       logDalActivity('tag', `태그 업데이트: ${newTags.length}개`);
     }
   };
@@ -383,6 +389,7 @@ function Appcopy() {
   const updateTagItems = (newTagItems) => {
     setTagItems(newTagItems);
     if (currentUser) {
+      saveTagItemsToStorage(currentUser, newTagItems);
       logDalActivity('tag_item', `태그 아이템 업데이트: ${newTagItems.length}개`);
     }
   };
@@ -390,6 +397,7 @@ function Appcopy() {
   const updateMonthlyPlans = (newPlans) => {
     setMonthlyPlans(newPlans);
     if (currentUser) {
+      saveMonthlyPlansToStorage(currentUser, newPlans);
       logDalActivity('monthly_plan', `월간 계획 업데이트: ${newPlans.length}개`);
     }
   };
@@ -397,11 +405,12 @@ function Appcopy() {
   const updateMonthlyGoals = (newGoals) => {
     setMonthlyGoals(newGoals);
     if (currentUser) {
+      saveMonthlyGoalsToStorage(currentUser, newGoals);
       logDalActivity('monthly_goal', `월간 목표 업데이트: ${newGoals.length}개`);
     }
   };
 
-  // ✨ 개선된 로그아웃 함수
+  // 로그아웃 함수
   const handleLogout = async () => {
     if (currentUser) {
       await logDalActivity('logout', '사용자 로그아웃');
@@ -433,6 +442,9 @@ function Appcopy() {
     return () => {
       if (dalSubscription) {
         dalSubscription.unsubscribe();
+      }
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
       }
     };
   }, [dalSubscription]);
