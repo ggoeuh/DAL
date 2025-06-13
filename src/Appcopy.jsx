@@ -645,9 +645,6 @@ function Appcopy() {
               <AdminDashboard
                 currentUser={currentUser}
                 onLogout={handleAdminLogout}
-                getAllUsers={getAllUsers}
-                getUserStats={getUserStats}
-                getUserData={getUserData}
               />
             </AdminRoute>
           }
