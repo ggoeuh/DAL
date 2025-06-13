@@ -58,11 +58,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           // ✨ 서버에서 데이터 로드
           const userData = await loadUserDataWithFallback(user);
           
-          if (userData && (
-            (userData.schedules && userData.schedules.length > 0) ||
-            (userData.tags && userData.tags.length > 0) ||
-            (userData.tagItems && userData.tagItems.length > 0)
-          )) {
+          if (userData) {
             users.add(user);
             userDataCache[user] = userData; // 캐시에 저장
             console.log(`✅ ${user} 서버 데이터 확인됨:`, {
