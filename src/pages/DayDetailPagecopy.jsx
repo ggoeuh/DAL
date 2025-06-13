@@ -773,3 +773,14 @@ const WeeklyCalendar = ({
         return date;
       })
     );
+    setFocusedDayIndex(currentDate.getDay());
+    
+    const newVisibleDays = [];
+    const focusPosition = 3;
+    for (let i = 0; i < 5; i++) {
+      const offset = i - focusPosition;
+      const newIndex = (currentDate.getDay() + offset + 7) % 7;
+      newVisibleDays.push(newIndex);
+    }
+    setVisibleDays(newVisibleDays);
+  };
