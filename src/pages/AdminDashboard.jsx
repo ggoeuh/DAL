@@ -108,8 +108,12 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   };
 
-  // ✨ 서버 우선 getUserData 함수
-  const getUserData = useCallback(async (nickname) => {
+  // AdminDashboard.jsx에서 getUserData 함수만 수정
+
+  // AdminDashboard.jsx에서 getUserData 함수 완전 교체
+
+  // ✨ 직접 localStorage 접근 방식으로 변경
+  const getUserData = useCallback((nickname) => {
     if (!nickname) {
       console.warn('⚠️ getUserData: nickname이 없음');
       return {
@@ -120,62 +124,208 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         monthlyGoals: []
       };
     }
-
+  
     // 캐시된 데이터 먼저 확인
     if (memberData[nickname]) {
       console.log(`📦 ${nickname} 캐시된 데이터 사용`);
       return memberData[nickname];
     }
-
-    // ✨ 서버에서 데이터 로드
-    console.log(`📦 ${nickname} 서버에서 데이터 로드`);
+  
+    console.log(`📦 ${nickname} localStorage에서 직접 데이터 로드`);
+    
     try {
-      const userData = await loadUserDataWithFallback(nickname);
-      
-      if (userData) {
-        console.log(`📦 ${nickname} 서버 데이터 로드 성공:`, {
-          schedules: userData.schedules?.length || 0,
-          tags: userData.tags?.length || 0,
-          tagItems: userData.tagItems?.length || 0,
-          monthlyPlans: userData.monthlyPlans?.length || 0,
-          monthlyGoals: userData.monthlyGoals?.length || 0
-        });
+      // localStorage에서 직접 각 데이터 타입별로 로드
+      const userData = {
+        schedules: (() => {
+          try {
+            const data = localStorage.getItem(`${nickname}-schedules`);
+            return data ? JSON.parse(data) : [];
+          } catch (e) {
+            console.error(`❌ ${nickname} schedules 로드 실패:`, e);
+            return [];
+          }
+        })(),
         
-        // 캐시에도 저장
-        setMemberData(prev => ({...prev, [nickname]: userData}));
-        return userData;
+        tags: (() => {
+          try {
+            const data = localStorage.getItem(`${nickname}-tags`);
+            return data ? JSON.parse(data) : [];
+          } catch (e) {
+            console.error(`❌ ${nickname} tags 로드 실패:`, e);
+            return [];
+          }
+        })(),
+        
+        tagItems: (() => {
+          try {
+            const data = localStorage.getItem(`${nickname}-tagItems`);
+            return data ? JSON.parse(data) : [];
+          } catch (e) {
+            console.error(`❌ ${nickname} tagItems 로드 실패:`, e);
+            return [];
+          }
+        })(),
+        
+        monthlyPlans: (() => {
+          try {
+            const data = localStorage.getItem(`${nickname}-monthlyPlans`);
+            return data ? JSON.parse(data) : [];
+          } catch (e) {
+            console.error(`❌ ${nickname} monthlyPlans 로드 실패:`, e);
+            return [];
+          }
+        })(),
+        
+        // ✨ 월간 목표 - 가장 중요!
+        monthlyGoals: (() => {
+          try {
+            const data = localStorage.getItem(`${nickname}-monthlyGoals`);
+            const parsed = data ? JSON.parse(data) : [];
+            console.log(`🎯 ${nickname} 월간 목표 로드:`, {
+              원본데이터: data,
+              파싱결과: parsed,
+              개수: parsed.length
+            });
+            return parsed;
+          } catch (e) {
+            console.error(`❌ ${nickname} monthlyGoals 로드 실패:`, e);
+            return [];
+          }
+        })()
+      };
+  
+      console.log(`📦 ${nickname} localStorage 직접 로드 완료:`, {
+        schedules: userData.schedules?.length || 0,
+        tags: userData.tags?.length || 0,
+        tagItems: userData.tagItems?.length || 0,
+        monthlyPlans: userData.monthlyPlans?.length || 0,
+        monthlyGoals: userData.monthlyGoals?.length || 0
+      });
+  
+      // 데이터 검증 - 월간 목표가 있는지 특별히 확인
+      if (userData.monthlyGoals && userData.monthlyGoals.length > 0) {
+        const currentMonth = new Date().toISOString().slice(0, 7);
+        const currentMonthGoal = userData.monthlyGoals.find(g => g.month === currentMonth);
+        console.log(`🎯 ${nickname} 현재 월(${currentMonth}) 목표 확인:`, {
+          전체목표수: userData.monthlyGoals.length,
+          현재월목표: currentMonthGoal ? '있음' : '없음',
+          현재월목표상세: currentMonthGoal
+        });
       }
+  
+      // 캐시에 저장
+      setMemberData(prev => ({...prev, [nickname]: userData}));
+      
+      return userData;
+      
     } catch (error) {
-      console.error(`❌ ${nickname} 서버 데이터 로드 실패:`, error);
+      console.error(`❌ ${nickname} 데이터 로드 완전 실패:`, error);
+      return {
+        schedules: [],
+        tags: [],
+        tagItems: [],
+        monthlyPlans: [],
+        monthlyGoals: []
+      };
     }
-
-    // 서버 실패 시 localStorage fallback
-    console.log(`🔄 ${nickname} localStorage fallback 시도`);
-    try {
-      const fallbackData = loadAllUserData(nickname);
-      if (fallbackData) {
-        console.log(`🔄 ${nickname} localStorage 데이터 로드 성공`);
-        setMemberData(prev => ({...prev, [nickname]: fallbackData}));
-        return fallbackData;
-      }
-    } catch (fallbackError) {
-      console.error(`❌ ${nickname} localStorage fallback 실패:`, fallbackError);
-    }
-
-    // 모든 방법 실패 시 빈 데이터 반환
-    return {
-      schedules: [],
-      tags: [],
-      tagItems: [],
-      monthlyPlans: [],
-      monthlyGoals: []
-    };
   }, [memberData]);
-
-  // 태그 색상 가져오기 (CalendarPage와 동일)
-  const getTagColor = (tagType, tags) => {
-    const tag = tags.find(t => t.tagType === tagType);
-    return tag ? tag.color : PASTEL_COLORS[0];
+  
+  // ✨ getServerUsers 함수도 동기식으로 변경
+  const getServerUsers = () => {
+    console.log('🔍 AdminDashboard에서 직접 localStorage 사용자 검색');
+    
+    try {
+      const users = new Set();
+      const userDataCache = {};
+      
+      // localStorage에서 사용자 이름 수집
+      const localUsers = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.includes('-')) {
+          const [nickname] = key.split('-');
+          if (nickname && 
+              nickname !== 'nickname' && 
+              nickname !== 'userType' &&
+              !['교수님', 'admin', '관리자'].includes(nickname)) {
+            localUsers.push(nickname);
+          }
+        }
+      }
+      
+      console.log('📦 localStorage 사용자들:', [...new Set(localUsers)]);
+      
+      // 각 사용자의 데이터 확인
+      for (const user of [...new Set(localUsers)]) {
+        try {
+          console.log(`🔍 ${user} localStorage 데이터 확인 중...`);
+          
+          // 직접 localStorage에서 확인
+          const hasSchedules = localStorage.getItem(`${user}-schedules`);
+          const hasTags = localStorage.getItem(`${user}-tags`);
+          const hasTagItems = localStorage.getItem(`${user}-tagItems`);
+          
+          if (hasSchedules || hasTags || hasTagItems) {
+            users.add(user);
+            
+            // 데이터 즉시 로드하여 캐시
+            const userData = getUserData(user);
+            userDataCache[user] = userData;
+            
+            console.log(`✅ ${user} localStorage 데이터 확인됨:`, {
+              schedules: userData.schedules?.length || 0,
+              tags: userData.tags?.length || 0,
+              tagItems: userData.tagItems?.length || 0,
+              monthlyGoals: userData.monthlyGoals?.length || 0
+            });
+          } else {
+            console.log(`❌ ${user} localStorage 데이터 없음`);
+          }
+        } catch (error) {
+          console.error(`❌ ${user} 확인 실패:`, error);
+        }
+      }
+      
+      const result = Array.from(users);
+      console.log('🎯 최종 localStorage 사용자 목록:', result);
+      return result;
+      
+    } catch (error) {
+      console.error('❌ localStorage 사용자 검색 실패:', error);
+      return [];
+    }
+  };
+  
+  // ✨ getServerStats 함수도 동기식으로 변경
+  const getServerStats = (userList) => {
+    console.log('📊 AdminDashboard에서 직접 localStorage 통계 계산');
+    
+    const stats = {};
+    
+    for (const user of userList) {
+      try {
+        console.log(`📊 ${user} localStorage 통계 계산 중...`);
+        
+        const userData = getUserData(user);
+        
+        if (userData) {
+          stats[user] = {
+            schedules: userData.schedules?.length || 0,
+            tags: userData.tags?.length || 0,
+            tagItems: userData.tagItems?.length || 0,
+            monthlyPlans: userData.monthlyPlans?.length || 0,
+            monthlyGoals: userData.monthlyGoals?.length || 0,
+            lastActivity: '오늘'
+          };
+          console.log(`✅ ${user} 통계 완료:`, stats[user]);
+        }
+      } catch (error) {
+        console.error(`❌ ${user} 통계 계산 실패:`, error);
+      }
+    }
+    
+    console.log('📊 최종 localStorage 통계:', stats);
+    return stats;
   };
 
   // ✨ 비동기 태그별 목표 달성률 계산 함수
