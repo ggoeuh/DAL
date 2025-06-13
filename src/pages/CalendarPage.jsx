@@ -30,7 +30,7 @@ const parseTimeToMinutes = (time) => {
 const minutesToTimeString = (totalMinutes) => {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return ${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")};
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
 // 데이터 초기화 버튼 컴포넌트
