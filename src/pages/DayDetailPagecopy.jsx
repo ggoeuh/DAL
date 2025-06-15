@@ -99,10 +99,31 @@ const checkScheduleOverlap = (schedules, newSchedule) => {
 };
 
 const WeeklyCalendar = ({ 
-  currentUser,
-  onLogout
+  currentUser = null,  // ← 기본값 추가!
+  onLogout = () => {}  // ← 기본값 추가!
 }) => {
   const navigate = useNavigate();
+
+  // ===== 🔥 안전장치 추가 =====
+  console.log('🔍 WeeklyCalendar 렌더링, currentUser:', currentUser);
+
+  // currentUser가 없으면 에러 페이지 표시
+  if (!currentUser) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="text-red-500 text-xl mb-4">❌ 사용자 정보가 없습니다</div>
+          <p className="text-gray-600 mb-4">currentUser props가 전달되지 않았습니다.</p>
+          <button 
+            onClick={() => navigate("/calendar")} 
+            className="bg-blue-500 text-white px-4 py-2 rounded"
+          >
+            홈으로 돌아가기
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // 서버에서 불러온 데이터 상태
   const [schedules, setSchedules] = useState([]);
@@ -119,7 +140,10 @@ const WeeklyCalendar = ({
 
   // 서버 데이터 로딩 함수 - useCallback으로 메모이제이션
   const loadDataFromServer = useCallback(async () => {
+    console.log('🔍 loadDataFromServer 호출됨, currentUser:', currentUser);
+    
     if (!currentUser) {
+      console.warn('⚠️ currentUser가 없어서 로딩 중단');
       setIsLoading(false);
       return;
     }
