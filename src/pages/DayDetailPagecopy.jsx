@@ -111,8 +111,8 @@ const WeeklyCalendar = ({
   const [isLoading, setIsLoading] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
-  // 서버에서 데이터 불러오기 - CalendarPage와 동일한 로직
-  const loadDataFromServer = async () => {
+  // 서버에서 데이터 불러오기 - useCallback으로 메모이제이션
+  const loadDataFromServer = React.useCallback(async () => {
     if (!currentUser) {
       setIsLoading(false);
       return;
@@ -149,10 +149,10 @@ const WeeklyCalendar = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser]);
 
-  // 서버에 데이터 저장하기
-  const saveDataToServer = async (updatedSchedules, updatedTags, updatedTagItems) => {
+  // 서버에 데이터 저장하기 - useCallback으로 메모이제이션
+  const saveDataToServer = React.useCallback(async (updatedSchedules, updatedTags, updatedTagItems) => {
     if (!currentUser) return;
 
     try {
@@ -173,12 +173,12 @@ const WeeklyCalendar = ({
     } catch (error) {
       console.error('❌ DayDetailed - 서버 저장 중 오류:', error);
     }
-  };
+  }, [currentUser, schedules, tags, tagItems]);
 
   // 컴포넌트 마운트시 데이터 로드
   useEffect(() => {
     loadDataFromServer();
-  }, [currentUser]);
+  }, [loadDataFromServer]);
 
   // 페이지 포커스시 데이터 새로고침
   useEffect(() => {
@@ -200,7 +200,7 @@ const WeeklyCalendar = ({
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [currentUser]);
+  }, [loadDataFromServer]);
 
   // 안전한 배열 보장
   const safeSchedules = Array.isArray(schedules) ? schedules : [];
@@ -438,7 +438,7 @@ const WeeklyCalendar = ({
       setCopyingSchedule(scheduleToCopy);
       console.log('일정 복사됨:', scheduleToCopy.title);
     }
-    setContextMenu({ ...contextMenu, visible: false });
+    setContextMenu(prev => ({ ...prev, visible: false }));
   };
   
   const handleDeleteSchedule = () => {
@@ -454,7 +454,7 @@ const WeeklyCalendar = ({
     console.log('일정 삭제됨:', scheduleToDelete?.title);
     console.log('💾 서버에 삭제 반영됨');
     
-    setContextMenu({ ...contextMenu, visible: false });
+    setContextMenu(prev => ({ ...prev, visible: false }));
   };
 
   // 복사 모드 핸들러들
@@ -889,7 +889,7 @@ const WeeklyCalendar = ({
     
     if (contextMenu.visible) {
       const handleClickOutside = () => {
-        setContextMenu({ ...contextMenu, visible: false });
+        setContextMenu(prev => ({ ...prev, visible: false }));
       };
       window.addEventListener('click', handleClickOutside);
       return () => window.removeEventListener('click', handleClickOutside);
@@ -907,7 +907,7 @@ const WeeklyCalendar = ({
         clearTimeout(autoScrollTimer);
       }
     };
-  }, [resizing, copyingSchedule, dragging, contextMenu.visible, autoScrollTimer, dragOffset, focusedDayIndex]);
+  }, [resizing, copyingSchedule, dragging, contextMenu.visible]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-50">
