@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   saveUserDataToDAL, 
@@ -117,8 +117,8 @@ const WeeklyCalendar = ({
   const safeTags = Array.isArray(tags) ? tags : [];
   const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
 
-  // 서버 데이터 로딩 함수
-  const loadDataFromServer = async () => {
+  // 서버 데이터 로딩 함수 - useCallback으로 메모이제이션
+  const loadDataFromServer = useCallback(async () => {
     if (!currentUser) {
       setIsLoading(false);
       return;
@@ -157,10 +157,10 @@ const WeeklyCalendar = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser]); // ← currentUser만 의존성으로!
 
-  // 서버 저장 함수
-  const saveDataToServer = async (updatedData) => {
+  // 서버 저장 함수 - useCallback으로 메모이제이션
+  const saveDataToServer = useCallback(async (updatedData) => {
     if (!currentUser) return;
 
     try {
@@ -181,7 +181,7 @@ const WeeklyCalendar = ({
       console.error('❌ WeeklyCalendar 서버 저장 실패:', error);
       alert('서버 저장 중 오류가 발생했습니다: ' + error.message);
     }
-  };
+  }, [currentUser, schedules, monthlyGoals, tags, tagItems]); // ← 의존성 명시
 
   // 자동 로딩 훅
   useEffect(() => {
