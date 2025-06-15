@@ -1,9 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { 
-  saveUserDataToDAL, 
-  loadUserDataFromDAL 
-} from './utils/supabaseStorage.js';
+import { saveUserDataToDAL } from './utils/supabaseStorage.js';
 
 const SLOT_HEIGHT = 24;
 const DAYS_OF_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
@@ -99,106 +96,18 @@ const checkScheduleOverlap = (schedules, newSchedule) => {
 };
 
 const WeeklyCalendar = ({ 
+  schedules = [], 
+  setSchedules, 
+  tags = [], 
+  setTags, 
+  tagItems = [], 
+  setTagItems, 
   currentUser,
-  onLogout
+  onLogout,
+  saveToServer,    // 추가된 props
+  loadFromServer   // 추가된 props
 }) => {
   const navigate = useNavigate();
-
-  // 서버에서 불러온 데이터 상태
-  const [schedules, setSchedules] = useState([]);
-  const [tags, setTags] = useState([]);
-  const [tagItems, setTagItems] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [lastSyncTime, setLastSyncTime] = useState(null);
-
-  // 서버에서 데이터 불러오기
-  const loadDataFromServer = async () => {
-    if (!currentUser) {
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      console.log('🔄 서버에서 사용자 데이터 불러오기 시작:', currentUser);
-
-      const result = await loadUserDataFromDAL(currentUser);
-      
-      if (result.success && result.data) {
-        setSchedules(result.data.schedules || []);
-        setTags(result.data.tags || []);
-        setTagItems(result.data.tagItems || []);
-        setLastSyncTime(new Date());
-        
-        console.log('✅ 서버 데이터 로드 성공:', {
-          schedules: result.data.schedules?.length || 0,
-          tags: result.data.tags?.length || 0,
-          tagItems: result.data.tagItems?.length || 0
-        });
-      } else {
-        console.warn('⚠️ 서버 데이터 로드 실패 또는 빈 데이터:', result.error);
-        // 서버에 데이터가 없는 경우 빈 배열로 초기화
-        setSchedules([]);
-        setTags([]);
-        setTagItems([]);
-        setLastSyncTime(new Date());
-      }
-    } catch (error) {
-      console.error('❌ 서버 데이터 로드 중 오류:', error);
-      alert('서버 데이터를 불러오는 중 오류가 발생했습니다: ' + error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 서버에 데이터 저장하기
-  const saveDataToServer = async (updatedSchedules, updatedTags, updatedTagItems) => {
-    if (!currentUser) return;
-
-    try {
-      const result = await saveUserDataToDAL(currentUser, {
-        schedules: updatedSchedules || schedules,
-        tags: updatedTags || tags,
-        tagItems: updatedTagItems || tagItems
-      });
-
-      if (result.success) {
-        console.log('✅ 서버 데이터 저장 성공');
-        setLastSyncTime(new Date());
-      } else {
-        console.error('❌ 서버 데이터 저장 실패:', result.error);
-      }
-    } catch (error) {
-      console.error('❌ 서버 데이터 저장 중 오류:', error);
-    }
-  };
-
-  // 컴포넌트 마운트시 데이터 로드
-  useEffect(() => {
-    loadDataFromServer();
-  }, [currentUser]);
-
-  // 페이지 포커스시 데이터 새로고침
-  useEffect(() => {
-    const handleFocus = () => {
-      console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
-      loadDataFromServer();
-    };
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        handleFocus();
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [currentUser]);
 
   // 안전한 배열 보장
   const safeSchedules = Array.isArray(schedules) ? schedules : [];
@@ -274,18 +183,6 @@ const WeeklyCalendar = ({
     { value: "4", label: "4주마다" }
   ];
 
-  // 로딩 상태 표시
-  if (isLoading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">서버에서 데이터를 불러오는 중...</p>
-        </div>
-      </div>
-    );
-  }
-
   // 초기 스크롤 설정
   useEffect(() => {
     if (containerRef.current) {
@@ -354,7 +251,7 @@ const WeeklyCalendar = ({
   };
 
   const handleResizeMove = (e) => {
-    if (!resizing || !containerRef.current) return;
+    if (!resizing || !containerRef.current || !setSchedules) return;
     
     const containerRect = containerRef.current.getBoundingClientRect();
     const relativeY = e.clientY - containerRect.top + containerRef.current.scrollTop;
@@ -380,8 +277,14 @@ const WeeklyCalendar = ({
           updatedSchedules[scheduleIndex] = updatedSchedule;
           setSchedules(updatedSchedules);
           
-          // 서버에도 반영
-          saveDataToServer(updatedSchedules, safeTags, safeTagItems);
+          // storage에도 반영
+          if (currentUser) {
+            saveUserDataToDAL(currentUser, {
+              schedules: updatedSchedules,
+              tags: safeTags,
+              tagItems: safeTagItems
+            });
+          }
         } else {
           setShowOverlapMessage(true);
           setTimeout(() => setShowOverlapMessage(false), 3000);
@@ -402,8 +305,14 @@ const WeeklyCalendar = ({
           updatedSchedules[scheduleIndex] = updatedSchedule;
           setSchedules(updatedSchedules);
           
-          // 서버에도 반영
-          saveDataToServer(updatedSchedules, safeTags, safeTagItems);
+          // storage에도 반영
+          if (currentUser) {
+            saveUserDataToDAL(currentUser, {
+              schedules: updatedSchedules,
+              tags: safeTags,
+              tagItems: safeTagItems
+            });
+          }
         } else {
           setShowOverlapMessage(true);
           setTimeout(() => setShowOverlapMessage(false), 3000);
@@ -436,23 +345,28 @@ const WeeklyCalendar = ({
       setCopyingSchedule(scheduleToCopy);
       console.log('일정 복사됨:', scheduleToCopy.title);
     }
-    setContextMenu(prev => ({ ...prev, visible: false }));
+    setContextMenu({ ...contextMenu, visible: false });
   };
   
   const handleDeleteSchedule = () => {
-    const scheduleToDelete = safeSchedules.find(s => s.id === contextMenu.scheduleId);
-    const updatedSchedules = safeSchedules.filter(s => s.id !== contextMenu.scheduleId);
-    
-    // 로컬 상태 업데이트
-    setSchedules(updatedSchedules);
-    
-    // 서버에도 반영
-    saveDataToServer(updatedSchedules, safeTags, safeTagItems);
-    
-    console.log('일정 삭제됨:', scheduleToDelete?.title);
-    console.log('💾 서버에 삭제 반영됨');
-    
-    setContextMenu(prev => ({ ...prev, visible: false }));
+    if (setSchedules && currentUser) {
+      const scheduleToDelete = safeSchedules.find(s => s.id === contextMenu.scheduleId);
+      const updatedSchedules = safeSchedules.filter(s => s.id !== contextMenu.scheduleId);
+      
+      // 로컬 상태 업데이트
+      setSchedules(updatedSchedules);
+      
+      // storage에도 반영
+      saveUserDataToDAL(currentUser, {
+        schedules: updatedSchedules,
+        tags: safeTags,
+        tagItems: safeTagItems
+      });
+      
+      console.log('일정 삭제됨:', scheduleToDelete?.title);
+      console.log('💾 storage에 삭제 반영됨');
+    }
+    setContextMenu({ ...contextMenu, visible: false });
   };
 
   // 복사 모드 핸들러들
@@ -491,7 +405,7 @@ const WeeklyCalendar = ({
   };
 
   const handleCopyEnd = (e) => {
-    if (!copyingSchedule) return;
+    if (!copyingSchedule || !setSchedules) return;
     
     if (autoScrollTimer) {
       clearTimeout(autoScrollTimer);
@@ -536,8 +450,14 @@ const WeeklyCalendar = ({
         const updatedSchedules = [...safeSchedules, newSchedule];
         setSchedules(updatedSchedules);
         
-        // 서버에도 반영
-        saveDataToServer(updatedSchedules, safeTags, safeTagItems);
+        // storage에도 반영
+        if (currentUser) {
+          saveUserDataToDAL(currentUser, {
+            schedules: updatedSchedules,
+            tags: safeTags,
+            tagItems: safeTagItems
+          });
+        }
         
         console.log(`일정 붙여넣기 완료: ${copyingSchedule.title} -> ${getDayOfWeek(currentWeek[targetDayIndex])} ${dropTimeSlot}-${newEnd}`);
       } else {
@@ -606,7 +526,7 @@ const WeeklyCalendar = ({
   };
 
   const handleDragEnd = (e) => {
-    if (!dragging) {
+    if (!dragging || !setSchedules) {
       setDragging(null);
       if (autoScrollTimer) {
         clearTimeout(autoScrollTimer);
@@ -665,11 +585,17 @@ const WeeklyCalendar = ({
         );
         setSchedules(updatedSchedules);
         
-        // 서버에도 반영
-        saveDataToServer(updatedSchedules, safeTags, safeTagItems);
+        // storage에도 반영
+        if (currentUser) {
+          saveUserDataToDAL(currentUser, {
+            schedules: updatedSchedules,
+            tags: safeTags,
+            tagItems: safeTagItems
+          });
+        }
         
         console.log(`일정 이동 완료: ${schedule.title} -> ${getDayOfWeek(currentWeek[targetDayIndex])} ${newStartTime}-${newEndTime}`);
-        console.log('💾 서버에 이동 반영됨');
+        console.log('💾 storage에 이동 반영됨');
       } else {
         setShowOverlapMessage(true);
         setTimeout(() => setShowOverlapMessage(false), 3000);
@@ -735,11 +661,17 @@ const WeeklyCalendar = ({
       }
     }
   
-    const updatedSchedules = [...safeSchedules, ...newSchedules];
-    setSchedules(updatedSchedules);
-    
-    // 서버에도 반영
-    saveDataToServer(updatedSchedules, safeTags, safeTagItems);
+    if (setSchedules && currentUser) {
+      const updatedSchedules = [...safeSchedules, ...newSchedules];
+      setSchedules(updatedSchedules);
+      
+      // storage에도 반영
+      saveUserDataToDAL(currentUser, {
+        schedules: updatedSchedules,
+        tags: safeTags,
+        tagItems: safeTagItems
+      });
+    }
   
     setStartSlot("07:00");
     setForm({
@@ -762,15 +694,25 @@ const WeeklyCalendar = ({
     if (!safeTags.find(t => t.tagType === newTagType)) {
       const newColor = assignNewTagColor(newTagType);
       updatedTags = [...safeTags, { tagType: newTagType, color: newColor }];
-      setTags(updatedTags);
+      if (setTags) {
+        setTags(updatedTags);
+      }
     }
     
     if (!safeTagItems.find(t => t.tagType === newTagType && t.tagName === newTagName)) {
       const updatedTagItems = [...safeTagItems, { tagType: newTagType, tagName: newTagName }];
-      setTagItems(updatedTagItems);
+      if (setTagItems) {
+        setTagItems(updatedTagItems);
+      }
       
-      // 서버에도 반영
-      saveDataToServer(safeSchedules, updatedTags, updatedTagItems);
+      // storage에도 반영
+      if (currentUser) {
+        saveUserDataToDAL(currentUser, {
+          schedules: safeSchedules,
+          tags: updatedTags,
+          tagItems: updatedTagItems
+        });
+      }
     }
     
     setNewTagType(""); 
@@ -778,11 +720,17 @@ const WeeklyCalendar = ({
   };
   
   const handleDeleteTagItem = (tagType, tagName) => {
-    const updatedTagItems = safeTagItems.filter(item => !(item.tagType === tagType && item.tagName === tagName));
-    setTagItems(updatedTagItems);
-    
-    // 서버에도 반영
-    saveDataToServer(safeSchedules, safeTags, updatedTagItems);
+    if (setTagItems && currentUser) {
+      const updatedTagItems = safeTagItems.filter(item => !(item.tagType === tagType && item.tagName === tagName));
+      setTagItems(updatedTagItems);
+      
+      // storage에도 반영
+      saveUserDataToDAL(currentUser, {
+        schedules: safeSchedules,
+        tags: safeTags,
+        tagItems: updatedTagItems
+      });
+    }
   };
 
   const getTagColor = (tagType) => {
@@ -865,61 +813,44 @@ const WeeklyCalendar = ({
 
   const tagTotals = calculateTagTotals(safeSchedules);
 
-  // 리사이즈 이벤트 리스너
+  // 이벤트 리스너 등록
   useEffect(() => {
     if (resizing) {
       window.addEventListener('mousemove', handleResizeMove);
       window.addEventListener('mouseup', handleResizeEnd);
-      return () => {
-        window.removeEventListener('mousemove', handleResizeMove);
-        window.removeEventListener('mouseup', handleResizeEnd);
-      };
     }
-  }, [resizing]);
-
-  // 복사 이벤트 리스너
-  useEffect(() => {
+    
     if (copyingSchedule) {
       window.addEventListener('mousemove', handleCopyMove);
       window.addEventListener('mouseup', handleCopyEnd);
-      return () => {
-        window.removeEventListener('mousemove', handleCopyMove);
-        window.removeEventListener('mouseup', handleCopyEnd);
-      };
     }
-  }, [copyingSchedule]);
-
-  // 드래그 이벤트 리스너
-  useEffect(() => {
+    
     if (dragging) {
       window.addEventListener('mousemove', handleDragMove);
       window.addEventListener('mouseup', handleDragEnd);
-      return () => {
-        window.removeEventListener('mousemove', handleDragMove);
-        window.removeEventListener('mouseup', handleDragEnd);
-      };
     }
-  }, [dragging]);
-
-  // 컨텍스트 메뉴 이벤트 리스너
-  useEffect(() => {
+    
     if (contextMenu.visible) {
       const handleClickOutside = () => {
-        setContextMenu(prev => ({ ...prev, visible: false }));
+        setContextMenu({ ...contextMenu, visible: false });
       };
       window.addEventListener('click', handleClickOutside);
       return () => window.removeEventListener('click', handleClickOutside);
     }
-  }, [contextMenu.visible]);
-
-  // 자동 스크롤 타이머 정리
-  useEffect(() => {
+    
     return () => {
+      window.removeEventListener('mousemove', handleResizeMove);
+      window.removeEventListener('mouseup', handleResizeEnd);
+      window.removeEventListener('mousemove', handleCopyMove);
+      window.removeEventListener('mouseup', handleCopyEnd);
+      window.removeEventListener('mousemove', handleDragMove);
+      window.removeEventListener('mouseup', handleDragEnd);
+      
       if (autoScrollTimer) {
         clearTimeout(autoScrollTimer);
       }
     };
-  }, [autoScrollTimer]);
+  }, [resizing, copyingSchedule, dragging, contextMenu.visible, autoScrollTimer, dragOffset, focusedDayIndex]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-50">
@@ -953,7 +884,7 @@ const WeeklyCalendar = ({
             className="px-4 py-2 hover:bg-gray-100 text-red-600 cursor-pointer text-sm" 
             onClick={handleDeleteSchedule}
           >
-            🗑️삭제
+            🗑️ 삭제
           </div>
         </div>
       )}
@@ -1010,25 +941,6 @@ const WeeklyCalendar = ({
                 >
                   로그아웃
                 </button>
-                <button
-                  onClick={() => loadDataFromServer()}
-                  className="bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded text-sm"
-                  title="서버에서 새로고침"
-                  disabled={isLoading}
-                >
-                  {isLoading ? '🔄 로딩...' : '🔄 새로고침'}
-                </button>
-                
-                {/* 서버 연동 상태 표시 */}
-                <div className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-sm">
-                  🌐 서버 연동
-                </div>
-                
-                {lastSyncTime && (
-                  <div className="text-xs text-gray-500">
-                    마지막 동기화: {lastSyncTime.toLocaleTimeString()}
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1201,13 +1113,19 @@ const WeeklyCalendar = ({
                                       className="pointer-events-auto flex-shrink-0"
                                       onChange={(e) => {
                                         e.stopPropagation();
-                                        const updated = safeSchedules.map(item =>
-                                          item.id === s.id ? { ...item, done: !item.done } : item
-                                        );
-                                        setSchedules(updated);
-                                        
-                                        // 서버에도 반영
-                                        saveDataToServer(updated, safeTags, safeTagItems);
+                                        if (setSchedules && currentUser) {
+                                          const updated = safeSchedules.map(item =>
+                                            item.id === s.id ? { ...item, done: !item.done } : item
+                                          );
+                                          setSchedules(updated);
+                                          
+                                          // storage에도 반영
+                                          saveUserDataToDAL(currentUser, {
+                                            schedules: updated,
+                                            tags: safeTags,
+                                            tagItems: safeTagItems
+                                          });
+                                        }
                                       }}
                                     />
                                     {s.tag && (
@@ -1441,19 +1359,6 @@ const WeeklyCalendar = ({
             </div>
           </div>
         </div>
-      </div>
-      
-      {/* 서버 연동 상태 안내 */}
-      <div className="fixed bottom-4 right-4 bg-blue-50 border border-blue-200 rounded-lg p-3 shadow-md text-sm">
-        <div className="flex items-center gap-2 text-blue-800">
-          <span className="font-medium">🌐 서버 연동:</span>
-          <span>모든 데이터가 Supabase에 자동 저장됩니다</span>
-        </div>
-        {lastSyncTime && (
-          <div className="text-xs text-blue-600 mt-1">
-            마지막 동기화: {lastSyncTime.toLocaleString()}
-          </div>
-        )}
       </div>
     </div>
   );
