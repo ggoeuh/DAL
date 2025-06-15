@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+/*import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { saveUserDataToDAL } from './utils/supabaseStorage.js';
 
@@ -1366,4 +1366,4 @@ const WeeklyCalendar = ({
 
 export default function SimplifiedWeeklyCalendar(props) {
   return <WeeklyCalendar {...props} />;
-}
+}*/
