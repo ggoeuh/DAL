@@ -436,7 +436,7 @@ const WeeklyCalendar = ({
       setCopyingSchedule(scheduleToCopy);
       console.log('일정 복사됨:', scheduleToCopy.title);
     }
-    setContextMenu({ ...contextMenu, visible: false });
+    setContextMenu(prev => ({ ...prev, visible: false }));
   };
   
   const handleDeleteSchedule = () => {
@@ -452,7 +452,7 @@ const WeeklyCalendar = ({
     console.log('일정 삭제됨:', scheduleToDelete?.title);
     console.log('💾 서버에 삭제 반영됨');
     
-    setContextMenu({ ...contextMenu, visible: false });
+    setContextMenu(prev => ({ ...prev, visible: false }));
   };
 
   // 복사 모드 핸들러들
@@ -865,44 +865,61 @@ const WeeklyCalendar = ({
 
   const tagTotals = calculateTagTotals(safeSchedules);
 
-  // 이벤트 리스너 등록
+  // 리사이즈 이벤트 리스너
   useEffect(() => {
     if (resizing) {
       window.addEventListener('mousemove', handleResizeMove);
       window.addEventListener('mouseup', handleResizeEnd);
+      return () => {
+        window.removeEventListener('mousemove', handleResizeMove);
+        window.removeEventListener('mouseup', handleResizeEnd);
+      };
     }
-    
+  }, [resizing]);
+
+  // 복사 이벤트 리스너
+  useEffect(() => {
     if (copyingSchedule) {
       window.addEventListener('mousemove', handleCopyMove);
       window.addEventListener('mouseup', handleCopyEnd);
+      return () => {
+        window.removeEventListener('mousemove', handleCopyMove);
+        window.removeEventListener('mouseup', handleCopyEnd);
+      };
     }
-    
+  }, [copyingSchedule]);
+
+  // 드래그 이벤트 리스너
+  useEffect(() => {
     if (dragging) {
       window.addEventListener('mousemove', handleDragMove);
       window.addEventListener('mouseup', handleDragEnd);
+      return () => {
+        window.removeEventListener('mousemove', handleDragMove);
+        window.removeEventListener('mouseup', handleDragEnd);
+      };
     }
-    
+  }, [dragging]);
+
+  // 컨텍스트 메뉴 이벤트 리스너
+  useEffect(() => {
     if (contextMenu.visible) {
       const handleClickOutside = () => {
-        setContextMenu({ ...contextMenu, visible: false });
+        setContextMenu(prev => ({ ...prev, visible: false }));
       };
       window.addEventListener('click', handleClickOutside);
       return () => window.removeEventListener('click', handleClickOutside);
     }
-    
+  }, [contextMenu.visible]);
+
+  // 자동 스크롤 타이머 정리
+  useEffect(() => {
     return () => {
-      window.removeEventListener('mousemove', handleResizeMove);
-      window.removeEventListener('mouseup', handleResizeEnd);
-      window.removeEventListener('mousemove', handleCopyMove);
-      window.removeEventListener('mouseup', handleCopyEnd);
-      window.removeEventListener('mousemove', handleDragMove);
-      window.removeEventListener('mouseup', handleDragEnd);
-      
       if (autoScrollTimer) {
         clearTimeout(autoScrollTimer);
       }
     };
-  }, [resizing, copyingSchedule, dragging, contextMenu.visible, autoScrollTimer, dragOffset, focusedDayIndex]);
+  }, [autoScrollTimer]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-50">
