@@ -83,6 +83,36 @@ export const WeeklyCalendarUI = ({
     handleResizeEnd
   } = calendarLogic;
 
+  // 🔧 디버깅용 로그 추가 - key 중복 검증
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Key 중복 검증:');
+      console.log('visibleDays:', visibleDays);
+      
+      // visibleDays 중복 검사
+      const uniqueVisibleDays = [...new Set(visibleDays)];
+      if (uniqueVisibleDays.length !== visibleDays.length) {
+        console.error('❌ visibleDays에 중복된 값이 있습니다:', visibleDays);
+      }
+      
+      // timeSlots 중복 검사
+      const uniqueTimeSlots = [...new Set(timeSlots)];
+      if (uniqueTimeSlots.length !== timeSlots.length) {
+        console.error('❌ timeSlots에 중복된 값이 있습니다:', timeSlots);
+      }
+      
+      // schedules ID 중복 검사
+      const scheduleIds = safeSchedules.map(s => s.id);
+      const uniqueScheduleIds = [...new Set(scheduleIds)];
+      if (uniqueScheduleIds.length !== scheduleIds.length) {
+        console.error('❌ safeSchedules에 중복된 ID가 있습니다:', scheduleIds);
+        console.error('중복된 일정들:', safeSchedules.filter((s, i, arr) => 
+          arr.findIndex(item => item.id === s.id) !== i
+        ));
+      }
+    }
+  }, [visibleDays, timeSlots, safeSchedules]);
+
   // ✨ 체크박스 변경 핸들러 - useCallback 완전 제거하여 무한 루프 방지
   const handleCheckboxChange = (scheduleId, currentDone) => {
     if (isAdminView) return;
@@ -251,7 +281,8 @@ export const WeeklyCalendarUI = ({
           {/* 오른쪽: 날짜 + 사용자 정보 */}
           <div className="flex items-center gap-4">
             <div className="text-gray-800 font-semibold">
-              {`${formatDate(currentWeek[0])} - ${formatDate(currentWeek[6])}`}
+              {currentWeek && currentWeek.length >= 7 && 
+                `${formatDate(currentWeek[0])} - ${formatDate(currentWeek[6])}`}
             </div>
             {currentUser && (
               <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -273,11 +304,11 @@ export const WeeklyCalendarUI = ({
         
         {/* 태그별 총 시간 요약 */}
         <div className="flex gap-4 flex-wrap">
-          {Object.entries(tagTotals).map(([tagType, totalTime]) => {
+          {Object.entries(tagTotals || {}).map(([tagType, totalTime]) => {
             const tagColor = getTagColor(tagType);
             return (
               <div 
-                key={tagType} 
+                key={`tag-total-${tagType}`} // 🔧 고유한 key 보장
                 className={`${tagColor.bg} ${tagColor.text} rounded-lg px-3 py-1 text-sm font-medium flex items-center`}
               >
                 <span>{tagType}</span>
@@ -306,12 +337,14 @@ export const WeeklyCalendarUI = ({
               {/* 상단 헤더 */}
               <div className="sticky top-0 z-10 flex bg-white border-b border-gray-200">
                 <div className="w-10 flex-shrink-0 bg-white border-r border-gray-200" />
-                {visibleDays.map((dayIndex, i) => {
-                  const date = currentWeek[dayIndex];
+                {visibleDays && visibleDays.map((dayIndex, i) => {
+                  const date = currentWeek && currentWeek[dayIndex];
+                  if (!date) return null; // 🔧 안전 가드
+                  
                   const isFocusDay = i === 3;
                   return (
                     <div
-                      key={dayIndex}
+                      key={`header-day-${dayIndex}-${i}`} // 🔧 더 고유한 key
                       className={`p-2 text-center border-l border-gray-200 cursor-pointer ${
                         isFocusDay ? 'bg-blue-50 font-bold' : 'bg-white'
                       }`}
@@ -329,9 +362,9 @@ export const WeeklyCalendarUI = ({
               <div className="flex">
                 {/* 시간 열 */}
                 <div className="w-10 flex-shrink-0 relative" style={{ height: `${SLOT_HEIGHT * 48}px` }}>
-                  {timeSlots.map((time, i) => (
+                  {timeSlots && timeSlots.map((time, i) => (
                     <div
-                      key={time}
+                      key={`time-slot-${time}-${i}`} // 🔧 더 고유한 key
                       className="absolute w-full pl-2 text-xs text-gray-500"
                       style={{ top: `${i * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
                     >
@@ -342,14 +375,16 @@ export const WeeklyCalendarUI = ({
 
                 {/* 날짜 열들 */}
                 <div className="flex flex-1 min-w-0">
-                  {visibleDays.map((dayIndex, i) => {
-                    const date = currentWeek[dayIndex];
+                  {visibleDays && visibleDays.map((dayIndex, i) => {
+                    const date = currentWeek && currentWeek[dayIndex];
+                    if (!date) return null; // 🔧 안전 가드
+                    
                     const isFocusDay = i === 3;
-                    const dateSchedules = filterSchedulesByDate(safeSchedules, date);
+                    const dateSchedules = filterSchedulesByDate(safeSchedules || [], date);
 
                     return (
                       <div
-                        key={dayIndex}
+                        key={`day-column-${dayIndex}-${formatDate(date)}`} // 🔧 날짜 포함한 고유 key
                         data-day-index={dayIndex}
                         className="relative border-l border-gray-200 flex flex-col transition-all duration-300"
                         style={{ flexGrow: isFocusDay ? 2 : 1.5, minWidth: 0 }}
@@ -359,9 +394,9 @@ export const WeeklyCalendarUI = ({
                           className={`flex-1 relative ${isFocusDay ? 'bg-blue-50 bg-opacity-30' : ''}`}
                           style={{ height: `${SLOT_HEIGHT * 48}px` }}
                         >
-                          {timeSlots.map((time, i) => (
+                          {timeSlots && timeSlots.map((time, i) => (
                             <div
-                              key={time}
+                              key={`time-grid-${dayIndex}-${time}-${i}`} // 🔧 더 고유한 key
                               className={`absolute w-full border-t border-gray-200 border-dashed ${
                                 activeTimeSlot === time && isFocusDay && !isAdminView ? 'bg-gray-300 bg-opacity-10' : ''
                               }`}
@@ -381,17 +416,23 @@ export const WeeklyCalendarUI = ({
                           )}
 
                           {/* 일정들 */}
-                          {dateSchedules.map((s) => {
+                          {dateSchedules && dateSchedules.map((s, scheduleIndex) => {
+                            // 🔧 안전 가드 - ID가 없으면 건너뛰기
+                            if (!s || !s.id) {
+                              console.warn('일정 ID가 없습니다:', s);
+                              return null;
+                            }
+
                             const top = calculateSlotPosition(s.start);
                             const bottom = calculateSlotPosition(s.end);
                             const height = bottom - top;
-                            const tagTypeForItem = safeTagItems.find(item => item.tagName === s.tag)?.tagType || s.tagType;
+                            const tagTypeForItem = safeTagItems && safeTagItems.find(item => item.tagName === s.tag)?.tagType || s.tagType;
                             const tagColor = getTagColor(tagTypeForItem);
                             const isDragging = dragging === s.id;
 
                             return (
                               <div
-                                key={s.id}
+                                key={`schedule-${s.id}-${formatDate(date)}-${scheduleIndex}`} // 🔧 고유성 강화
                                 className="absolute left-0 w-full px-1"
                                 style={{ 
                                   top: `${top}px`, 
@@ -542,7 +583,7 @@ export const WeeklyCalendarUI = ({
                     type="text"
                     placeholder="일정 명을 적어주세요."
                     className="w-full bg-gray-50 border-0 border-b border-gray-200 px-2 py-2 mb-3 focus:outline-none focus:border-gray-400"
-                    value={form.title}
+                    value={form.title || ""}
                     onChange={(e) => setForm({ ...form, title: e.target.value })}
                   />
                   
@@ -560,8 +601,8 @@ export const WeeklyCalendarUI = ({
                           value={startSlot || ""}
                           onChange={(e) => calendarLogic.setStartSlot(e.target.value)}
                         >
-                          {timeSlots.map(time => (
-                            <option key={`start-${time}`} value={time}>{time}</option>
+                          {timeSlots && timeSlots.map((time, index) => (
+                            <option key={`start-time-${time}-${index}`} value={time}>{time}</option>
                           ))}
                         </select>
                       </div>
@@ -577,13 +618,13 @@ export const WeeklyCalendarUI = ({
                         </div>
                         <select
                           className="ml-2 w-full bg-transparent border-0 focus:outline-none appearance-none"
-                          value={form.end}
+                          value={form.end || ""}
                           onChange={(e) => setForm({ ...form, end: e.target.value })}
                         >
-                          {timeSlots
+                          {timeSlots && timeSlots
                             .filter((t) => !startSlot || parseTimeToMinutes(t) > parseTimeToMinutes(startSlot))
-                            .map(time => (
-                              <option key={`end-${time}`} value={time}>{time}</option>
+                            .map((time, index) => (
+                              <option key={`end-time-${time}-${index}`} value={time}>{time}</option>
                             ))}
                         </select>
                       </div>
@@ -605,12 +646,12 @@ export const WeeklyCalendarUI = ({
                       {/* 반복 횟수 */}
                       <select
                         className="flex-1 border rounded-md p-2 text-xs"
-                        value={form.repeatCount}
+                        value={form.repeatCount || "1"}
                         onChange={(e) => setForm({ ...form, repeatCount: e.target.value })}
                       >
                         <option value="1">반복 없음</option>
-                        {repeatOptions.map((count) => (
-                          <option key={count} value={count}>
+                        {repeatOptions && repeatOptions.map((count) => (
+                          <option key={`repeat-${count}`} value={count}>
                             {count}번 반복
                           </option>
                         ))}
@@ -619,11 +660,11 @@ export const WeeklyCalendarUI = ({
                       {/* 주기 설정 */}
                       <select
                         className="flex-1 border rounded-md p-2 text-xs"
-                        value={form.interval}
+                        value={form.interval || ""}
                         onChange={(e) => setForm({ ...form, interval: e.target.value })}
                       >
-                        {intervalOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
+                        {intervalOptions && intervalOptions.map((opt) => (
+                          <option key={`interval-${opt.value}`} value={opt.value}>
                             {opt.label}
                           </option>
                         ))}
@@ -632,11 +673,11 @@ export const WeeklyCalendarUI = ({
 
                     {/* 요일 선택 */}
                     <div className="flex flex-wrap gap-2">
-                      {DAYS_OF_WEEK.map((day, idx) => {
-                        const selected = form.weekdays.includes(day);
+                      {DAYS_OF_WEEK && DAYS_OF_WEEK.map((day, idx) => {
+                        const selected = form.weekdays && form.weekdays.includes(day);
                         return (
                           <button
-                            key={idx}
+                            key={`weekday-${day}-${idx}`} // 🔧 고유한 key
                             type="button"
                             className={`w-7 h-7 rounded-full border text-xs font-medium transition ${
                               selected
@@ -655,12 +696,12 @@ export const WeeklyCalendarUI = ({
                   <div className="mb-3">
                     <h3 className="font-medium mb-2">태그 선택</h3>
                     <div className="h-48 overflow-y-auto pr-1 border rounded-md p-3 bg-white">
-                      {safeTagItems.map((item, idx) => {
-                        const tagGroup = safeTags.find(t => t.tagType === item.tagType);
+                      {safeTagItems && safeTagItems.map((item, idx) => {
+                        const tagGroup = safeTags && safeTags.find(t => t.tagType === item.tagType);
                         const tagColor = tagGroup ? tagGroup.color : { bg: "bg-gray-100", text: "text-gray-800" };
                         
                         return (
-                          <div key={idx} className="flex items-center mb-2 last:mb-0">
+                          <div key={`tag-item-${item.tagType}-${item.tagName}-${idx}`} className="flex items-center mb-2 last:mb-0">
                             <div className={`w-16 ${tagColor.bg} ${tagColor.text} px-2 py-1 rounded-l-md text-xs font-medium truncate`}>
                               {item.tagType}
                             </div>
@@ -679,7 +720,7 @@ export const WeeklyCalendarUI = ({
                           </div>
                         );
                       })}
-                      {safeTagItems.length === 0 && (
+                      {(!safeTagItems || safeTagItems.length === 0) && (
                         <div className="text-center text-gray-500 py-15 text-sm">
                           태그를 추가해주세요
                         </div>
@@ -692,14 +733,14 @@ export const WeeklyCalendarUI = ({
                       type="text"
                       placeholder="태그"
                       className="w-16 text-xs bg-white border rounded-l-md px-2 py-1 focus:outline-none focus:border-gray-400"
-                      value={newTagType}
+                      value={newTagType || ""}
                       onChange={(e) => setNewTagType(e.target.value)}
                     />
                     <input
                       type="text"
                       placeholder="항목 이름"
                       className="flex-1 text-xs bg-white border-y border-r-0 px-2 py-1 focus:outline-none focus:border-gray-400"
-                      value={newTagName}
+                      value={newTagName || ""}
                       onChange={(e) => setNewTagName(e.target.value)}
                     />
                     <button 
