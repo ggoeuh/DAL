@@ -198,7 +198,7 @@ export const WeeklyCalendarUI = ({
         >
           <div 
             className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm" 
-            onClick={() => handleWeekdaySelect(day)}
+            onClick={handleCopySchedule}
           >
             📋 복사
           </div>
@@ -367,16 +367,17 @@ export const WeeklyCalendarUI = ({
                     const isFocusDay = i === 2; // 중앙이 포커스
                     const isToday = date.toDateString() === new Date().toDateString();
                     const dateSchedules = filterSchedulesByDate(safeSchedules, date);
-                
+
                     return (
                       <div
                         key={i}
-                        data-day-index={i} // 새로운 인덱스 시스템
+                        data-day-index={i}
                         className={`relative border-l border-gray-200 flex flex-col transition-all duration-300 ${
                           isToday ? 'border-blue-300 border-2' : ''
                         }`}
                         style={{ flexGrow: isFocusDay ? 2 : 1.5, minWidth: 0 }}
                       >
+                        {/* 시간 슬롯 + 일정 */}
                         <div
                           className={`flex-1 relative ${
                             isFocusDay ? 'bg-blue-50 bg-opacity-30' : ''
@@ -393,7 +394,7 @@ export const WeeklyCalendarUI = ({
                               onClick={() => isFocusDay && handleTimeSlotClick(time)}
                             />
                           ))}
-                
+
                           {/* 현재 시간 표시 */}
                           {isToday && (
                             <div
@@ -403,7 +404,7 @@ export const WeeklyCalendarUI = ({
                               <div className="absolute -left-2 -top-2 w-4 h-4 bg-red-500 rounded-full" />
                             </div>
                           )}
-                
+
                           {/* 일정들 */}
                           {dateSchedules.map((s) => {
                             const top = calculateSlotPosition(s.start);
@@ -412,7 +413,7 @@ export const WeeklyCalendarUI = ({
                             const tagTypeForItem = safeTagItems.find(item => item.tagName === s.tag)?.tagType || s.tagType;
                             const tagColor = getTagColor(tagTypeForItem);
                             const isDragging = dragging === s.id;
-                
+
                             return (
                               <div
                                 key={s.id}
@@ -458,7 +459,8 @@ export const WeeklyCalendarUI = ({
                                       />
                                     </>
                                   )}
-                
+
+                                  {/* 첫째줄: 체크박스 + 태그(라운드 네모칸) + 항목명 */}
                                   <div className="flex items-center gap-1 mb-1">
                                     <input
                                       type="checkbox"
@@ -478,15 +480,18 @@ export const WeeklyCalendarUI = ({
                                       {s.tag ? s.tag : ''}
                                     </span>
                                   </div>
-                
+
+                                  {/* 둘째줄: 시간 표기 */}
                                   <div className="text-[12px] mb-1 opacity-80">
                                     {s.start} - {s.end}
                                   </div>
-                
+
+                                  {/* 셋째줄: 일정명 */}
                                   <div className={`text-[11px] font-bold mb-1 truncate ${s.done ? "line-through opacity-60" : ""}`}>
                                     {s.title}
                                   </div>
-                
+
+                                  {/* 넷째줄: 일정 내용 */}
                                   {s.description && (
                                     <div className="text-[9px] opacity-70 flex-1 overflow-hidden">
                                       <div className="line-clamp-2">
@@ -502,7 +507,6 @@ export const WeeklyCalendarUI = ({
                       </div>
                     );
                   })}
-                </div>
                 </div>
               </div>
             </div>
@@ -584,6 +588,183 @@ export const WeeklyCalendarUI = ({
                 
                 {/* 반복 옵션 영역 */}
                 <div className="mb-3">
+                  <h3 className="font-medium mb-2">태그 선택</h3>
+                  <div className="h-48 overflow-y-auto pr-1 border rounded-md p-3 bg-white">
+                    {safeTagItems.map((item, idx) => {
+                      const tagGroup = safeTags.find(t => t.tagType === item.tagType);
+                      const tagColor = tagGroup ? tagGroup.color : { bg: "bg-gray-100", text: "text-gray-800" };
+                      const isSelected = selectedTagType === item.tagType && form.tag === item.tagName;
+                      
+                      return (
+                        <div key={`${item.tagType}-${item.tagName}-${idx}`} className="flex items-center mb-2 last:mb-0">
+                          <div className={`w-16 ${tagColor.bg} ${tagColor.text} px-2 py-1 rounded-l-md text-xs font-medium truncate`}>
+                            {item.tagType}
+                          </div>
+                          <div 
+                            className={`flex-1 ${tagColor.bg} ${tagColor.text} px-2 py-1 text-xs cursor-pointer hover:bg-opacity-80 transition-colors ${
+                              isSelected ? 'ring-2 ring-blue-400 bg-opacity-90' : ''
+                            }`}
+                            onClick={() => handleSelectTag(item.tagType, item.tagName)}
+                          >
+                            {item.tagName}
+                          </div>
+                          <button 
+                            className="bg-red-100 text-red-500 hover:bg-red-200 rounded-r-md px-2 py-1 text-xs transition-colors"
+                            onClick={() => handleDeleteTagItem(item.tagType, item.tagName)}
+                            title="태그 삭제"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {safeTagItems.length === 0 && (
+                      <div className="text-center text-gray-500 py-8 text-sm">
+                        <div className="mb-2">📝</div>
+                        <div>태그를 추가해주세요</div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          아래에서 새 태그를 만들 수 있습니다
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="mb-3">
+                  <h3 className="font-medium mb-2">새 태그 추가</h3>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      placeholder="태그 타입"
+                      className="w-20 text-xs bg-white border rounded-l-md px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
+                      value={newTagType}
+                      onChange={(e) => setNewTagType(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="항목 이름"
+                      className="flex-1 text-xs bg-white border-y border-r-0 px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && newTagType.trim() && newTagName.trim()) {
+                          handleAddTag();
+                        }
+                      }}
+                    />
+                    <button 
+                      className="bg-blue-500 hover:bg-blue-600 text-white w-8 h-6 rounded-r-md flex items-center justify-center text-sm font-bold transition-colors disabled:opacity-50"
+                      onClick={handleAddTag}
+                      disabled={!newTagType.trim() || !newTagName.trim()}
+                      title="태그 추가"
+                    >
+                      +
+                    </button>
+                  </div>
+                  {newTagType.trim() && newTagName.trim() && (
+                    <div className="mt-2 text-xs text-gray-600">
+                      미리보기: <span className="bg-gray-100 px-2 py-1 rounded">{newTagType}</span> - {newTagName}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <button
+                className="w-full bg-green-500 hover:bg-green-600 text-white text-center py-3 rounded-lg text-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleAdd}
+                disabled={!form.title || !startSlot || !form.end || isLoading}
+              >
+                {isLoading ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    저장 중...
+                  </div>
+                ) : (
+                  '일정 추가하기'
+                )}
+              </button>
+
+              {/* 서버 연동 상태 정보 */}
+              {isServerBased && (
+                <div className="mt-3 p-2 bg-blue-50 rounded-lg text-xs text-blue-700">
+                  <div className="flex items-center justify-between">
+                    <span>🌐 서버 자동 저장 활성화</span>
+                    {lastSyncTime && (
+                      <span className="text-blue-500">
+                        {lastSyncTime.toLocaleTimeString('ko-KR')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-blue-600">
+                    모든 변경사항이 실시간으로 서버에 저장됩니다
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default WeeklyCalendarUI;3 className="font-medium mb-2">반복 설정</h3>
+                  
+                  <div className="flex gap-2 mb-2">
+                    {/* 반복 횟수 */}
+                    <select
+                      className="flex-1 border rounded-md p-2 text-xs"
+                      value={form.repeatCount}
+                      onChange={(e) => setForm({ ...form, repeatCount: e.target.value })}
+                    >
+                      <option value="1">반복 없음</option>
+                      {repeatOptions.map((count) => (
+                        <option key={count} value={count}>
+                          {count}번 반복
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* 주기 설정 */}
+                    <select
+                      className="flex-1 border rounded-md p-2 text-xs"
+                      value={form.interval}
+                      onChange={(e) => setForm({ ...form, interval: e.target.value })}
+                    >
+                      {intervalOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 요일 선택 */}
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS_OF_WEEK.map((day, idx) => {
+                      const selected = form.weekdays.includes(day);
+                      const isToday = idx === new Date().getDay();
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          className={`w-7 h-7 rounded-full border text-xs font-medium transition ${
+                            selected
+                              ? "bg-blue-500 text-white"
+                              : isToday
+                              ? "bg-blue-100 text-blue-700 border-blue-300"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          }`}
+                          onClick={() => handleWeekdaySelect(day)}
+                        >
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mb-3">
                   <h3 className="font-medium mb-2">반복 설정</h3>
                   
                   <div className="flex gap-2 mb-2">
@@ -631,7 +812,7 @@ export const WeeklyCalendarUI = ({
                               ? "bg-blue-100 text-blue-700 border-blue-300"
                               : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                           }`}
-                          onClick={() => handleWeekdaySelect(day)} // ✅ 올바른 함수 호출
+                          onClick={() => handleWeekdaySelect(day)}
                         >
                           {day}
                         </button>
@@ -760,3 +941,5 @@ export const WeeklyCalendarUI = ({
     </div>
   );
 };
+
+export default WeeklyCalendarUI;
