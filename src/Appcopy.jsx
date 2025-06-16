@@ -1,5 +1,5 @@
-// Appcopy.jsx - 완전 서버 기반 버전 + /weekly 라우트 추가
-import React, { useState, useEffect, useRef } from "react";
+// Appcopy.jsx - 완전 서버 기반 버전 + 무한동기화 해결 + /weekly 라우트 추가
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
 import CalendarPage from './pages/CalendarPage';
@@ -52,9 +52,10 @@ function Appcopy() {
   const isSavingRef = useRef(false);
   const saveTimeoutRef = useRef(null);
   const lastSaveDataRef = useRef('');
+  const prevDataRef = useRef({}); // ✅ 이전 데이터 상태 저장
 
   // ✨ 수정된 관리자 여부 확인 함수 (세션 기반)
-  const checkIsAdmin = (nickname) => {
+  const checkIsAdmin = useCallback((nickname) => {
     const userType = sessionStorage.getItem('userType');
     
     const isAdminByType = userType === 'admin';
@@ -70,22 +71,28 @@ function Appcopy() {
     });
     
     return isAdminByType || isAdminByName;
-  };
+  }, []);
+
+  // ✅ 데이터 깊은 비교 함수
+  const deepCompare = useCallback((obj1, obj2) => {
+    return JSON.stringify(obj1) === JSON.stringify(obj2);
+  }, []);
 
   // 🔧 데이터 해시 생성 (변경 감지용)
-  const generateDataHash = (schedules, tags, tagItems, monthlyPlans, monthlyGoals) => {
+  const generateDataHash = useCallback((schedules, tags, tagItems, monthlyPlans, monthlyGoals) => {
     return JSON.stringify({
-      s: schedules.length,
-      t: tags.length, 
-      ti: tagItems.length,
-      mp: monthlyPlans.length,
-      mg: monthlyGoals.length,
-      timestamp: Date.now()
+      s: schedules?.length || 0,
+      t: tags?.length || 0, 
+      ti: tagItems?.length || 0,
+      mp: monthlyPlans?.length || 0,
+      mg: monthlyGoals?.length || 0,
+      sData: schedules?.slice(0, 5), // 최근 5개 샘플링
+      timestamp: Math.floor(Date.now() / 1000) // 초 단위
     });
-  };
+  }, []);
 
   // ✨ 서버에서 사용자 데이터 로드
-  const loadUserDataFromServer = async (nickname) => {
+  const loadUserDataFromServer = useCallback(async (nickname) => {
     if (!nickname || !supabase) return null;
 
     try {
@@ -111,15 +118,21 @@ function Appcopy() {
       console.error('❌ 서버 데이터 로드 실패:', error);
       return null;
     }
-  };
+  }, []);
 
-  // ✨ 서버에 사용자 데이터 저장
-  const saveUserDataToServer = async () => {
-    if (!currentUser || isLoading || isSavingRef.current || isAdmin) return;
+  // ✨ 개선된 서버에 사용자 데이터 저장 (중복 저장 방지 강화)
+  const saveUserDataToServer = useCallback(async () => {
+    if (!currentUser || isLoading || isAdmin) return;
 
     // 관리자는 데이터 저장 안 함
     if (checkIsAdmin(currentUser)) {
       console.log('⚠️ 관리자는 데이터 저장하지 않음');
+      return;
+    }
+
+    // ✅ 현재 저장 중인지 확인 (강화)
+    if (isSavingRef.current) {
+      console.log('⚠️ 이미 저장 중 - 스킵');
       return;
     }
 
@@ -131,17 +144,18 @@ function Appcopy() {
     }
 
     isSavingRef.current = true;
+    const previousHash = lastSaveDataRef.current;
     lastSaveDataRef.current = currentDataHash;
 
     try {
       console.log('🌐 서버 저장 시작:', currentUser);
       
       const dataToSave = {
-        schedules,
-        tags,
-        tagItems,
-        monthlyPlans,
-        monthlyGoals
+        schedules: schedules || [],
+        tags: tags || [],
+        tagItems: tagItems || [],
+        monthlyPlans: monthlyPlans || [],
+        monthlyGoals: monthlyGoals || []
       };
 
       const result = await saveUserDataToDAL(currentUser, dataToSave);
@@ -154,13 +168,18 @@ function Appcopy() {
       }
     } catch (error) {
       console.warn('⚠️ 서버 저장 실패:', error);
+      // 저장 실패 시 해시 되돌리기
+      lastSaveDataRef.current = previousHash;
     } finally {
-      isSavingRef.current = false;
+      // ✅ 일정 시간 후 저장 플래그 해제 (네트워크 지연 고려)
+      setTimeout(() => {
+        isSavingRef.current = false;
+      }, 1500); // 1.5초로 증가
     }
-  };
+  }, [currentUser, isLoading, isAdmin, schedules, tags, tagItems, monthlyPlans, monthlyGoals, checkIsAdmin, generateDataHash]);
 
   // ✨ 서버에서 모든 사용자 목록 가져오기
-  const getAllUsersFromServer = async () => {
+  const getAllUsersFromServer = useCallback(async () => {
     if (!supabase) {
       console.error('❌ Supabase 클라이언트가 초기화되지 않았습니다');
       return [];
@@ -193,10 +212,10 @@ function Appcopy() {
       console.error('❌ 서버 사용자 검색 실패:', error);
       return [];
     }
-  };
+  }, []);
 
   // ✨ 서버 기반 사용자 데이터 조회
-  const getUserData = async (nickname) => {
+  const getUserData = useCallback(async (nickname) => {
     if (!nickname) {
       console.warn('⚠️ getUserData: nickname이 없음');
       return {
@@ -224,10 +243,10 @@ function Appcopy() {
         monthlyGoals: []
       };
     }
-  };
+  }, [loadUserDataFromServer]);
 
   // ✨ 서버 기반 사용자 통계
-  const getUserStats = async () => {
+  const getUserStats = useCallback(async () => {
     console.log('📊 서버 기반 getUserStats 실행 시작');
     
     try {
@@ -264,10 +283,10 @@ function Appcopy() {
       console.error('❌ 서버 기반 getUserStats 실패:', error);
       return {};
     }
-  };
+  }, [getAllUsersFromServer, getUserData]);
 
   // ✨ 개선된 사용자 데이터 로드 함수 (서버 기반)
-  const loadCurrentUserData = async (nickname) => {
+  const loadCurrentUserData = useCallback(async (nickname) => {
     if (!nickname) return;
     
     console.log('📦 서버 기반 데이터 로딩 시작:', nickname);
@@ -299,6 +318,15 @@ function Appcopy() {
         setTagItems(userData.tagItems || []);
         setMonthlyPlans(userData.monthlyPlans || []);
         setMonthlyGoals(userData.monthlyGoals || []);
+        
+        // ✅ 초기 데이터 해시 설정
+        prevDataRef.current = {
+          schedules: userData.schedules || [],
+          tags: userData.tags || [],
+          tagItems: userData.tagItems || [],
+          monthlyPlans: userData.monthlyPlans || [],
+          monthlyGoals: userData.monthlyGoals || []
+        };
         
         console.log('✅ 서버 데이터 로딩 완료:', {
           nickname,
@@ -338,6 +366,15 @@ function Appcopy() {
         setMonthlyPlans([]);
         setMonthlyGoals([]);
         
+        // ✅ 초기 데이터 해시 설정
+        prevDataRef.current = {
+          schedules: [],
+          tags: defaultTags,
+          tagItems: defaultTagItems,
+          monthlyPlans: [],
+          monthlyGoals: []
+        };
+        
         // 기본 데이터를 서버에 저장
         const initialData = {
           schedules: [],
@@ -373,10 +410,81 @@ function Appcopy() {
       setTagItems([]);
       setMonthlyPlans([]);
       setMonthlyGoals([]);
+      
+      prevDataRef.current = {
+        schedules: [],
+        tags: [],
+        tagItems: [],
+        monthlyPlans: [],
+        monthlyGoals: []
+      };
     }
     
     setDataLoaded(true);
-  };
+  }, [checkIsAdmin, loadUserDataFromServer, generateDataHash]);
+
+  // ✅ 개선된 자동 저장 로직 (무한 루프 방지)
+  useEffect(() => {
+    if (!currentUser || isLoading || isAdmin || !dataLoaded) return;
+
+    const currentData = {
+      schedules: schedules || [],
+      tags: tags || [],
+      tagItems: tagItems || [],
+      monthlyPlans: monthlyPlans || [],
+      monthlyGoals: monthlyGoals || []
+    };
+
+    // ✅ 이전 데이터와 깊은 비교하여 실제 변경이 있을 때만 저장
+    if (!deepCompare(currentData, prevDataRef.current)) {
+      console.log('📝 데이터 변경 감지 - 저장 예약');
+      
+      // 기존 타이머 취소
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
+      // ✅ 5초 디바운싱 (더 긴 간격으로 조정)
+      saveTimeoutRef.current = setTimeout(() => {
+        saveUserDataToServer();
+        // 저장 후 이전 데이터 업데이트
+        prevDataRef.current = { ...currentData };
+      }, 5000);
+    }
+
+    // 클린업
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading, isAdmin, dataLoaded, deepCompare, saveUserDataToServer]);
+
+  // ✅ 상태 업데이트 함수들을 useCallback으로 최적화
+  const updateSchedules = useCallback((newSchedules) => {
+    setSchedules(newSchedules);
+    console.log('📅 일정 상태 업데이트:', newSchedules?.length || 0, '개');
+  }, []);
+
+  const updateTags = useCallback((newTags) => {
+    setTags(newTags);
+    console.log('🏷️ 태그 상태 업데이트:', newTags?.length || 0, '개');
+  }, []);
+
+  const updateTagItems = useCallback((newTagItems) => {
+    setTagItems(newTagItems);
+    console.log('📋 태그아이템 상태 업데이트:', newTagItems?.length || 0, '개');
+  }, []);
+
+  const updateMonthlyPlans = useCallback((newPlans) => {
+    setMonthlyPlans(newPlans);
+    console.log('📊 월간계획 상태 업데이트:', newPlans?.length || 0, '개');
+  }, []);
+
+  const updateMonthlyGoals = useCallback((newGoals) => {
+    setMonthlyGoals(newGoals);
+    console.log('🎯 월간목표 상태 업데이트:', newGoals?.length || 0, '개');
+  }, []);
 
   // ✨ 개선된 로그인 상태 확인 (세션 기반)
   useEffect(() => {
@@ -405,58 +513,10 @@ function Appcopy() {
     };
     
     checkLoginStatus();
-  }, []);
-
-  // 🔧 일반 사용자만 자동 서버 저장 (3초 디바운싱)
-  useEffect(() => {
-    if (!currentUser || isLoading || isAdmin || !dataLoaded) return;
-
-    // 기존 타이머 취소
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-    // 3초 디바운싱 (서버 부하 고려)
-    saveTimeoutRef.current = setTimeout(() => {
-      saveUserDataToServer();
-    }, 3000);
-
-    // 클린업
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading, isAdmin, dataLoaded]);
-
-  // 🔧 상태 업데이트 함수들 (서버 기반)
-  const updateSchedules = (newSchedules) => {
-    setSchedules(newSchedules);
-    console.log('📅 일정 상태 업데이트:', newSchedules.length, '개');
-  };
-
-  const updateTags = (newTags) => {
-    setTags(newTags);
-    console.log('🏷️ 태그 상태 업데이트:', newTags.length, '개');
-  };
-
-  const updateTagItems = (newTagItems) => {
-    setTagItems(newTagItems);
-    console.log('📋 태그아이템 상태 업데이트:', newTagItems.length, '개');
-  };
-
-  const updateMonthlyPlans = (newPlans) => {
-    setMonthlyPlans(newPlans);
-    console.log('📊 월간계획 상태 업데이트:', newPlans.length, '개');
-  };
-
-  const updateMonthlyGoals = (newGoals) => {
-    setMonthlyGoals(newGoals);
-    console.log('🎯 월간목표 상태 업데이트:', newGoals.length, '개');
-  };
+  }, [loadCurrentUserData]);
 
   // ✨ 수정된 로그아웃 함수 (세션 기반)
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     console.log('🚪 로그아웃 시작 (세션 기반)');
     
     // 타이머 정리
@@ -483,17 +543,18 @@ function Appcopy() {
     // 플래그 초기화
     isSavingRef.current = false;
     lastSaveDataRef.current = '';
+    prevDataRef.current = {};
     
     console.log('🚪 로그아웃 완료 - 로그인 페이지로 이동');
     
     // 강제 페이지 이동
     window.location.href = '#/login';
-  };
+  }, []);
 
-  const handleAdminLogout = () => {
+  const handleAdminLogout = useCallback(() => {
     console.log('👑 관리자 로그아웃 (세션 기반)');
     handleLogout();
-  };
+  }, [handleLogout]);
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
@@ -624,7 +685,7 @@ function Appcopy() {
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 isServerBased={true}
-                enableAutoRefresh={true}
+                enableAutoRefresh={false}
               />
             </ProtectedRoute>
           }
@@ -639,7 +700,7 @@ function Appcopy() {
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 isServerBased={true}
-                enableAutoRefresh={true}
+                enableAutoRefresh={false}
               />
             </ProtectedRoute>
           }
