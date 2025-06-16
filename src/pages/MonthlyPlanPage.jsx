@@ -486,7 +486,7 @@ const MonthlyPlan = ({
             )}
           </div>
 
-          {/* ✅ 기존 블록 스타일의 태그별 그룹화된 계획들 */}
+          {/* ✅ 참고 코드와 동일한 블록 스타일의 태그별 그룹화된 계획들 */}
           <div className="flex-1 overflow-y-auto">
             <div className="space-y-6">
               {Object.entries(getGroupedPlans).map(([tagType, tagPlans]) => {
@@ -499,33 +499,25 @@ const MonthlyPlan = ({
 
                 return (
                   <div key={tagType} className="flex items-start space-x-4">
-                    {/* ✅ 왼쪽 태그 헤더 블록 */}
+                    {/* ✅ 왼쪽 태그 타입 블록 (참고 코드 스타일) */}
                     <div className="flex flex-col items-center min-w-[120px] flex-shrink-0">
                       <div className={`px-4 py-3 rounded-lg text-lg font-semibold text-left bg-white ${colors.text} w-full border-2 ${colors.border}`}>
                         <div className="font-bold">{tagType}</div>
                         <div className="text-sm mt-1 opacity-80">
-                          계획: {totalEstimatedTime}시간
+                          {targetHours > 0 ? `목표: ${targetHours}시간` : `목표: ${totalEstimatedTime}시간`}
                         </div>
-                        {/* ✅ 목표 정보 표시 */}
+                        {/* 달성률 표시 */}
                         {targetHours > 0 && (
                           <div className="text-xs mt-1">
-                            <div className={`font-medium ${targetHours === totalEstimatedTime ? 'text-green-600' : totalEstimatedTime > targetHours ? 'text-orange-600' : 'text-blue-600'}`}>
-                              목표: {targetHours}시간
-                            </div>
-                            <div className={`text-xs ${achievementRate >= 100 ? 'text-green-600' : achievementRate >= 80 ? 'text-blue-600' : 'text-orange-600'}`}>
+                            <div className={`font-medium ${achievementRate >= 100 ? 'text-green-600' : achievementRate >= 80 ? 'text-blue-600' : 'text-orange-600'}`}>
                               달성률: {achievementRate}%
                             </div>
-                          </div>
-                        )}
-                        {targetHours === 0 && (
-                          <div className="text-xs mt-1 text-gray-500">
-                            목표 미설정
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* ✅ 오른쪽 계획 블록들 (가로 스크롤) */}
+                    {/* ✅ 오른쪽 개별 계획 블록들 (참고 코드 스타일 - 가로 스크롤) */}
                     <div className="flex-1 min-w-0">
                       <div className="overflow-x-auto">
                         <div className="flex space-x-4 pb-4" style={{ minWidth: 'max-content' }}>
