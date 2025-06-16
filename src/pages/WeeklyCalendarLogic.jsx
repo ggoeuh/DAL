@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { saveUserDataToDAL } from './utils/supabaseStorage.js';
+import { saveUserDataToDAL, loadUserDataFromDAL } from './utils/supabaseStorage.js';
 import { useNavigate } from "react-router-dom";
 
 const SLOT_HEIGHT = 24;
@@ -96,44 +96,65 @@ const checkScheduleOverlap = (schedules, newSchedule) => {
 };
 
 // 커스텀 훅: 캘린더 로직
-export const useWeeklyCalendarLogic = (props) => {
-  const currentDate = new Date();
+export const useWeeklyCalendarLogic = (props = {}) => {
+  // props에서 필요한 값들 추출
+  const { 
+    currentUser = null,
+    initialSchedules = [],
+    initialTags = [],
+    initialTagItems = [],
+    initialMonthlyGoals = [],
+    isServerBased = true, // 기본값을 서버 기반으로 설정
+    enableAutoRefresh = true // 자동 새로고침 옵션
+  } = props;
+  
   const navigate = useNavigate();
 
-  // 서버에서 불러온 데이터 상태
-  const [schedules, setSchedules] = useState([]);
-  const [monthlyGoals, setMonthlyGoals] = useState([]);
-  const [tags, setTags] = useState([]);
-  const [tagItems, setTagItems] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // 서버 상태 관리
+  const [schedules, setSchedules] = useState(initialSchedules);
+  const [monthlyGoals, setMonthlyGoals] = useState(initialMonthlyGoals);
+  const [tags, setTags] = useState(initialTags);
+  const [tagItems, setTagItems] = useState(initialTagItems);
+  const [isLoading, setIsLoading] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
+  // 안전한 데이터 접근을 위한 변수들
+  const safeSchedules = Array.isArray(schedules) ? schedules : [];
+  const safeTags = Array.isArray(tags) ? tags : [];
+  const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
+  const safeMonthlyGoals = Array.isArray(monthlyGoals) ? monthlyGoals : [];
+
   // 서버에서 데이터 불러오기
-  const loadDataFromServer = async () => {
+  const loadDataFromServer = async (silent = false) => {
     if (!currentUser) {
+      if (!silent) console.log('❌ currentUser가 없어서 서버 데이터를 로드하지 않습니다.');
       setIsLoading(false);
-      return;
+      return { success: false, error: 'No currentUser' };
     }
 
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       console.log('🔄 서버에서 사용자 데이터 불러오기 시작:', currentUser);
 
       const result = await loadUserDataFromDAL(currentUser);
       
       if (result.success && result.data) {
-        setSchedules(result.data.schedules || []);
-        setMonthlyGoals(result.data.monthlyGoals || []);
-        setTags(result.data.tags || []);
-        setTagItems(result.data.tagItems || []);
+        const serverData = result.data;
+        
+        setSchedules(serverData.schedules || []);
+        setMonthlyGoals(serverData.monthlyGoals || []);
+        setTags(serverData.tags || []);
+        setTagItems(serverData.tagItems || []);
         setLastSyncTime(new Date());
         
         console.log('✅ 서버 데이터 로드 성공:', {
-          schedules: result.data.schedules?.length || 0,
-          monthlyGoals: result.data.monthlyGoals?.length || 0,
-          tags: result.data.tags?.length || 0,
-          tagItems: result.data.tagItems?.length || 0
+          schedules: serverData.schedules?.length || 0,
+          monthlyGoals: serverData.monthlyGoals?.length || 0,
+          tags: serverData.tags?.length || 0,
+          tagItems: serverData.tagItems?.length || 0
         });
+        
+        return { success: true, data: serverData };
       } else {
         console.warn('⚠️ 서버 데이터 로드 실패 또는 빈 데이터:', result.error);
         // 서버에 데이터가 없는 경우 빈 배열로 초기화
@@ -142,14 +163,97 @@ export const useWeeklyCalendarLogic = (props) => {
         setTags([]);
         setTagItems([]);
         setLastSyncTime(new Date());
+        
+        return { success: true, data: null };
       }
     } catch (error) {
       console.error('❌ 서버 데이터 로드 중 오류:', error);
-      alert('서버 데이터를 불러오는 중 오류가 발생했습니다: ' + error.message);
+      if (!silent) {
+        console.error('서버 데이터를 불러오는 중 오류가 발생했습니다:', error.message);
+      }
+      return { success: false, error: error.message };
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
+
+  // 서버에 데이터 저장하기
+  const saveDataToServer = async (updatedData, silent = false) => {
+    if (!currentUser) {
+      if (!silent) console.log('❌ currentUser가 없어서 서버에 데이터를 저장하지 않습니다.');
+      return { success: false, error: 'No currentUser' };
+    }
+
+    try {
+      if (!silent) console.log('💾 서버에 데이터 저장 시작:', currentUser);
+      
+      const dataToSave = {
+        schedules: updatedData.schedules || safeSchedules,
+        monthlyGoals: updatedData.monthlyGoals || safeMonthlyGoals,
+        tags: updatedData.tags || safeTags,
+        tagItems: updatedData.tagItems || safeTagItems
+      };
+
+      await saveUserDataToDAL(currentUser, dataToSave);
+      console.log('✅ 서버 데이터 저장 완료');
+      setLastSyncTime(new Date());
+      return { success: true };
+    } catch (error) {
+      console.error('❌ 서버 데이터 저장 중 오류:', error);
+      if (!silent) {
+        alert('서버에 데이터를 저장하는 중 오류가 발생했습니다: ' + error.message);
+      }
+      return { success: false, error: error.message };
+    }
+  };
+
+  // 초기 데이터 로드
+  useEffect(() => {
+    if (isServerBased && currentUser) {
+      console.log('🌐 서버 기반 모드 - 서버에서 데이터 로드');
+      loadDataFromServer();
+    } else {
+      console.log('📦 props 기반 모드 - 전달받은 데이터 사용');
+      setSchedules(initialSchedules);
+      setTags(initialTags);
+      setTagItems(initialTagItems);
+      setMonthlyGoals(initialMonthlyGoals);
+    }
+  }, [currentUser, isServerBased]);
+
+  // 페이지 포커스 시 자동 새로고침 (CalendarPage 패턴 적용)
+  useEffect(() => {
+    if (!isServerBased || !enableAutoRefresh || !currentUser) return;
+
+    const handleFocus = () => {
+      console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
+      loadDataFromServer(true); // silent 모드로 새로고침
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        handleFocus();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentUser, isServerBased, enableAutoRefresh]);
+
+  // props 변경 시 로컬 상태 업데이트 (비서버 모드)
+  useEffect(() => {
+    if (!isServerBased) {
+      setSchedules(initialSchedules);
+      setTags(initialTags);
+      setTagItems(initialTagItems);
+      setMonthlyGoals(initialMonthlyGoals);
+    }
+  }, [initialSchedules, initialTags, initialTagItems, initialMonthlyGoals, isServerBased]);
 
   // 날짜 상태 관리
   const today = new Date();
@@ -244,9 +348,9 @@ export const useWeeklyCalendarLogic = (props) => {
       return existingTag.color;
     }
     
-    const usedColors = safeTags.map(t => t.color);
+    const usedColors = safeTags.map(t => t.color).filter(color => color);
     const availableColors = PASTEL_COLORS.filter(
-      color => !usedColors.some(used => used.bg === color.bg)
+      color => !usedColors.some(used => used && used.bg === color.bg)
     );
     
     return availableColors.length > 0 
@@ -288,7 +392,7 @@ export const useWeeklyCalendarLogic = (props) => {
   };
 
   const handleResizeMove = (e) => {
-    if (!resizing || !containerRef.current || !setSchedules) return;
+    if (!resizing || !containerRef.current) return;
     
     const containerRect = containerRef.current.getBoundingClientRect();
     const relativeY = e.clientY - containerRect.top + containerRef.current.scrollTop;
@@ -314,12 +418,14 @@ export const useWeeklyCalendarLogic = (props) => {
           updatedSchedules[scheduleIndex] = updatedSchedule;
           setSchedules(updatedSchedules);
           
-          if (currentUser) {
-            saveUserDataToDAL(currentUser, {
+          // 서버에 저장
+          if (isServerBased && currentUser) {
+            saveDataToServer({
               schedules: updatedSchedules,
+              monthlyGoals: safeMonthlyGoals,
               tags: safeTags,
               tagItems: safeTagItems
-            });
+            }, true); // silent 모드
           }
         } else {
           setShowOverlapMessage(true);
@@ -341,12 +447,14 @@ export const useWeeklyCalendarLogic = (props) => {
           updatedSchedules[scheduleIndex] = updatedSchedule;
           setSchedules(updatedSchedules);
           
-          if (currentUser) {
-            saveUserDataToDAL(currentUser, {
+          // 서버에 저장
+          if (isServerBased && currentUser) {
+            saveDataToServer({
               schedules: updatedSchedules,
+              monthlyGoals: safeMonthlyGoals,
               tags: safeTags,
               tagItems: safeTagItems
-            });
+            }, true); // silent 모드
           }
         } else {
           setShowOverlapMessage(true);
@@ -365,6 +473,56 @@ export const useWeeklyCalendarLogic = (props) => {
   const getTagColor = (tagType) => {
     const tag = safeTags.find(t => t.tagType === tagType);
     return tag ? tag.color : { bg: "bg-gray-100", text: "text-gray-800" };
+  };
+
+  // 일정 추가/수정/삭제 헬퍼 함수들
+  const addSchedule = async (newSchedule) => {
+    const updatedSchedules = [...safeSchedules, newSchedule];
+    setSchedules(updatedSchedules);
+    
+    if (isServerBased && currentUser) {
+      return await saveDataToServer({
+        schedules: updatedSchedules,
+        monthlyGoals: safeMonthlyGoals,
+        tags: safeTags,
+        tagItems: safeTagItems
+      });
+    }
+    return { success: true };
+  };
+
+  const updateSchedule = async (scheduleId, updatedData) => {
+    const scheduleIndex = safeSchedules.findIndex(s => s.id === scheduleId);
+    if (scheduleIndex === -1) return { success: false, error: 'Schedule not found' };
+    
+    const updatedSchedules = [...safeSchedules];
+    updatedSchedules[scheduleIndex] = { ...updatedSchedules[scheduleIndex], ...updatedData };
+    setSchedules(updatedSchedules);
+    
+    if (isServerBased && currentUser) {
+      return await saveDataToServer({
+        schedules: updatedSchedules,
+        monthlyGoals: safeMonthlyGoals,
+        tags: safeTags,
+        tagItems: safeTagItems
+      });
+    }
+    return { success: true };
+  };
+
+  const deleteSchedule = async (scheduleId) => {
+    const updatedSchedules = safeSchedules.filter(s => s.id !== scheduleId);
+    setSchedules(updatedSchedules);
+    
+    if (isServerBased && currentUser) {
+      return await saveDataToServer({
+        schedules: updatedSchedules,
+        monthlyGoals: safeMonthlyGoals,
+        tags: safeTags,
+        tagItems: safeTagItems
+      });
+    }
+    return { success: true };
   };
 
   return {
@@ -403,14 +561,32 @@ export const useWeeklyCalendarLogic = (props) => {
     setDragOffset,
     autoScrollTimer,
     setAutoScrollTimer,
+    isLoading,
+    lastSyncTime,
+    
+    // 상태 설정 함수들
+    setSchedules,
+    setTags,
+    setTagItems,
+    setMonthlyGoals,
     
     // 계산된 값들
     safeSchedules,
     safeTags,
     safeTagItems,
+    safeMonthlyGoals,
     tagTotals: calculateTagTotals(safeSchedules),
     repeatOptions,
     intervalOptions,
+    
+    // 서버 관련 함수들
+    loadDataFromServer,
+    saveDataToServer,
+    
+    // 일정 관리 함수들
+    addSchedule,
+    updateSchedule,
+    deleteSchedule,
     
     // 상수들
     SLOT_HEIGHT,
