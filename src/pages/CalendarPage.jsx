@@ -520,7 +520,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
                   ${isToday ? 'bg-blue-50' : ''}
                   ${isWeekend ? 'bg-gray-25' : ''}
                 `}
-                onClick={() => navigate(`/day/${format(day, 'yyyy-MM-dd')}`)}
+                onClick={() => navigate(`/weekly?date=${format(day, 'yyyy-MM-dd')}`)} // ✅ 수정
               >
                 {/* 날짜 표시 행 */}
                 <div className="flex justify-between items-center mb-2">
