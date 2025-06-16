@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useWeeklyCalendarLogic } from "./WeeklyCalendarLogic";
 import { WeeklyCalendarUI } from "./WeeklyCalendarUI";
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
@@ -9,7 +9,7 @@ const WeeklyCalendar = ({
   isAdminView = false,
   onBackToDashboard = null
 }) => {
-  console.log('🔧 WeeklyCalendar 렌더링 - 최종 수정 버전');
+  console.log('🔧 WeeklyCalendar 렌더링 - 완전한 해결책');
 
   // ✨ 100% 서버 기반 상태
   const [schedules, setSchedules] = useState([]);
@@ -20,12 +20,28 @@ const WeeklyCalendar = ({
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [error, setError] = useState(null);
 
-  // ✨ 무한 루프 방지를 위한 ref들
+  // ✨ ref를 이용한 최신 상태 참조 (useCallback 의존성 배열 문제 해결)
+  const schedulesRef = useRef(schedules);
+  const tagsRef = useRef(tags);
+  const tagItemsRef = useRef(tagItems);
   const saveTimeoutRef = useRef(null);
   const loadingRef = useRef(false);
 
-  // ✨ 서버에서 데이터 로드
-  const loadDataFromServer = useCallback(async () => {
+  // ref 업데이트
+  useEffect(() => {
+    schedulesRef.current = schedules;
+  }, [schedules]);
+
+  useEffect(() => {
+    tagsRef.current = tags;
+  }, [tags]);
+
+  useEffect(() => {
+    tagItemsRef.current = tagItems;
+  }, [tagItems]);
+
+  // ✨ 서버에서 데이터 로드 - 단순한 함수
+  const loadDataFromServer = async () => {
     if (!currentUser || !supabase || loadingRef.current) return;
 
     try {
@@ -62,10 +78,10 @@ const WeeklyCalendar = ({
       setLoading(false);
       loadingRef.current = false;
     }
-  }, [currentUser]); // currentUser만 의존
+  };
 
-  // ✨ 서버에 데이터 저장
-  const saveDataToServer = useCallback(async (newSchedules, newTags, newTagItems) => {
+  // ✨ 서버에 데이터 저장 - 단순한 함수
+  const saveDataToServer = async (newSchedules, newTags, newTagItems) => {
     if (!currentUser || isAdminView) return;
 
     // 이전 타이머 취소
@@ -94,32 +110,32 @@ const WeeklyCalendar = ({
         setSaving(false);
       }
     }, 500);
-  }, [currentUser, isAdminView]);
+  };
 
-  // 🚨 핵심: 핸들러 함수들을 useCallback으로 고정 (매번 새로 생성되지 않도록)
-  const handleSetSchedules = useCallback((newSchedules) => {
+  // 🚨 핵심: 고정된 핸들러 함수들 (의존성 없음, ref 사용)
+  const handleSetSchedules = (newSchedules) => {
     console.log('📝 schedules 업데이트:', newSchedules.length);
     setSchedules(newSchedules);
-    saveDataToServer(newSchedules, tags, tagItems);
-  }, [saveDataToServer, tags, tagItems]);
+    saveDataToServer(newSchedules, tagsRef.current, tagItemsRef.current);
+  };
 
-  const handleSetTags = useCallback((newTags) => {
+  const handleSetTags = (newTags) => {
     console.log('🏷️ tags 업데이트:', newTags.length);
     setTags(newTags);
-    saveDataToServer(schedules, newTags, tagItems);
-  }, [saveDataToServer, schedules, tagItems]);
+    saveDataToServer(schedulesRef.current, newTags, tagItemsRef.current);
+  };
 
-  const handleSetTagItems = useCallback((newTagItems) => {
+  const handleSetTagItems = (newTagItems) => {
     console.log('📋 tagItems 업데이트:', newTagItems.length);
     setTagItems(newTagItems);
-    saveDataToServer(schedules, tags, newTagItems);
-  }, [saveDataToServer, schedules, tags]);
+    saveDataToServer(schedulesRef.current, tagsRef.current, newTagItems);
+  };
 
   // ✨ 초기 데이터 로드
   useEffect(() => {
     console.log('🌐 초기 데이터 로드 useEffect 실행');
     loadDataFromServer();
-  }, [loadDataFromServer]);
+  }, [currentUser]); // currentUser만 의존
 
   // ✨ 컴포넌트 언마운트 시 타이머 정리
   useEffect(() => {
@@ -131,7 +147,7 @@ const WeeklyCalendar = ({
   }, []);
 
   // ✨ 서버 데이터 새로고침 핸들러
-  const handleDataRefresh = useCallback(async (freshData = null) => {
+  const handleDataRefresh = async (freshData = null) => {
     if (freshData) {
       console.log('🔄 새로운 데이터 적용:', freshData);
       setSchedules(freshData.schedules || []);
@@ -141,7 +157,7 @@ const WeeklyCalendar = ({
     } else {
       await loadDataFromServer();
     }
-  }, [loadDataFromServer]);
+  };
 
   // ✨ 로딩 상태 처리
   if (loading) {
@@ -203,8 +219,8 @@ const WeeklyCalendar = ({
     );
   }
 
-  // 🚨 중요: calendarLogic props를 React.memo로 안정화
-  const calendarLogicProps = React.useMemo(() => ({
+  // 🚨 중요: 단순한 객체로 전달 (useMemo 제거)
+  const calendarLogic = useWeeklyCalendarLogic({
     schedules,
     setSchedules: handleSetSchedules,
     tags,
@@ -212,9 +228,7 @@ const WeeklyCalendar = ({
     tagItems,
     setTagItems: handleSetTagItems,
     currentUser
-  }), [schedules, tags, tagItems, currentUser, handleSetSchedules, handleSetTags, handleSetTagItems]);
-
-  const calendarLogic = useWeeklyCalendarLogic(calendarLogicProps);
+  });
 
   const {
     // 상태와 데이터
@@ -259,8 +273,8 @@ const WeeklyCalendar = ({
     pixelToNearestTimeSlot
   } = calendarLogic;
 
-  // 🚨 모든 핸들러들을 useCallback으로 고정
-  const handleContextMenu = useCallback((e, scheduleId) => {
+  // 🚨 모든 핸들러들을 단순한 함수로 정의 (useCallback 제거)
+  const handleContextMenu = (e, scheduleId) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -270,18 +284,18 @@ const WeeklyCalendar = ({
       y: e.clientY,
       scheduleId
     });
-  }, [setContextMenu]);
+  };
   
-  const handleCopySchedule = useCallback(() => {
+  const handleCopySchedule = () => {
     const scheduleToCopy = safeSchedules.find(s => s.id === contextMenu.scheduleId);
     if (scheduleToCopy) {
       setCopyingSchedule(scheduleToCopy);
       console.log('일정 복사됨:', scheduleToCopy.title);
     }
     setContextMenu({ ...contextMenu, visible: false });
-  }, [safeSchedules, contextMenu, setCopyingSchedule, setContextMenu]);
+  };
   
-  const handleDeleteSchedule = useCallback(() => {
+  const handleDeleteSchedule = () => {
     if (handleSetSchedules && currentUser && !isAdminView) {
       const scheduleToDelete = safeSchedules.find(s => s.id === contextMenu.scheduleId);
       const updatedSchedules = safeSchedules.filter(s => s.id !== contextMenu.scheduleId);
@@ -291,23 +305,23 @@ const WeeklyCalendar = ({
       console.log('일정 삭제됨:', scheduleToDelete?.title);
     }
     setContextMenu({ ...contextMenu, visible: false });
-  }, [handleSetSchedules, currentUser, isAdminView, safeSchedules, contextMenu, setContextMenu]);
+  };
 
   // 간단한 핸들러들은 빈 함수로 처리 (실제 구현은 생략)
-  const handleCopyMove = useCallback(() => {}, []);
-  const handleCopyEnd = useCallback(() => {}, []);
-  const handleDragStart = useCallback(() => {}, []);
-  const handleDragMove = useCallback(() => {}, []);
-  const handleDragEnd = useCallback(() => {}, []);
-  const handleAdd = useCallback(() => {}, []);
-  const handleAddTag = useCallback(() => {}, []);
-  const handleDeleteTagItem = useCallback(() => {}, []);
-  const handleSelectTag = useCallback(() => {}, []);
-  const goToPreviousWeek = useCallback(() => {}, []);
-  const goToNextWeek = useCallback(() => {}, []);
-  const goToCurrentWeek = useCallback(() => {}, []);
-  const handleTimeSlotClick = useCallback(() => {}, []);
-  const handleWeekdaySelect = useCallback(() => {}, []);
+  const handleCopyMove = () => {};
+  const handleCopyEnd = () => {};
+  const handleDragStart = () => {};
+  const handleDragMove = () => {};
+  const handleDragEnd = () => {};
+  const handleAdd = () => {};
+  const handleAddTag = () => {};
+  const handleDeleteTagItem = () => {};
+  const handleSelectTag = () => {};
+  const goToPreviousWeek = () => {};
+  const goToNextWeek = () => {};
+  const goToCurrentWeek = () => {};
+  const handleTimeSlotClick = () => {};
+  const handleWeekdaySelect = () => {};
 
   return (
     <div className="relative">
