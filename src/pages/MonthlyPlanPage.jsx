@@ -281,7 +281,7 @@ const MonthlyPlan = ({
     return tag ? tag.color : { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' };
   }, [safeTags]);
 
-  // ✅ 블록 UI를 위한 태그별 그룹화 함수 (기존 스타일 유지)
+  // ✅ 블록 UI를 위한 태그별 그룹화 함수
   const getGroupedPlans = useMemo(() => {
     const grouped = {};
     plans.forEach(plan => {
@@ -394,7 +394,7 @@ const MonthlyPlan = ({
   }
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
+    <div className="min-h-screen bg-gray-50">
       {/* 서버 연동 상태 표시 배너 */}
       <div className="fixed top-0 left-0 right-0 bg-blue-50 border-b border-blue-200 p-2 z-50">
         <div className="max-w-7xl mx-auto flex justify-between items-center text-sm">
@@ -430,83 +430,80 @@ const MonthlyPlan = ({
         </div>
       </div>
 
-      {/* 왼쪽: 월간 계획 - 기존 블록 스타일 유지 */}
-      <div className="flex-1 p-6 overflow-hidden mt-12">
-        <div className="bg-white rounded-lg shadow-sm p-6 h-full">
-          {/* 헤더 */}
-          <div className="flex items-center justify-between mb-6">
-            <button
-              onClick={handleGoBack}
-              className="flex items-center text-gray-600 hover:text-gray-800 cursor-pointer z-10 bg-white px-2 py-1 rounded border hover:bg-gray-50 transition-colors"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              뒤로 가기
-            </button>
-            <div className="flex items-center gap-4">
-              <h1 className="text-2xl font-bold">월간 계획 ({format(new Date(), 'yyyy년 M월')})</h1>
-              {currentUser && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <span>🧑‍💻 {currentUser}</span>
-                  <span className="text-blue-600">서버 기반</span>
-                  <button
-                    onClick={onLogout}
-                    className="text-red-500 hover:text-red-700 underline"
-                  >
-                    로그아웃
-                  </button>
+      <div className="flex">
+        {/* 메인 컨텐츠 영역 - 블록 기반 레이아웃 */}
+        <div className="flex-1 p-6 mt-12">
+          <div className="max-w-6xl mx-auto">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between mb-8">
+              <button
+                onClick={handleGoBack}
+                className="flex items-center text-gray-600 hover:text-gray-800 cursor-pointer z-10 bg-white px-3 py-2 rounded border hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                뒤로 가기
+              </button>
+              
+              <h1 className="text-3xl font-bold">월간 계획 ({format(new Date(), 'yyyy년 M월')})</h1>
+              
+              <div className="flex items-center gap-3">
+                {currentUser && (
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <span>🧑‍💻 {currentUser}</span>
+                    <span className="text-blue-600">서버 기반</span>
+                    <button
+                      onClick={onLogout}
+                      className="text-red-500 hover:text-red-700 underline"
+                    >
+                      로그아웃
+                    </button>
+                  </div>
+                )}
+                <button
+                  onClick={handleServerDataCleanup}
+                  disabled={saving}
+                  className="bg-yellow-100 hover:bg-yellow-200 text-yellow-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                  title="서버 데이터 정리"
+                >
+                  {saving ? '처리 중...' : '🧹 서버 정리'}
+                </button>
+              </div>
+            </div>
+
+            {/* 서버 기반 안내 메시지 */}
+            <div className="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
+              <p className="text-green-800 text-sm">
+                <span className="font-medium">🌐 서버 기반:</span> 모든 변경사항이 Supabase 서버에 자동으로 저장됩니다. 
+                개별 계획을 삭제하면 월간 목표도 자동으로 업데이트됩니다.
+              </p>
+              {currentMonthGoals.length > 0 && (
+                <div className="mt-2 text-green-700 text-sm">
+                  <span className="font-medium">🎯 이번 달 목표:</span> 
+                  {currentMonthGoals.map(goal => `${goal.tagType}(${goal.targetHours})`).join(', ')}
                 </div>
               )}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleServerDataCleanup}
-                disabled={saving}
-                className="bg-yellow-100 hover:bg-yellow-200 text-yellow-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                title="서버 데이터 정리"
-              >
-                {saving ? '처리 중...' : '🧹 서버 정리'}
-              </button>
-            </div>
-          </div>
 
-          {/* 서버 기반 안내 메시지 */}
-          <div className="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
-            <p className="text-green-800 text-sm">
-              <span className="font-medium">🌐 서버 기반:</span> 모든 변경사항이 Supabase 서버에 자동으로 저장됩니다. 
-              개별 계획을 삭제하면 월간 목표도 자동으로 업데이트됩니다.
-            </p>
-            {/* ✅ 목표 요약 정보 */}
-            {currentMonthGoals.length > 0 && (
-              <div className="mt-2 text-green-700 text-sm">
-                <span className="font-medium">🎯 이번 달 목표:</span> 
-                {currentMonthGoals.map(goal => `${goal.tagType}(${goal.targetHours})`).join(', ')}
-              </div>
-            )}
-          </div>
-
-          {/* ✅ 참고 코드와 동일한 블록 스타일의 태그별 그룹화된 계획들 */}
-          <div className="flex-1 overflow-y-auto">
+            {/* 태그별 그룹화된 계획들 - 블록 레이아웃 */}
             <div className="space-y-6">
               {Object.entries(getGroupedPlans).map(([tagType, tagPlans]) => {
                 const colors = getTagColor(tagType);
                 const totalEstimatedTime = tagPlans.reduce((sum, plan) => sum + plan.estimatedTime, 0);
                 
-                // ✅ 목표 시간 조회
                 const targetHours = getTargetHoursForTagType(tagType);
                 const achievementRate = targetHours > 0 ? Math.round((totalEstimatedTime / targetHours) * 100) : 0;
 
                 return (
                   <div key={tagType} className="flex items-start space-x-4">
-                    {/* ✅ 왼쪽 태그 타입 블록 (참고 코드 스타일) */}
+                    {/* 왼쪽 태그 타입 블록 */}
                     <div className="flex flex-col items-center min-w-[120px] flex-shrink-0">
                       <div className={`px-4 py-3 rounded-lg text-lg font-semibold text-left bg-white ${colors.text} w-full border-2 ${colors.border}`}>
                         <div className="font-bold">{tagType}</div>
                         <div className="text-sm mt-1 opacity-80">
                           {targetHours > 0 ? `목표: ${targetHours}시간` : `목표: ${totalEstimatedTime}시간`}
                         </div>
-                        {/* 달성률 표시 */}
                         {targetHours > 0 && (
                           <div className="text-xs mt-1">
                             <div className={`font-medium ${achievementRate >= 100 ? 'text-green-600' : achievementRate >= 80 ? 'text-blue-600' : 'text-orange-600'}`}>
@@ -517,7 +514,7 @@ const MonthlyPlan = ({
                       </div>
                     </div>
 
-                    {/* ✅ 오른쪽 개별 계획 블록들 (참고 코드 스타일 - 가로 스크롤) */}
+                    {/* 오른쪽 개별 계획 블록들 (가로 스크롤) */}
                     <div className="flex-1 min-w-0">
                       <div className="overflow-x-auto">
                         <div className="flex space-x-4 pb-4" style={{ minWidth: 'max-content' }}>
@@ -560,7 +557,6 @@ const MonthlyPlan = ({
                   <h3 className="text-xl font-medium mb-2">서버에 등록된 월간 계획이 없습니다</h3>
                   <p className="text-sm mb-4">오른쪽 패널에서 새로운 계획을 추가해보세요!</p>
                   <p className="text-xs text-gray-400">모든 데이터는 Supabase 서버에 안전하게 저장됩니다.</p>
-                  {/* ✅ 목표만 있고 계획이 없는 경우 표시 */}
                   {currentMonthGoals.length > 0 && (
                     <div className="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
                       <p className="text-yellow-800 text-sm">
@@ -583,196 +579,196 @@ const MonthlyPlan = ({
             </div>
           </div>
         </div>
-      </div>
 
-      {/* 오른쪽: 계획 추가 폼 */}
-      <div className="w-96 border-l border-gray-200 bg-white p-6 mt-12">
-        <div className="h-full flex flex-col">
-          <h2 className="text-2xl font-bold mb-6">계획 추가</h2>
-          
-          <div className="flex-1 space-y-4">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <div className="flex items-center text-gray-600 mb-2">
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12,6 12,12 16,14"/>
-                </svg>
-                예상 시간
-              </div>
-              <input
-                type="number"
-                placeholder="예상 시간을 입력하세요"
-                className="w-full bg-white border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:border-blue-400"
-                value={form.estimatedTime}
-                onChange={(e) => setForm({ ...form, estimatedTime: e.target.value })}
-                disabled={saving}
-              />
-              {/* ✅ 선택된 태그의 목표 시간 표시 */}
-              {form.tagType && (
-                <div className="mt-2 text-xs text-gray-600">
-                  {(() => {
-                    const targetHours = getTargetHoursForTagType(form.tagType);
-                    if (targetHours > 0) {
-                      return (
-                        <span className="text-blue-600">
-                          🎯 {form.tagType} 목표: {targetHours}시간
-                        </span>
-                      );
-                    } else {
-                      return (
-                        <span className="text-gray-500">
-                          목표 미설정 (계획 추가 시 자동 생성)
-                        </span>
-                      );
-                    }
-                  })()}
+        {/* 오른쪽: 계획 추가 폼 */}
+        <div className="w-96 border-l border-gray-200 bg-white p-6 mt-12">
+          <div className="h-full flex flex-col">
+            <h2 className="text-2xl font-bold mb-6">계획 추가</h2>
+            
+            <div className="flex-1 space-y-4">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex items-center text-gray-600 mb-2">
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12,6 12,12 16,14"/>
+                  </svg>
+                  예상 시간
                 </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              {form.descriptions.map((desc, idx) => (
-                <div className="relative" key={idx}>
-                  <span className="absolute left-3 top-4 text-gray-400 text-sm">{idx + 1}.</span>
-                  <input
-                    type="text"
-                    placeholder="일정 내용을 적어주세요"
-                    className="w-full pl-8 pr-3 py-3 border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
-                    value={desc}
-                    disabled={saving}
-                    onChange={(e) => {
-                      const updated = [...form.descriptions];
-                      updated[idx] = e.target.value;
-                      setForm({ ...form, descriptions: updated });
-                    }}
-                  />
-                </div>
-              ))}
-              <button
-                type="button"
-                disabled={saving}
-                className="w-full py-2 text-sm bg-gray-100 rounded-md hover:bg-gray-200 text-gray-700 disabled:opacity-50"
-                onClick={() => setForm({ ...form, descriptions: [...form.descriptions, ''] })}
-              >
-                + 내용 추가
-              </button>
-            </div>
-
-            <div className="mb-3">
-              <h3 className="font-medium mb-2">태그 선택</h3>
-              <div className="h-48 overflow-y-auto pr-1 border rounded-md p-3 bg-white">
-                {safeTagItems.map((item, idx) => {
-                  const tagGroup = safeTags.find(t => t.tagType === item.tagType);
-                  const tagColor = tagGroup ? tagGroup.color : { bg: "bg-gray-100", text: "text-gray-800" };
-                  const isSelected = selectedTagType === item.tagType && form.tag === item.tagName;
-                  
-                  // ✅ 해당 태그타입의 목표 시간 조회
-                  const targetHours = getTargetHoursForTagType(item.tagType);
-
-                  return (
-                    <div key={idx} className="flex items-center mb-2 last:mb-0">
-                      <div className={`w-16 ${tagColor.bg} ${tagColor.text} px-2 py-1 rounded-l-md text-xs font-medium truncate`}>
-                        {item.tagType}
-                      </div>
-                      <div
-                        className={`flex-1 ${tagColor.bg} ${tagColor.text} px-2 py-1 text-xs cursor-pointer hover:bg-opacity-80 transition-colors ${
-                          isSelected ? 'ring-2 ring-blue-400 bg-opacity-90' : ''
-                        } ${saving ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        onClick={() => !saving && handleSelectTag(item.tagType, item.tagName)}
-                        title={targetHours > 0 ? `목표: ${targetHours}시간` : '목표 미설정'}
-                      >
-                        <div>{item.tagName}</div>
-                        {/* ✅ 목표 시간 표시 */}
-                        {targetHours > 0 && (
-                          <div className="text-[10px] opacity-70">
-                            목표: {targetHours}h
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        className="bg-red-100 text-red-500 rounded-r-md px-2 py-1 text-xs disabled:opacity-50"
-                        disabled={saving}
-                        onClick={() => handleDeleteTagItem(item.tagType, item.tagName)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  );
-                })}
-                {safeTagItems.length === 0 && (
-                  <div className="text-center text-gray-500 py-15 text-sm">
-                    서버에서 태그를 불러오거나 새로 추가해주세요
+                <input
+                  type="number"
+                  placeholder="예상 시간을 입력하세요"
+                  className="w-full bg-white border border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:border-blue-400"
+                  value={form.estimatedTime}
+                  onChange={(e) => setForm({ ...form, estimatedTime: e.target.value })}
+                  disabled={saving}
+                />
+                {/* ✅ 선택된 태그의 목표 시간 표시 */}
+                {form.tagType && (
+                  <div className="mt-2 text-xs text-gray-600">
+                    {(() => {
+                      const targetHours = getTargetHoursForTagType(form.tagType);
+                      if (targetHours > 0) {
+                        return (
+                          <span className="text-blue-600">
+                            🎯 {form.tagType} 목표: {targetHours}시간
+                          </span>
+                        );
+                      } else {
+                        return (
+                          <span className="text-gray-500">
+                            목표 미설정 (계획 추가 시 자동 생성)
+                          </span>
+                        );
+                      }
+                    })()}
                   </div>
                 )}
               </div>
-            </div>
 
-            <div className="flex items-center gap-1 mb-1">
-              <input
-                type="text"
-                placeholder="태그"
-                className="w-16 text-xs bg-white border rounded-l-md px-2 py-1 focus:outline-none focus:border-gray-400"
-                value={newTagType}
-                disabled={saving}
-                onChange={(e) => setNewTagType(e.target.value)}
-              />
-              <input
-                type="text"
-                placeholder="항목 이름"
-                className="flex-1 text-xs bg-white border-y border-r-0 px-2 py-1 focus:outline-none focus:border-gray-400"
-                value={newTagName}
-                disabled={saving}
-                onChange={(e) => setNewTagName(e.target.value)}
-              />
-              <button
-                className="bg-gray-200 w-8 h-6 rounded-r-md flex items-center justify-center text-sm font-bold disabled:opacity-50"
-                disabled={saving}
-                onClick={handleAddTag}
-              >
-                +
-              </button>
-            </div>
+              <div className="space-y-2">
+                {form.descriptions.map((desc, idx) => (
+                  <div className="relative" key={idx}>
+                    <span className="absolute left-3 top-4 text-gray-400 text-sm">{idx + 1}.</span>
+                    <input
+                      type="text"
+                      placeholder="일정 내용을 적어주세요"
+                      className="w-full pl-8 pr-3 py-3 border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
+                      value={desc}
+                      disabled={saving}
+                      onChange={(e) => {
+                        const updated = [...form.descriptions];
+                        updated[idx] = e.target.value;
+                        setForm({ ...form, descriptions: updated });
+                      }}
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  disabled={saving}
+                  className="w-full py-2 text-sm bg-gray-100 rounded-md hover:bg-gray-200 text-gray-700 disabled:opacity-50"
+                  onClick={() => setForm({ ...form, descriptions: [...form.descriptions, ''] })}
+                >
+                  + 내용 추가
+                </button>
+              </div>
 
-            <button
-              className="w-full bg-green-100 text-center py-3 rounded-lg text-xl font-medium text-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={saving}
-              onClick={handleAddPlan}
-            >
-              {saving ? '서버에 저장 중...' : '일정 추가하기'}
-            </button>
-
-            {/* ✅ 목표 요약 정보 */}
-            {currentMonthGoals.length > 0 && (
-              <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <h4 className="text-sm font-medium text-blue-800 mb-2">🎯 이번 달 목표</h4>
-                <div className="space-y-1">
-                  {currentMonthGoals.map((goal, idx) => {
-                    const plannedHours = plans
-                      .filter(plan => plan.tagType === goal.tagType)
-                      .reduce((sum, plan) => sum + plan.estimatedTime, 0);
-                    const targetHours = parseInt(goal.targetHours.split(':')[0]);
-                    const achievementRate = targetHours > 0 ? Math.round((plannedHours / targetHours) * 100) : 0;
+              <div className="mb-3">
+                <h3 className="font-medium mb-2">태그 선택</h3>
+                <div className="h-48 overflow-y-auto pr-1 border rounded-md p-3 bg-white">
+                  {safeTagItems.map((item, idx) => {
+                    const tagGroup = safeTags.find(t => t.tagType === item.tagType);
+                    const tagColor = tagGroup ? tagGroup.color : { bg: "bg-gray-100", text: "text-gray-800" };
+                    const isSelected = selectedTagType === item.tagType && form.tag === item.tagName;
                     
+                    // ✅ 해당 태그타입의 목표 시간 조회
+                    const targetHours = getTargetHoursForTagType(item.tagType);
+
                     return (
-                      <div key={idx} className="flex justify-between items-center text-xs">
-                        <span className="text-blue-700">{goal.tagType}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-blue-600">
-                            {plannedHours}/{targetHours}시간
-                          </span>
-                          <span className={`font-medium ${
-                            achievementRate >= 100 ? 'text-green-600' : 
-                            achievementRate >= 80 ? 'text-blue-600' : 'text-orange-600'
-                          }`}>
-                            {achievementRate}%
-                          </span>
+                      <div key={idx} className="flex items-center mb-2 last:mb-0">
+                        <div className={`w-16 ${tagColor.bg} ${tagColor.text} px-2 py-1 rounded-l-md text-xs font-medium truncate`}>
+                          {item.tagType}
                         </div>
+                        <div
+                          className={`flex-1 ${tagColor.bg} ${tagColor.text} px-2 py-1 text-xs cursor-pointer hover:bg-opacity-80 transition-colors ${
+                            isSelected ? 'ring-2 ring-blue-400 bg-opacity-90' : ''
+                          } ${saving ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onClick={() => !saving && handleSelectTag(item.tagType, item.tagName)}
+                          title={targetHours > 0 ? `목표: ${targetHours}시간` : '목표 미설정'}
+                        >
+                          <div>{item.tagName}</div>
+                          {/* ✅ 목표 시간 표시 */}
+                          {targetHours > 0 && (
+                            <div className="text-[10px] opacity-70">
+                              목표: {targetHours}h
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          className="bg-red-100 text-red-500 rounded-r-md px-2 py-1 text-xs disabled:opacity-50"
+                          disabled={saving}
+                          onClick={() => handleDeleteTagItem(item.tagType, item.tagName)}
+                        >
+                          ×
+                        </button>
                       </div>
                     );
                   })}
+                  {safeTagItems.length === 0 && (
+                    <div className="text-center text-gray-500 py-15 text-sm">
+                      서버에서 태그를 불러오거나 새로 추가해주세요
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
+
+              <div className="flex items-center gap-1 mb-1">
+                <input
+                  type="text"
+                  placeholder="태그"
+                  className="w-16 text-xs bg-white border rounded-l-md px-2 py-1 focus:outline-none focus:border-gray-400"
+                  value={newTagType}
+                  disabled={saving}
+                  onChange={(e) => setNewTagType(e.target.value)}
+                />
+                <input
+                  type="text"
+                  placeholder="항목 이름"
+                  className="flex-1 text-xs bg-white border-y border-r-0 px-2 py-1 focus:outline-none focus:border-gray-400"
+                  value={newTagName}
+                  disabled={saving}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                />
+                <button
+                  className="bg-gray-200 w-8 h-6 rounded-r-md flex items-center justify-center text-sm font-bold disabled:opacity-50"
+                  disabled={saving}
+                  onClick={handleAddTag}
+                >
+                  +
+                </button>
+              </div>
+
+              <button
+                className="w-full bg-green-100 text-center py-3 rounded-lg text-xl font-medium text-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={saving}
+                onClick={handleAddPlan}
+              >
+                {saving ? '서버에 저장 중...' : '일정 추가하기'}
+              </button>
+
+              {/* ✅ 목표 요약 정보 */}
+              {currentMonthGoals.length > 0 && (
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <h4 className="text-sm font-medium text-blue-800 mb-2">🎯 이번 달 목표</h4>
+                  <div className="space-y-1">
+                    {currentMonthGoals.map((goal, idx) => {
+                      const plannedHours = plans
+                        .filter(plan => plan.tagType === goal.tagType)
+                        .reduce((sum, plan) => sum + plan.estimatedTime, 0);
+                      const targetHours = parseInt(goal.targetHours.split(':')[0]);
+                      const achievementRate = targetHours > 0 ? Math.round((plannedHours / targetHours) * 100) : 0;
+                      
+                      return (
+                        <div key={idx} className="flex justify-between items-center text-xs">
+                          <span className="text-blue-700">{goal.tagType}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-blue-600">
+                              {plannedHours}/{targetHours}시간
+                            </span>
+                            <span className={`font-medium ${
+                              achievementRate >= 100 ? 'text-green-600' : 
+                              achievementRate >= 80 ? 'text-blue-600' : 'text-orange-600'
+                            }`}>
+                              {achievementRate}%
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
