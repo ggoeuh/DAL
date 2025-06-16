@@ -1,6 +1,5 @@
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { saveUserDataToDAL } from './utils/supabaseStorage.js';
 
 export const WeeklyCalendarUI = ({ 
   calendarLogic,
@@ -23,7 +22,11 @@ export const WeeklyCalendarUI = ({
   goToNextWeek,
   goToCurrentWeek,
   handleTimeSlotClick,
-  handleWeekdaySelect
+  handleWeekdaySelect,
+  // ✨ 서버 기반 추가 props
+  isAdminView = false,
+  saving = false,
+  onDataRefresh = null
 }) => {
   const navigate = useNavigate();
   
@@ -129,7 +132,7 @@ export const WeeklyCalendarUI = ({
       )}
       
       {/* 복사 모드 안내 메시지 */}
-      {copyingSchedule && (
+      {copyingSchedule && !isAdminView && (
         <div className="fixed top-4 left-4 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50">
           📋 복사 모드: "{copyingSchedule.title}" - 원하는 위치에 클릭하세요
         </div>
@@ -141,18 +144,27 @@ export const WeeklyCalendarUI = ({
           className="fixed bg-white shadow-lg rounded-lg overflow-hidden z-50 border"
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
-          <div 
-            className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm" 
-            onClick={handleCopySchedule}
-          >
-            📋 복사
-          </div>
-          <div 
-            className="px-4 py-2 hover:bg-gray-100 text-red-600 cursor-pointer text-sm" 
-            onClick={handleDeleteSchedule}
-          >
-            🗑️ 삭제
-          </div>
+          {!isAdminView && (
+            <div 
+              className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm" 
+              onClick={handleCopySchedule}
+            >
+              📋 복사
+            </div>
+          )}
+          {!isAdminView && (
+            <div 
+              className="px-4 py-2 hover:bg-gray-100 text-red-600 cursor-pointer text-sm" 
+              onClick={handleDeleteSchedule}
+            >
+              🗑️ 삭제
+            </div>
+          )}
+          {isAdminView && (
+            <div className="px-4 py-2 text-gray-500 text-sm">
+              👑 관리자 모드 (읽기 전용)
+            </div>
+          )}
         </div>
       )}
       
@@ -201,13 +213,17 @@ export const WeeklyCalendarUI = ({
             </div>
             {currentUser && (
               <div className="flex items-center gap-2 text-sm text-gray-600">
-                <span>🧑‍💻 {currentUser}</span>
-                <button
-                  onClick={onLogout}
-                  className="text-red-500 hover:text-red-700 underline"
-                >
-                  로그아웃
-                </button>
+                <span>{isAdminView ? '👑' : '🧑‍💻'} {currentUser}</span>
+                {isAdminView && <span className="text-red-500 text-xs">(읽기 전용)</span>}
+                {saving && <span className="text-orange-500 text-xs">💾 저장중</span>}
+                {onLogout && (
+                  <button
+                    onClick={onLogout}
+                    className="text-red-500 hover:text-red-700 underline"
+                  >
+                    로그아웃
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -227,6 +243,11 @@ export const WeeklyCalendarUI = ({
               </div>
             );
           })}
+          {isAdminView && (
+            <div className="bg-red-100 text-red-800 rounded-lg px-3 py-1 text-sm font-medium flex items-center">
+              👑 관리자 모드
+            </div>
+          )}
         </div>
       </div>
 
@@ -300,10 +321,10 @@ export const WeeklyCalendarUI = ({
                             <div
                               key={time}
                               className={`absolute w-full border-t border-gray-200 border-dashed ${
-                                activeTimeSlot === time && isFocusDay ? 'bg-gray-300 bg-opacity-10' : ''
+                                activeTimeSlot === time && isFocusDay && !isAdminView ? 'bg-gray-300 bg-opacity-10' : ''
                               }`}
                               style={{ top: `${i * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
-                              onClick={() => isFocusDay && handleTimeSlotClick(time)}
+                              onClick={() => isFocusDay && !isAdminView && handleTimeSlotClick(time)}
                             />
                           ))}
 
@@ -337,17 +358,19 @@ export const WeeklyCalendarUI = ({
                                 }}
                               >
                                 <div 
-                                  className={`h-full flex flex-col text-xs rounded-lg px-2 py-1 shadow ${tagColor.bg} ${tagColor.text} relative overflow-hidden cursor-move select-none ${
+                                  className={`h-full flex flex-col text-xs rounded-lg px-2 py-1 shadow ${tagColor.bg} ${tagColor.text} relative overflow-hidden ${
+                                    isAdminView ? 'cursor-pointer' : 'cursor-move'
+                                  } select-none ${
                                     isDragging ? 'opacity-50 ring-2 ring-blue-400' : 'hover:shadow-md'
-                                  }`}
+                                  } ${isAdminView ? 'border-2 border-red-200' : ''}`}
                                   onMouseDown={(e) => {
-                                    if (e.button === 0) {
+                                    if (e.button === 0 && !isAdminView) {
                                       handleDragStart(e, s.id);
                                     }
                                   }}
                                   onContextMenu={(e) => handleContextMenu(e, s.id)}
                                 >
-                                  {isFocusDay && (
+                                  {isFocusDay && !isAdminView && (
                                     <>
                                       <div
                                         className="absolute top-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-t-lg z-20"
@@ -372,26 +395,27 @@ export const WeeklyCalendarUI = ({
                                     </>
                                   )}
 
+                                  {/* 관리자 모드 표시 */}
+                                  {isAdminView && (
+                                    <div className="absolute top-1 right-1 text-red-500 text-xs">👑</div>
+                                  )}
+
                                   {/* 첫째줄: 체크박스 + 태그(라운드 네모칸) + 항목명 */}
                                   <div className="flex items-center gap-1 mb-1">
                                     <input
                                       type="checkbox"
                                       checked={s.done}
-                                      className="pointer-events-auto flex-shrink-0"
+                                      disabled={isAdminView}
+                                      className={`flex-shrink-0 ${isAdminView ? 'cursor-not-allowed opacity-50' : 'pointer-events-auto'}`}
                                       onChange={(e) => {
+                                        if (isAdminView) return;
                                         e.stopPropagation();
                                         if (calendarLogic.setSchedules && currentUser) {
                                           const updated = safeSchedules.map(item =>
                                             item.id === s.id ? { ...item, done: !item.done } : item
                                           );
+                                          // 상위 컴포넌트의 setSchedules 호출 (서버 저장 포함)
                                           calendarLogic.setSchedules(updated);
-                                          
-                                          // storage에도 반영
-                                          saveUserDataToDAL(currentUser, {
-                                            schedules: updated,
-                                            tags: safeTags,
-                                            tagItems: safeTagItems
-                                          });
                                         }
                                       }}
                                     />
@@ -438,192 +462,244 @@ export const WeeklyCalendarUI = ({
         </div>
         
         {/* 오른쪽: 입력 폼 */}
-        <div className="w-80 border-l border-gray-200 bg-white overflow-hidden p-4">
+        <div className={`w-80 border-l border-gray-200 bg-white overflow-hidden p-4 ${
+          isAdminView ? 'bg-gray-50 opacity-75' : ''
+        }`}>
           <div className="h-full flex flex-col">
-            <h2 className="text-2xl font-bold mt-2 mb-4">일정 추가</h2>
+            <h2 className="text-2xl font-bold mt-2 mb-4">
+              {isAdminView ? '일정 조회' : '일정 추가'}
+              {isAdminView && <span className="text-sm text-red-500 ml-2">(읽기 전용)</span>}
+            </h2>
             
-            <div className="flex-1 overflow-y-auto pr-1">
-              <div className="bg-gray-50 p-4 rounded-lg shadow-sm mb-4">
-                <input
-                  type="text"
-                  placeholder="일정 명을 적어주세요."
-                  className="w-full bg-gray-50 border-0 border-b border-gray-200 px-2 py-2 mb-3 focus:outline-none focus:border-gray-400"
-                  value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
-                />
-                
-                <div className="flex gap-3 mb-3">
-                  <div className="flex-1 relative">
-                    <div className="flex items-center border rounded-md p-2 bg-white">
-                      <div className="w-6 h-6 flex items-center justify-center">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2"/>
-                          <path d="M12 7V12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                        </svg>
+            {isAdminView ? (
+              /* 관리자 모드 - 읽기 전용 안내 */
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center p-8">
+                  <div className="text-6xl text-gray-400 mb-4">👑</div>
+                  <h3 className="text-lg font-semibold text-gray-600 mb-2">관리자 모드</h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    <strong>{currentUser}님</strong>의 일정을 읽기 전용으로 조회하고 있습니다.
+                  </p>
+                  <div className="bg-red-50 rounded-lg p-4 text-left">
+                    <h4 className="font-medium text-red-800 mb-2">제한 사항</h4>
+                    <ul className="text-sm text-red-700 space-y-1">
+                      <li>• 일정 추가/수정/삭제 불가</li>
+                      <li>• 태그 관리 불가</li>
+                      <li>• 드래그 앤 드롭 불가</li>
+                      <li>• 리사이즈 불가</li>
+                    </ul>
+                  </div>
+                  {onDataRefresh && (
+                    <button
+                      onClick={onDataRefresh}
+                      className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                    >
+                      🔄 서버 새로고침
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* 일반 모드 - 편집 가능한 폼 */
+              <div className="flex-1 overflow-y-auto pr-1">
+                <div className="bg-gray-50 p-4 rounded-lg shadow-sm mb-4">
+                  <input
+                    type="text"
+                    placeholder="일정 명을 적어주세요."
+                    className="w-full bg-gray-50 border-0 border-b border-gray-200 px-2 py-2 mb-3 focus:outline-none focus:border-gray-400"
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  />
+                  
+                  <div className="flex gap-3 mb-3">
+                    <div className="flex-1 relative">
+                      <div className="flex items-center border rounded-md p-2 bg-white">
+                        <div className="w-6 h-6 flex items-center justify-center">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2"/>
+                            <path d="M12 7V12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                          </svg>
+                        </div>
+                        <select
+                          className="ml-2 w-full bg-transparent border-0 focus:outline-none appearance-none"
+                          value={startSlot || ""}
+                          onChange={(e) => calendarLogic.setStartSlot(e.target.value)}
+                        >
+                          {timeSlots.map(time => (
+                            <option key={`start-${time}`} value={time}>{time}</option>
+                          ))}
+                        </select>
                       </div>
+                    </div>
+                    
+                    <div className="flex-1 relative">
+                      <div className="flex items-center border rounded-md p-2 bg-white">
+                        <div className="w-6 h-6 flex items-center justify-center">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2"/>
+                            <path d="M12 7V12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                          </svg>
+                        </div>
+                        <select
+                          className="ml-2 w-full bg-transparent border-0 focus:outline-none appearance-none"
+                          value={form.end}
+                          onChange={(e) => setForm({ ...form, end: e.target.value })}
+                        >
+                          {timeSlots
+                            .filter((t) => !startSlot || parseTimeToMinutes(t) > parseTimeToMinutes(startSlot))
+                            .map(time => (
+                              <option key={`end-${time}`} value={time}>{time}</option>
+                            ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <textarea
+                    placeholder="내용을 적어주세요"
+                    className="w-full h-24 bg-white border rounded-md p-3 mb-3 focus:outline-none focus:border-gray-400 resize-none"
+                    value={form.description || ""}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  ></textarea>
+                  
+                  {/* 반복 옵션 영역 */}
+                  <div className="mb-3">
+                    <h3 className="font-medium mb-2">반복 설정</h3>
+                    
+                    <div className="flex gap-2 mb-2">
+                      {/* 반복 횟수 */}
                       <select
-                        className="ml-2 w-full bg-transparent border-0 focus:outline-none appearance-none"
-                        value={startSlot || ""}
-                        onChange={(e) => calendarLogic.setStartSlot(e.target.value)}
+                        className="flex-1 border rounded-md p-2 text-xs"
+                        value={form.repeatCount}
+                        onChange={(e) => setForm({ ...form, repeatCount: e.target.value })}
                       >
-                        {timeSlots.map(time => (
-                          <option key={`start-${time}`} value={time}>{time}</option>
+                        <option value="1">반복 없음</option>
+                        {repeatOptions.map((count) => (
+                          <option key={count} value={count}>
+                            {count}번 반복
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* 주기 설정 */}
+                      <select
+                        className="flex-1 border rounded-md p-2 text-xs"
+                        value={form.interval}
+                        onChange={(e) => setForm({ ...form, interval: e.target.value })}
+                      >
+                        {intervalOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
                         ))}
                       </select>
                     </div>
-                  </div>
-                  
-                  <div className="flex-1 relative">
-                    <div className="flex items-center border rounded-md p-2 bg-white">
-                      <div className="w-6 h-6 flex items-center justify-center">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2"/>
-                          <path d="M12 7V12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                        </svg>
-                      </div>
-                      <select
-                        className="ml-2 w-full bg-transparent border-0 focus:outline-none appearance-none"
-                        value={form.end}
-                        onChange={(e) => setForm({ ...form, end: e.target.value })}
-                      >
-                        {timeSlots
-                          .filter((t) => !startSlot || parseTimeToMinutes(t) > parseTimeToMinutes(startSlot))
-                          .map(time => (
-                            <option key={`end-${time}`} value={time}>{time}</option>
-                          ))}
-                      </select>
+
+                    {/* 요일 선택 */}
+                    <div className="flex flex-wrap gap-2">
+                      {DAYS_OF_WEEK.map((day, idx) => {
+                        const selected = form.weekdays.includes(day);
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            className={`w-7 h-7 rounded-full border text-xs font-medium transition ${
+                              selected
+                                ? "bg-blue-500 text-white"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            }`}
+                            onClick={() => handleWeekdaySelect(day)}
+                          >
+                            {day}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                </div>
-                
-                <textarea
-                  placeholder="내용을 적어주세요"
-                  className="w-full h-24 bg-white border rounded-md p-3 mb-3 focus:outline-none focus:border-gray-400 resize-none"
-                  value={form.description || ""}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                ></textarea>
-                
-                {/* 반복 옵션 영역 */}
-                <div className="mb-3">
-                  <h3 className="font-medium mb-2">반복 설정</h3>
-                  
-                  <div className="flex gap-2 mb-2">
-                    {/* 반복 횟수 */}
-                    <select
-                      className="flex-1 border rounded-md p-2 text-xs"
-                      value={form.repeatCount}
-                      onChange={(e) => setForm({ ...form, repeatCount: e.target.value })}
-                    >
-                      <option value="1">반복 없음</option>
-                      {repeatOptions.map((count) => (
-                        <option key={count} value={count}>
-                          {count}번 반복
-                        </option>
-                      ))}
-                    </select>
 
-                    {/* 주기 설정 */}
-                    <select
-                      className="flex-1 border rounded-md p-2 text-xs"
-                      value={form.interval}
-                      onChange={(e) => setForm({ ...form, interval: e.target.value })}
-                    >
-                      {intervalOptions.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* 요일 선택 */}
-                  <div className="flex flex-wrap gap-2">
-                    {DAYS_OF_WEEK.map((day, idx) => {
-                      const selected = form.weekdays.includes(day);
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          className={`w-7 h-7 rounded-full border text-xs font-medium transition ${
-                            selected
-                              ? "bg-blue-500 text-white"
-                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                          }`}
-                          onClick={() => handleWeekdaySelect(day)}
-                        >
-                          {day}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="mb-3">
-                  <h3 className="font-medium mb-2">태그 선택</h3>
-                  <div className="h-48 overflow-y-auto pr-1 border rounded-md p-3 bg-white">
-                    {safeTagItems.map((item, idx) => {
-                      const tagGroup = safeTags.find(t => t.tagType === item.tagType);
-                      const tagColor = tagGroup ? tagGroup.color : { bg: "bg-gray-100", text: "text-gray-800" };
-                      
-                      return (
-                        <div key={idx} className="flex items-center mb-2 last:mb-0">
-                          <div className={`w-16 ${tagColor.bg} ${tagColor.text} px-2 py-1 rounded-l-md text-xs font-medium truncate`}>
-                            {item.tagType}
+                  <div className="mb-3">
+                    <h3 className="font-medium mb-2">태그 선택</h3>
+                    <div className="h-48 overflow-y-auto pr-1 border rounded-md p-3 bg-white">
+                      {safeTagItems.map((item, idx) => {
+                        const tagGroup = safeTags.find(t => t.tagType === item.tagType);
+                        const tagColor = tagGroup ? tagGroup.color : { bg: "bg-gray-100", text: "text-gray-800" };
+                        
+                        return (
+                          <div key={idx} className="flex items-center mb-2 last:mb-0">
+                            <div className={`w-16 ${tagColor.bg} ${tagColor.text} px-2 py-1 rounded-l-md text-xs font-medium truncate`}>
+                              {item.tagType}
+                            </div>
+                            <div 
+                              className={`flex-1 ${tagColor.bg} ${tagColor.text} px-2 py-1 text-xs cursor-pointer hover:bg-opacity-80 ${selectedTagType === item.tagType && form.tag === item.tagName ? 'ring-1 ring-blue-400' : ''}`}
+                              onClick={() => handleSelectTag(item.tagType, item.tagName)}
+                            >
+                              {item.tagName}
+                            </div>
+                            <button 
+                              className="bg-red-100 text-red-500 rounded-r-md px-2 py-1 text-xs"
+                              onClick={() => handleDeleteTagItem(item.tagType, item.tagName)}
+                            >
+                              ×
+                            </button>
                           </div>
-                          <div 
-                            className={`flex-1 ${tagColor.bg} ${tagColor.text} px-2 py-1 text-xs cursor-pointer hover:bg-opacity-80 ${selectedTagType === item.tagType && form.tag === item.tagName ? 'ring-1 ring-blue-400' : ''}`}
-                            onClick={() => handleSelectTag(item.tagType, item.tagName)}
-                          >
-                            {item.tagName}
-                          </div>
-                          <button 
-                            className="bg-red-100 text-red-500 rounded-r-md px-2 py-1 text-xs"
-                            onClick={() => handleDeleteTagItem(item.tagType, item.tagName)}
-                          >
-                            ×
-                          </button>
+                        );
+                      })}
+                      {safeTagItems.length === 0 && (
+                        <div className="text-center text-gray-500 py-15 text-sm">
+                          태그를 추가해주세요
                         </div>
-                      );
-                    })}
-                    {safeTagItems.length === 0 && (
-                      <div className="text-center text-gray-500 py-15 text-sm">
-                        태그를 추가해주세요
-                      </div>
-                    )}
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-1 mb-1">
+                    <input
+                      type="text"
+                      placeholder="태그"
+                      className="w-16 text-xs bg-white border rounded-l-md px-2 py-1 focus:outline-none focus:border-gray-400"
+                      value={newTagType}
+                      onChange={(e) => setNewTagType(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="항목 이름"
+                      className="flex-1 text-xs bg-white border-y border-r-0 px-2 py-1 focus:outline-none focus:border-gray-400"
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                    />
+                    <button 
+                      className="bg-gray-200 w-8 h-6 rounded-r-md flex items-center justify-center text-sm font-bold hover:bg-gray-300 transition-colors"
+                      onClick={handleAddTag}
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
-                
-                <div className="flex items-center gap-1 mb-1">
-                  <input
-                    type="text"
-                    placeholder="태그"
-                    className="w-16 text-xs bg-white border rounded-l-md px-2 py-1 focus:outline-none focus:border-gray-400"
-                    value={newTagType}
-                    onChange={(e) => setNewTagType(e.target.value)}
-                  />
-                  <input
-                    type="text"
-                    placeholder="항목 이름"
-                    className="flex-1 text-xs bg-white border-y border-r-0 px-2 py-1 focus:outline-none focus:border-gray-400"
-                    value={newTagName}
-                    onChange={(e) => setNewTagName(e.target.value)}
-                  />
-                  <button 
-                    className="bg-gray-200 w-8 h-6 rounded-r-md flex items-center justify-center text-sm font-bold"
-                    onClick={handleAddTag}
-                  >
-                    +
-                  </button>
+
+                <button
+                  className={`w-full text-center py-3 rounded-lg text-xl font-medium transition-colors ${
+                    saving 
+                      ? 'bg-orange-100 text-orange-800 cursor-not-allowed' 
+                      : 'bg-green-100 text-green-800 hover:bg-green-200'
+                  }`}
+                  onClick={handleAdd}
+                  disabled={saving}
+                >
+                  {saving ? '💾 서버에 저장 중...' : '일정 추가하기'}
+                </button>
+
+                {/* 서버 상태 안내 */}
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center text-blue-800 text-sm">
+                    <span className="mr-2">🌐</span>
+                    <span className="font-medium">100% 서버 기반</span>
+                  </div>
+                  <p className="text-blue-700 text-xs mt-1">
+                    모든 변경사항이 Supabase 서버에 실시간 저장됩니다
+                  </p>
                 </div>
               </div>
-
-              <button
-                className="w-full bg-green-100 text-center py-3 rounded-lg text-xl font-medium text-green-800"
-                onClick={handleAdd}
-              >
-                일정 추가하기
-              </button>
-            </div>
+            )}
           </div>
         </div>
       </div>
