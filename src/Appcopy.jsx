@@ -113,20 +113,20 @@ function Appcopy() {
     }
   };
 
-  // ✨ 서버에 사용자 데이터 저장
+  // ✨ 서버에 사용자 데이터 저장 (무한루프 방지)
   const saveUserDataToServer = async () => {
     if (!currentUser || isLoading || isSavingRef.current || isAdmin) return;
 
     // 관리자는 데이터 저장 안 함
     if (checkIsAdmin(currentUser)) {
-      console.log('⚠️ 관리자는 데이터 저장하지 않음');
+      // console.log('⚠️ 관리자는 데이터 저장하지 않음'); // 로그 제거
       return;
     }
 
     // 데이터 변경 여부 확인
     const currentDataHash = generateDataHash(schedules, tags, tagItems, monthlyPlans, monthlyGoals);
     if (currentDataHash === lastSaveDataRef.current) {
-      console.log('⚠️ 데이터 변경 없음 - 서버 저장 스킵');
+      // console.log('⚠️ 데이터 변경 없음 - 서버 저장 스킵'); // 로그 제거
       return;
     }
 
@@ -148,7 +148,7 @@ function Appcopy() {
       
       if (result.success) {
         console.log('✅ 서버 저장 완료:', currentUser);
-        setLastSyncTime(new Date());
+        // setLastSyncTime(new Date()); // ❌ 이거 제거해서 무한루프 방지
       } else {
         throw new Error(result.error || '서버 저장 실패');
       }
@@ -407,7 +407,7 @@ function Appcopy() {
     checkLoginStatus();
   }, []);
 
-  // 🔧 일반 사용자만 자동 서버 저장 (3초 디바운싱)
+  // 🔧 일반 사용자만 자동 서버 저장 (3초 디바운싱) - 무한루프 방지
   useEffect(() => {
     if (!currentUser || isLoading || isAdmin || !dataLoaded) return;
 
@@ -416,10 +416,10 @@ function Appcopy() {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    // 3초 디바운싱 (서버 부하 고려)
+    // 3초 디바운싱 (서버 부하 고려) - 하지만 너무 자주 저장하지 않도록 제한
     saveTimeoutRef.current = setTimeout(() => {
       saveUserDataToServer();
-    }, 3000);
+    }, 5000); // 5초로 증가
 
     // 클린업
     return () => {
@@ -427,7 +427,7 @@ function Appcopy() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading, isAdmin, dataLoaded]);
+  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals]); // currentUser, isLoading, isAdmin, dataLoaded 제거
 
   // 🔧 상태 업데이트 함수들 (서버 기반)
   const updateSchedules = (newSchedules) => {
@@ -615,7 +615,7 @@ function Appcopy() {
           }
         />
 
-        {/* ✅ 주간 캘린더 라우트 (기존 DayDetailPagecopy 대체) */}
+        {/* ✅ 주간 캘린더 라우트 (자동 새로고침 비활성화) */}
         <Route
           path="/weekly"
           element={
@@ -624,13 +624,13 @@ function Appcopy() {
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 isServerBased={true}
-                enableAutoRefresh={true}
+                enableAutoRefresh={false}
               />
             </ProtectedRoute>
           }
         />
 
-        {/* ✅ 기존 /day/:date 라우트를 /weekly로 변경 */}
+        {/* ✅ 기존 /day/:date 라우트 (자동 새로고침 비활성화) */}
         <Route
           path="/day/:date"
           element={
@@ -639,7 +639,7 @@ function Appcopy() {
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 isServerBased={true}
-                enableAutoRefresh={true}
+                enableAutoRefresh={false}
               />
             </ProtectedRoute>
           }
