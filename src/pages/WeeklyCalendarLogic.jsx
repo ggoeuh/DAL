@@ -100,6 +100,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   // props에서 필요한 값들 추출
   const { 
     currentUser = null,
+    initialDate = null,
     initialSchedules = [],
     initialTags = [],
     initialTagItems = [],
@@ -286,7 +287,14 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   }, [initialSchedules, initialTags, initialTagItems, initialMonthlyGoals, isServerBased]);
 
   // 날짜 상태 관리 - 수정됨
-  const today = new Date();
+  const getInitialDate = () => {
+    if (initialDate) { // props.initialDate 대신 initialDate 사용
+      return new Date(initialDate);
+    }
+    return new Date();
+  };
+  
+  const today = getInitialDate();
   const [currentWeek, setCurrentWeek] = useState(
     Array(7).fill().map((_, i) => {
       const date = new Date(today);
@@ -306,6 +314,33 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     }
     return visibleDates;
   });
+
+  // initialDate가 변경될 때 상태 업데이트
+  useEffect(() => {
+    if (initialDate) { // props.initialDate 대신 initialDate 사용
+      const newDate = new Date(initialDate);
+      
+      // currentWeek 업데이트
+      const newWeek = Array(7).fill().map((_, i) => {
+        const date = new Date(newDate);
+        date.setDate(newDate.getDate() - newDate.getDay() + i);
+        return date;
+      });
+      setCurrentWeek(newWeek);
+      
+      // visibleDays 업데이트 (클릭한 날짜 중심으로)
+      const newVisibleDays = [];
+      for (let i = -2; i <= 2; i++) {
+        const date = new Date(newDate);
+        date.setDate(newDate.getDate() + i);
+        newVisibleDays.push(date);
+      }
+      setVisibleDays(newVisibleDays);
+      
+      // focusedDayIndex 업데이트
+      setFocusedDayIndex(2); // 중앙에 포커스
+    }
+  }, [initialDate]); // props.initialDate 대신 initialDate 사용
   
   // 시간 슬롯
   const timeSlots = Array.from({ length: 48 }, (_, i) => {
