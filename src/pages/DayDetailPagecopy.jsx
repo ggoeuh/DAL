@@ -150,7 +150,7 @@ const WeeklyCalendar = ({
     setContextMenu({ ...contextMenu, visible: false });
   };
 
-  // 복사 관련 핸들러들
+  // 복사 관련 핸들러들 - 수정됨
   const handleCopyMove = (e) => {
     if (!copyingSchedule) return;
     
@@ -159,10 +159,12 @@ const WeeklyCalendar = ({
     
     if (e.clientX < edgeThreshold) {
       const newIndex = (focusedDayIndex - 1 + 7) % 7;
-      handleDayFocus(newIndex);
+      const targetDate = currentWeek[newIndex]; // ✅ Date 객체 가져오기
+      handleDayFocus(targetDate); // ✅ Date 객체 전달
     } else if (e.clientX > screenWidth - edgeThreshold) {
       const newIndex = (focusedDayIndex + 1) % 7;
-      handleDayFocus(newIndex);
+      const targetDate = currentWeek[newIndex]; // ✅ Date 객체 가져오기
+      handleDayFocus(targetDate); // ✅ Date 객체 전달
     }
   };
 
@@ -222,7 +224,7 @@ const WeeklyCalendar = ({
     setCopyingSchedule(null);
   };
 
-  // 드래그 관련 핸들러들
+  // 드래그 관련 핸들러들 - 수정됨
   const handleDragStart = (e, scheduleId) => {
     e.preventDefault();
     e.stopPropagation();
@@ -248,10 +250,12 @@ const WeeklyCalendar = ({
     
     if (e.clientX < edgeThreshold) {
       const newIndex = (focusedDayIndex - 1 + 7) % 7;
-      handleDayFocus(newIndex);
+      const targetDate = currentWeek[newIndex]; // ✅ Date 객체 가져오기
+      handleDayFocus(targetDate); // ✅ Date 객체 전달
     } else if (e.clientX > screenWidth - edgeThreshold) {
       const newIndex = (focusedDayIndex + 1) % 7;
-      handleDayFocus(newIndex);
+      const targetDate = currentWeek[newIndex]; // ✅ Date 객체 가져오기
+      handleDayFocus(targetDate); // ✅ Date 객체 전달
     }
   };
 
@@ -529,7 +533,7 @@ const WeeklyCalendar = ({
     setForm({ ...form, end: endTime });
   };
   
-  // 요일 선택 핸들러
+  // 요일 선택 핸들러 - 수정됨
   const handleWeekdaySelect = (weekday) => {
     const currentWeekdays = [...form.weekdays];
     
