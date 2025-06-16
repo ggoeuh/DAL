@@ -314,20 +314,30 @@ const MonthlyPlan = ({
         grouped[goal.tagType] = [];
       }
       
-      // 목표를 계획 형태로 변환하여 표시
-      grouped[goal.tagType].push({
-        id: `goal-${goal.tagType}`,
-        tagType: goal.tagType,
-        tag: goal.tagType + ' 목표',
-        description: `목표 시간: ${goal.targetHours}`,
-        estimatedTime: parseInt(goal.targetHours.split(':')[0]) || 0,
-        isGoal: true // 목표임을 표시
-      });
+      // 해당 태그타입의 실제 계획들 찾기
+      const relatedPlans = plans.filter(plan => plan.tagType === goal.tagType);
+      
+      if (relatedPlans.length > 0) {
+        // 실제 계획들이 있으면 각각 표시
+        relatedPlans.forEach(plan => {
+          grouped[goal.tagType].push(plan);
+        });
+      } else {
+        // 계획이 없으면 목표만 표시 (내용 없음)
+        grouped[goal.tagType].push({
+          id: `goal-${goal.tagType}`,
+          tagType: goal.tagType,
+          tag: goal.tagType + ' 목표',
+          description: '', // 내용 없음
+          estimatedTime: parseInt(goal.targetHours.split(':')[0]) || 0,
+          isGoal: true
+        });
+      }
     });
     
     console.log('🎯 Grouped goals:', grouped);
     return grouped;
-  }, [currentMonthGoals]);
+  }, [currentMonthGoals, plans]);
 
   const handleAddPlan = useCallback(async () => {
     const firstDesc = form.descriptions[0]?.trim();
@@ -526,10 +536,14 @@ const MonthlyPlan = ({
             <div className="space-y-6">
               {Object.entries(getGroupedGoals).map(([tagType, goalItems]) => {
                 const colors = getTagColor(tagType);
-                const totalEstimatedTime = goalItems.reduce((sum, item) => sum + item.estimatedTime, 0);
+                
+                // 실제 계획된 시간 합계 (목표가 아닌 실제 계획들만)
+                const actualPlannedTime = goalItems
+                  .filter(item => !item.isGoal)
+                  .reduce((sum, item) => sum + item.estimatedTime, 0);
                 
                 const targetHours = getTargetHoursForTagType(tagType);
-                const achievementRate = targetHours > 0 ? Math.round((totalEstimatedTime / targetHours) * 100) : 100;
+                const achievementRate = targetHours > 0 ? Math.round((actualPlannedTime / targetHours) * 100) : 0;
 
                 return (
                   <div key={tagType} className="flex items-start space-x-4">
@@ -538,15 +552,13 @@ const MonthlyPlan = ({
                       <div className={`px-4 py-3 rounded-lg text-lg font-semibold text-left bg-white ${colors.text} w-full border-2 ${colors.border}`}>
                         <div className="font-bold">{tagType}</div>
                         <div className="text-sm mt-1 opacity-80">
-                          {targetHours > 0 ? `목표: ${targetHours}시간` : `목표: ${totalEstimatedTime}시간`}
+                          목표: {targetHours}시간
                         </div>
-                        {targetHours > 0 && (
-                          <div className="text-xs mt-1">
-                            <div className={`font-medium ${achievementRate >= 100 ? 'text-green-600' : achievementRate >= 80 ? 'text-blue-600' : 'text-orange-600'}`}>
-                              달성률: {achievementRate}%
-                            </div>
+                        <div className="text-xs mt-1">
+                          <div className={`font-medium ${achievementRate >= 100 ? 'text-green-600' : achievementRate >= 80 ? 'text-blue-600' : 'text-orange-600'}`}>
+                            달성률: {achievementRate}%
                           </div>
-                        )}
+                        </div>
                       </div>
                     </div>
 
@@ -573,7 +585,7 @@ const MonthlyPlan = ({
                                     )}
                                   </div>
                                 </div>
-                                {item.description && (
+                                {item.description && item.description.trim() && (
                                   <div className={`text-sm ${colors.text} opacity-75`}>
                                     {item.description.split(', ').map((desc, idx) => (
                                       <div key={idx}>• {desc}</div>
