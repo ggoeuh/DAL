@@ -95,7 +95,7 @@ const checkScheduleOverlap = (schedules, newSchedule) => {
 };
 
 // 커스텀 훅: 캘린더 로직
-export const useWeeklyCalendarLogic = ({ 
+export const useWeeklyCalendarLogic = (props) => {
   const currentDate = new Date();
   const navigate = useNavigate();
 
