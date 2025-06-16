@@ -502,43 +502,73 @@ const WeeklyCalendar = ({
   }, [safeTagItems, isServerBased, currentUser, saveDataToServer, safeSchedules, safeTags, calendarLogic.safeMonthlyGoals, updateLegacyTagItems]);
 
   // ✅ 태그 선택 핸들러 - useCallback으로 최적화
-  const handleSelectTag = useCallback((tagType, tagName) => {
-    setSelectedTagType(tagType);
-    setForm({ ...form, tag: tagName });
-  }, [form, setSelectedTagType, setForm]);
+  const handleSelectTag = (tagType, tagName) => {
+  setSelectedTagType(tagType);
+  setForm({ ...form, tag: tagName });
+};
 
-  // ✅ 주간 네비게이션 핸들러들 - useCallback으로 최적화
-  const goToPreviousWeek = useCallback(() => {
-    setCurrentWeek(prevWeek => {
-      return prevWeek.map(date => {
-        const newDate = new Date(date);
-        newDate.setDate(date.getDate() - 7);
-        return newDate;
-      });
+// ✅ 수정된 goToPreviousWeek
+const goToPreviousWeek = () => {
+  setCurrentWeek(prevWeek => {
+    const newWeek = prevWeek.map(date => {
+      const newDate = new Date(date);
+      newDate.setDate(date.getDate() - 7);
+      return newDate;
     });
-  }, [setCurrentWeek]);
-
-  const goToNextWeek = useCallback(() => {
+    
+    // ✅ visibleDays도 함께 업데이트 (실제 Date 객체로)
+    const newVisibleDays = [];
+      const centerIndex = focusedDayIndex; // 현재 포커스된 요일을 중심으로
+      for (let i = -2; i <= 2; i++) {
+        const date = new Date(newWeek[centerIndex]);
+        date.setDate(newWeek[centerIndex].getDate() + i);
+        newVisibleDays.push(date);
+      }
+      setVisibleDays(newVisibleDays);
+      
+      return newWeek;
+    });
+  };
+  
+  // ✅ 수정된 goToNextWeek
+  const goToNextWeek = () => {
     setCurrentWeek(prevWeek => {
-      return prevWeek.map(date => {
+      const newWeek = prevWeek.map(date => {
         const newDate = new Date(date);
         newDate.setDate(date.getDate() + 7);
         return newDate;
       });
+      
+      // ✅ visibleDays도 함께 업데이트 (실제 Date 객체로)
+      const newVisibleDays = [];
+      const centerIndex = focusedDayIndex; // 현재 포커스된 요일을 중심으로
+      for (let i = -2; i <= 2; i++) {
+        const date = new Date(newWeek[centerIndex]);
+        date.setDate(newWeek[centerIndex].getDate() + i);
+        newVisibleDays.push(date);
+      }
+      setVisibleDays(newVisibleDays);
+      
+      return newWeek;
     });
-  }, [setCurrentWeek]);
-
-  const goToCurrentWeek = useCallback(() => {
+  };
+  
+  // ✅ 수정된 goToCurrentWeek
+  const goToCurrentWeek = () => {
     const currentDate = new Date();
-    setCurrentWeek(
-      Array(7).fill().map((_, i) => {
-        const date = new Date(currentDate);
-        date.setDate(currentDate.getDate() - currentDate.getDay() + i);
-        return date;
-      })
-    );
-    setFocusedDayIndex(2);
     
+    // currentWeek 설정 (일요일부터 토요일까지)
+    const newCurrentWeek = Array(7).fill().map((_, i) => {
+      const date = new Date(currentDate);
+      date.setDate(currentDate.getDate() - currentDate.getDay() + i);
+      return date;
+    });
+    setCurrentWeek(newCurrentWeek);
+    
+    // focusedDayIndex 설정 (오늘 요일)
+    setFocusedDayIndex(currentDate.getDay());
+    
+    // ✅ visibleDays를 실제 Date 객체로 설정 (오늘을 중심으로 5일)
     const newVisibleDays = [];
     for (let i = -2; i <= 2; i++) {
       const date = new Date(currentDate);
@@ -546,7 +576,7 @@ const WeeklyCalendar = ({
       newVisibleDays.push(date);
     }
     setVisibleDays(newVisibleDays);
-  }, [setCurrentWeek, setFocusedDayIndex, setVisibleDays]);
+  };
   
   // ✅ 시간 슬롯 클릭 핸들러 - useCallback으로 최적화
   const handleTimeSlotClick = useCallback((time) => {
