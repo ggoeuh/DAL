@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useWeeklyCalendarLogic } from "./WeeklyCalendarLogic";
-import { WeeklyCalendarUI } from "./WeeklyCalendarUI";
+// ✅ 순환 import 제거 - WeeklyCalendarUI는 이 파일 하단에서 정의됨
 
 // 날짜 유효성 검증 함수
 const isValidDate = (dateString) => {
@@ -595,63 +595,41 @@ const WeeklyCalendar = ({
     }
   }, [isServerBased, loadDataFromServer]);
 
-  // ✅ UI 컴포넌트에 전달할 props를 useMemo로 최적화
-  const uiProps = useMemo(() => ({
-    calendarLogic,
-    currentUser,
-    onLogout,
-    isServerBased,
-    isLoading,
-    isSaving, // ✅ 저장 상태 추가
-    lastSyncTime,
-    onManualRefresh: handleManualRefresh,
-    handleContextMenu,
-    handleCopySchedule,
-    handleDeleteSchedule,
-    handleCopyMove,
-    handleCopyEnd,
-    handleDragStart,
-    handleDragMove,
-    handleDragEnd,
-    handleAdd,
-    handleAddTag,
-    handleDeleteTagItem,
-    handleSelectTag,
-    goToPreviousWeek,
-    goToNextWeek,
-    goToCurrentWeek,
-    handleTimeSlotClick,
-    handleWeekdaySelect
-  }), [
-    calendarLogic,
-    currentUser,
-    onLogout,
-    isServerBased,
-    isLoading,
-    isSaving,
-    lastSyncTime,
-    handleManualRefresh,
-    handleContextMenu,
-    handleCopySchedule,
-    handleDeleteSchedule,
-    handleCopyMove,
-    handleCopyEnd,
-    handleDragStart,
-    handleDragMove,
-    handleDragEnd,
-    handleAdd,
-    handleAddTag,
-    handleDeleteTagItem,
-    handleSelectTag,
-    goToPreviousWeek,
-    goToNextWeek,
-    goToCurrentWeek,
-    handleTimeSlotClick,
-    handleWeekdaySelect
-  ]);
-
-  return <WeeklyCalendarUI {...uiProps} />;
+  // ✅ WeeklyCalendarUI 컴포넌트를 직접 반환 (import 문제 해결)
+  return (
+    <WeeklyCalendarUI
+      calendarLogic={calendarLogic}
+      currentUser={currentUser}
+      onLogout={onLogout}
+      isServerBased={isServerBased}
+      isLoading={isLoading}
+      isSaving={isSaving}
+      lastSyncTime={lastSyncTime}
+      onManualRefresh={handleManualRefresh}
+      handleContextMenu={handleContextMenu}
+      handleCopySchedule={handleCopySchedule}
+      handleDeleteSchedule={handleDeleteSchedule}
+      handleCopyMove={handleCopyMove}
+      handleCopyEnd={handleCopyEnd}
+      handleDragStart={handleDragStart}
+      handleDragMove={handleDragMove}
+      handleDragEnd={handleDragEnd}
+      handleAdd={handleAdd}
+      handleAddTag={handleAddTag}
+      handleDeleteTagItem={handleDeleteTagItem}
+      handleSelectTag={handleSelectTag}
+      goToPreviousWeek={goToPreviousWeek}
+      goToNextWeek={goToNextWeek}
+      goToCurrentWeek={goToCurrentWeek}
+      handleTimeSlotClick={handleTimeSlotClick}
+      handleWeekdaySelect={handleWeekdaySelect}
+    />
+  );
 };
+
+// ✅ WeeklyCalendarUI 컴포넌트 정의 (앞서 만든 최적화된 버전을 여기에 포함)
+// 이 부분은 별도 파일(WeeklyCalendarUI.jsx)에서 import하거나, 
+// 아니면 여기서 직접 정의해야 합니다.
 
 // ✅ React.memo로 컴포넌트 최적화
 const OptimizedWeeklyCalendar = React.memo(WeeklyCalendar);
