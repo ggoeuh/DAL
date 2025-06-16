@@ -227,30 +227,13 @@ export const useWeeklyCalendarLogic = (props = {}) => {
 
     let debounceTimer = null;
 
-    // handleDayFocus 함수 수정
-    const handleDayFocus = (clickedDate) => {
-      // 클릭한 날짜를 중심으로 연속된 5일 생성
-      const newVisibleDays = [];
-      for (let i = -2; i <= 2; i++) {
-        const date = new Date(clickedDate);
-        date.setDate(clickedDate.getDate() + i);
-        newVisibleDays.push(date);
-      }
-      
-      setVisibleDays(newVisibleDays);
-      setFocusedDayIndex(2); // 중앙이 포커스
-      
-      // currentWeek도 업데이트 (전체 주 정보 유지용)
-      const startOfWeek = new Date(clickedDate);
-      startOfWeek.setDate(clickedDate.getDate() - clickedDate.getDay());
-      
-      const newWeek = [];
-      for (let i = 0; i < 7; i++) {
-        const date = new Date(startOfWeek);
-        date.setDate(startOfWeek.getDate() + i);
-        newWeek.push(date);
-      }
-      setCurrentWeek(newWeek);
+    const handleFocus = () => {
+      // 디바운싱으로 너무 자주 호출되는 것 방지
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
+        loadDataFromServer(true); // silent 모드로 새로고침
+      }, 1000); // 1초 디바운싱
     };
 
     const handleVisibilityChange = () => {
@@ -302,7 +285,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     }
   }, [initialSchedules, initialTags, initialTagItems, initialMonthlyGoals, isServerBased]);
 
-  // 날짜 상태 관리
+  // 날짜 상태 관리 - 수정됨
   const today = new Date();
   const [currentWeek, setCurrentWeek] = useState(
     Array(7).fill().map((_, i) => {
@@ -313,9 +296,8 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   );
   const [focusedDayIndex, setFocusedDayIndex] = useState(today.getDay());
   
-  // 초기 visibleDays를 Date 객체 배열로 설정
+  // visibleDays를 Date 객체 배열로 변경
   const [visibleDays, setVisibleDays] = useState(() => {
-    const today = new Date();
     const visibleDates = [];
     for (let i = -2; i <= 2; i++) {
       const date = new Date(today);
@@ -406,9 +388,9 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       : PASTEL_COLORS[safeTags.length % PASTEL_COLORS.length];
   };
 
-  // 포커스 날짜 변경 핸들러
+  // 포커스 날짜 변경 핸들러 - 수정됨
   const handleDayFocus = (clickedDate) => {
-    // 클릭한 날짜를 중심으로 연속된 5일 생성 (앞 2일, 클릭일, 뒤 2일)
+    // 클릭한 날짜를 중심으로 연속된 5일 생성
     const newVisibleDays = [];
     for (let i = -2; i <= 2; i++) {
       const date = new Date(clickedDate);
@@ -416,7 +398,10 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       newVisibleDays.push(date);
     }
     
-    // 이 5일을 포함하는 주 전체를 currentWeek으로 설정
+    setVisibleDays(newVisibleDays);
+    setFocusedDayIndex(2); // 중앙이 포커스
+    
+    // currentWeek도 업데이트 (전체 주 정보 유지용)
     const startOfWeek = new Date(clickedDate);
     startOfWeek.setDate(clickedDate.getDate() - clickedDate.getDay());
     
@@ -426,10 +411,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       date.setDate(startOfWeek.getDate() + i);
       newWeek.push(date);
     }
-    
     setCurrentWeek(newWeek);
-    setVisibleDays([0, 1, 2, 3, 4]); // 항상 첫 5일
-    setFocusedDayIndex(2); // 가운데가 포커스
   };
 
   // 시간 슬롯 계산 헬퍼 함수
