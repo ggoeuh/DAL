@@ -562,10 +562,10 @@ const MonthlyPlan = ({
                                     )}
                                   </div>
                                 </div>
-                                {item.description && item.description.trim() && (
+                                {item.description && (
                                   <div className={`text-sm ${colors.text} opacity-75`}>
-                                    {item.description.split(', ').map((desc, idx) => (
-                                      <div key={idx}>• {desc}</div>
+                                    {item.description.split(', ').filter(desc => desc.trim()).map((desc, idx) => (
+                                      <div key={idx}>• {desc.trim()}</div>
                                     ))}
                                   </div>
                                 )}
