@@ -314,6 +314,32 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     }
     return visibleDates;
   });
+
+  useEffect(() => {
+    if (props.initialDate) {
+      const newDate = new Date(props.initialDate);
+      
+      // currentWeek 업데이트
+      const newWeek = Array(7).fill().map((_, i) => {
+        const date = new Date(newDate);
+        date.setDate(newDate.getDate() - newDate.getDay() + i);
+        return date;
+      });
+      setCurrentWeek(newWeek);
+      
+      // visibleDays 업데이트 (클릭한 날짜 중심으로)
+      const newVisibleDays = [];
+      for (let i = -2; i <= 2; i++) {
+        const date = new Date(newDate);
+        date.setDate(newDate.getDate() + i);
+        newVisibleDays.push(date);
+      }
+      setVisibleDays(newVisibleDays);
+      
+      // focusedDayIndex 업데이트
+      setFocusedDayIndex(2); // 중앙에 포커스
+    }
+  }, [props.initialDate]); // ← 이 useEffect가 핵심!
   
   // 시간 슬롯
   const timeSlots = Array.from({ length: 48 }, (_, i) => {
