@@ -87,58 +87,10 @@ const MonthlyPlan = ({
         setTags(serverData.tags || []);
         setTagItems(serverData.tagItems || []);
         setMonthlyGoals(serverData.monthlyGoals || []);
+        setMonthlyPlans(serverData.monthlyPlans || []);
         
-        // ✨ monthlyPlans가 없으면 schedules에서 변환
-        let finalMonthlyPlans = serverData.monthlyPlans || [];
-        if (finalMonthlyPlans.length === 0 && serverData.schedules && serverData.schedules.length > 0) {
-          console.log('🔄 schedules를 monthlyPlans로 변환 시작');
-          console.log('📋 원본 schedules 데이터:', serverData.schedules);
-          
-          // schedules를 tagType별로 그룹화하여 월간 계획으로 변환
-          const scheduleGroups = {};
-          serverData.schedules.forEach(schedule => {
-            const tagType = schedule.tagType || schedule.category || '기타';
-            const tagName = schedule.tagName || schedule.title || '미분류';
-            
-            console.log('🏷️ 처리 중:', { tagType, tagName, schedule });
-            
-            if (!scheduleGroups[tagType]) {
-              scheduleGroups[tagType] = {};
-            }
-            if (!scheduleGroups[tagType][tagName]) {
-              scheduleGroups[tagType][tagName] = {
-                schedules: [],
-                totalTime: 0
-              };
-            }
-            
-            scheduleGroups[tagType][tagName].schedules.push(schedule);
-            scheduleGroups[tagType][tagName].totalTime += (schedule.estimatedTime || schedule.duration || 1);
-          });
-          
-          console.log('📊 그룹화된 schedules:', scheduleGroups);
-          
-          // 그룹화된 데이터를 월간 계획으로 변환
-          finalMonthlyPlans = [];
-          Object.entries(scheduleGroups).forEach(([tagType, tags]) => {
-            Object.entries(tags).forEach(([tagName, data]) => {
-              const descriptions = data.schedules.map(s => s.description || s.memo || s.title).filter(Boolean);
-              finalMonthlyPlans.push({
-                id: Date.now() + Math.random(),
-                tagType,
-                tag: tagName,
-                name: tagName,
-                description: descriptions.join(', ') || '',
-                estimatedTime: data.totalTime
-              });
-            });
-          });
-          
-          console.log('✅ 변환된 monthlyPlans:', finalMonthlyPlans);
-        }
-        
-        setMonthlyPlans(finalMonthlyPlans);
-        setPlans(finalMonthlyPlans);
+        // monthlyPlans를 plans로 설정 (호환성)
+        setPlans(serverData.monthlyPlans || []);
         setLastSyncTime(new Date());
 
       } else {
@@ -342,32 +294,6 @@ const MonthlyPlan = ({
     });
     
     console.log('🔍 Grouped plans:', grouped); // 디버깅용
-    
-    // 만약 그룹화된 데이터가 없으면 테스트 데이터 생성
-    if (Object.keys(grouped).length === 0) {
-      console.log('📝 테스트 데이터 생성');
-      return {
-        'LAB': [
-          {
-            id: 'test1',
-            tagType: 'LAB',
-            tag: '웹 구축',
-            description: '프론트엔드 개발, 백엔드 API, 데이터베이스 설계',
-            estimatedTime: 9
-          }
-        ],
-        '연구': [
-          {
-            id: 'test2',
-            tagType: '연구',
-            tag: '논문 미팅 준비',
-            description: '자료 조사, 발표 준비, 실험 계획',
-            estimatedTime: 4
-          }
-        ]
-      };
-    }
-    
     return grouped;
   }, [plans]);
 
