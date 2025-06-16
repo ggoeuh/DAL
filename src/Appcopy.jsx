@@ -1,12 +1,13 @@
-// Appcopy.jsx - 완전 서버 기반 버전
+// Appcopy.jsx - 완전 서버 기반 버전 + /weekly 라우트 추가
 import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
 import CalendarPage from './pages/CalendarPage';
-import DayDetailPagecopy from './pages/DayDetailPagecopy';
 import MonthlyPlanPage from './pages/MonthlyPlanPage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminMemberView from './pages/AdminMemberView';
+// ✅ WeeklyCalendar 임포트 (기존 DayDetailPagecopy 대체)
+import WeeklyCalendar from './pages/DayDetailPagecopy';
 
 // ✨ Supabase 전용 import (로컬 저장소 시스템 제거)
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './pages/utils/supabaseStorage.js';
@@ -614,21 +615,31 @@ function Appcopy() {
           }
         />
 
+        {/* ✅ 주간 캘린더 라우트 (기존 DayDetailPagecopy 대체) */}
+        <Route
+          path="/weekly"
+          element={
+            <ProtectedRoute>
+              <WeeklyCalendar
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                isServerBased={true}
+                enableAutoRefresh={true}
+              />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ✅ 기존 /day/:date 라우트를 /weekly로 변경 */}
         <Route
           path="/day/:date"
           element={
             <ProtectedRoute>
-              <DayDetailPagecopy
-                schedules={schedules}
-                setSchedules={updateSchedules}
-                tags={tags}
-                setTags={updateTags}
-                tagItems={tagItems}
-                setTagItems={updateTagItems}
+              <WeeklyCalendar
                 currentUser={currentUser}
                 onLogout={handleLogout}
-                lastSyncTime={lastSyncTime}
                 isServerBased={true}
+                enableAutoRefresh={true}
               />
             </ProtectedRoute>
           }
