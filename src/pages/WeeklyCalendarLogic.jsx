@@ -288,13 +288,13 @@ export const useWeeklyCalendarLogic = (props = {}) => {
 
   // 날짜 상태 관리 - 수정됨
   const getInitialDate = () => {
-    if (props.initialDate) {
-      return new Date(props.initialDate);
+    if (initialDate) { // props.initialDate 대신 initialDate 사용
+      return new Date(initialDate);
     }
     return new Date();
   };
   
-  const today = getInitialDate(); // ← 수정
+  const today = getInitialDate();
   const [currentWeek, setCurrentWeek] = useState(
     Array(7).fill().map((_, i) => {
       const date = new Date(today);
@@ -315,9 +315,10 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     return visibleDates;
   });
 
+  // initialDate가 변경될 때 상태 업데이트
   useEffect(() => {
-    if (props.initialDate) {
-      const newDate = new Date(props.initialDate);
+    if (initialDate) { // props.initialDate 대신 initialDate 사용
+      const newDate = new Date(initialDate);
       
       // currentWeek 업데이트
       const newWeek = Array(7).fill().map((_, i) => {
@@ -339,7 +340,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       // focusedDayIndex 업데이트
       setFocusedDayIndex(2); // 중앙에 포커스
     }
-  }, [props.initialDate]); // ← 이 useEffect가 핵심!
+  }, [initialDate]); // props.initialDate 대신 initialDate 사용
   
   // 시간 슬롯
   const timeSlots = Array.from({ length: 48 }, (_, i) => {
