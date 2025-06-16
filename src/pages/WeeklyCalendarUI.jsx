@@ -326,7 +326,7 @@ export const WeeklyCalendarUI = ({
               {/* 상단 헤더 */}
               <div className="sticky top-0 z-10 flex bg-white border-b border-gray-200">
                 <div className="w-10 flex-shrink-0 bg-white border-r border-gray-200" />
-                {visibleDays.map((dayIndex, i) => {
+                {visibleDays.map((date, i) => {
                   const date = currentWeek[dayIndex];
                   const isFocusDay = i === 3;
                   const isToday = date.toDateString() === new Date().toDateString();
