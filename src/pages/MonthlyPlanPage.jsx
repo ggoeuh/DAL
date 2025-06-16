@@ -87,10 +87,24 @@ const MonthlyPlan = ({
         setTags(serverData.tags || []);
         setTagItems(serverData.tagItems || []);
         setMonthlyGoals(serverData.monthlyGoals || []);
-        setMonthlyPlans(serverData.monthlyPlans || []);
         
-        // monthlyPlans를 plans로 설정 (호환성)
-        setPlans(serverData.monthlyPlans || []);
+        // ✨ monthlyPlans가 없으면 schedules에서 변환
+        let finalMonthlyPlans = serverData.monthlyPlans || [];
+        if (finalMonthlyPlans.length === 0 && serverData.schedules && serverData.schedules.length > 0) {
+          console.log('🔄 schedules를 monthlyPlans로 변환 시작');
+          finalMonthlyPlans = serverData.schedules.map(schedule => ({
+            id: schedule.id || Date.now() + Math.random(),
+            tagType: schedule.tagType || schedule.category || '기타',
+            tag: schedule.tagName || schedule.title || '미분류',
+            name: schedule.name || schedule.title || '',
+            description: schedule.description || schedule.memo || '',
+            estimatedTime: schedule.estimatedTime || schedule.duration || 1
+          }));
+          console.log('✅ 변환된 monthlyPlans:', finalMonthlyPlans);
+        }
+        
+        setMonthlyPlans(finalMonthlyPlans);
+        setPlans(finalMonthlyPlans);
         setLastSyncTime(new Date());
 
       } else {
@@ -284,12 +298,14 @@ const MonthlyPlan = ({
   // ✅ 블록 UI를 위한 태그별 그룹화 함수
   const getGroupedPlans = useMemo(() => {
     const grouped = {};
+    console.log('🔍 Plans for grouping:', plans); // 디버깅용
     plans.forEach(plan => {
       if (!grouped[plan.tagType]) {
         grouped[plan.tagType] = [];
       }
       grouped[plan.tagType].push(plan);
     });
+    console.log('🔍 Grouped plans:', grouped); // 디버깅용
     return grouped;
   }, [plans]);
 
