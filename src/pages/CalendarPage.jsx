@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -33,6 +33,30 @@ const minutesToTimeString = (totalMinutes) => {
   const minutes = totalMinutes % 60;
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
+
+// ✅ 동기화 상태 표시 컴포넌트
+const SyncStatus = ({ lastSyncTime, isLoading, isSaving }) => (
+  <div className="flex items-center gap-2 text-xs">
+    {isSaving ? (
+      <div className="text-orange-600 flex items-center gap-1">
+        <div className="animate-spin w-3 h-3 border border-orange-500 border-t-transparent rounded-full"></div>
+        💾 저장 중...
+      </div>
+    ) : isLoading ? (
+      <div className="text-blue-600 flex items-center gap-1">
+        <div className="animate-spin w-3 h-3 border border-blue-500 border-t-transparent rounded-full"></div>
+        🔄 로딩 중...
+      </div>
+    ) : (
+      <div className="text-green-600">✅ 동기화됨</div>
+    )}
+    {lastSyncTime && !isLoading && !isSaving && (
+      <div className="text-gray-500">
+        {format(lastSyncTime, 'HH:mm:ss')}
+      </div>
+    )}
+  </div>
+);
 
 // 서버 데이터 리셋 버튼 컴포넌트
 const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) => {
@@ -190,10 +214,11 @@ const CalendarPage = ({ currentUser, onLogout }) => {
   const [tags, setTags] = useState([]);
   const [tagItems, setTagItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
-  // 서버에서 데이터 불러오기
-  const loadDataFromServer = async () => {
+  // ✅ 서버에서 데이터 불러오기 (useCallback으로 최적화)
+  const loadDataFromServer = useCallback(async () => {
     if (!currentUser) {
       setIsLoading(false);
       return;
@@ -233,34 +258,51 @@ const CalendarPage = ({ currentUser, onLogout }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser]);
 
-  // 컴포넌트 마운트시 데이터 로드
+  // ✅ 수동 새로고침 함수
+  const handleManualRefresh = useCallback(async () => {
+    if (isLoading || isSaving) return;
+    
+    console.log('🔄 수동 새로고침 시작');
+    setIsSaving(true);
+    
+    try {
+      await loadDataFromServer();
+      console.log('✅ 수동 새로고침 완료');
+    } catch (error) {
+      console.error('❌ 수동 새로고침 실패:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [loadDataFromServer, isLoading, isSaving]);
+
+  // ✅ 컴포넌트 마운트시에만 데이터 로드 (포커스 이벤트 제거)
   useEffect(() => {
     loadDataFromServer();
-  }, [currentUser]);
+  }, [loadDataFromServer]);
 
-  // 페이지 포커스시 데이터 새로고침
-  useEffect(() => {
-    const handleFocus = () => {
-      console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
-      loadDataFromServer();
-    };
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        handleFocus();
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [currentUser]);
+  // ❌ 무한 동기화 원인이었던 포커스 이벤트 완전 제거
+  // useEffect(() => {
+  //   const handleFocus = () => {
+  //     console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
+  //     loadDataFromServer();
+  //   };
+  //
+  //   const handleVisibilityChange = () => {
+  //     if (!document.hidden) {
+  //       handleFocus();
+  //     }
+  //   };
+  //
+  //   window.addEventListener('focus', handleFocus);
+  //   document.addEventListener('visibilitychange', handleVisibilityChange);
+  //
+  //   return () => {
+  //     window.removeEventListener('focus', handleFocus);
+  //     document.removeEventListener('visibilitychange', handleVisibilityChange);
+  //   };
+  // }, [currentUser]);
 
   // 현재 월의 날짜들
   const days = eachDayOfInterval({
@@ -373,25 +415,44 @@ const CalendarPage = ({ currentUser, onLogout }) => {
               >
                 로그아웃
               </button>
+              
+              {/* ✅ 수동 새로고침 버튼 */}
               <button
-                onClick={() => loadDataFromServer()}
-                className="bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded text-sm"
-                title="서버에서 새로고침"
-                disabled={isLoading}
+                onClick={handleManualRefresh}
+                disabled={isLoading || isSaving}
+                className="bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded text-sm disabled:opacity-50 transition-colors"
+                title="서버에서 수동 새로고침"
               >
-                {isLoading ? '🔄 로딩...' : '🔄 새로고침'}
+                {isLoading || isSaving ? '🔄 로딩...' : '🔄 새로고침'}
               </button>
               
               {/* 서버 연동 상태 표시 */}
+        <div className="mt-2 text-xs text-blue-600">
+          <span className="font-medium">🌐 서버 연동:</span> 
+          모든 데이터가 Supabase 서버에 저장됩니다. 
+          페이지를 새로고침하거나 다시 접속해도 데이터가 유지됩니다.
+          {lastSyncTime && (
+            <span className="ml-2 text-gray-500">
+              (마지막 동기화: {format(lastSyncTime, 'yyyy-MM-dd HH:mm:ss')})
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CalendarPage;
               <div className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-sm">
                 🌐 서버 연동
               </div>
               
-              {lastSyncTime && (
-                <div className="text-xs text-gray-500">
-                  마지막 동기화: {format(lastSyncTime, 'HH:mm:ss')}
-                </div>
-              )}
+              {/* ✅ 동기화 상태 표시 */}
+              <SyncStatus 
+                lastSyncTime={lastSyncTime}
+                isLoading={isLoading}
+                isSaving={isSaving}
+              />
               
               <ServerDataResetButton 
                 currentUser={currentUser} 
@@ -520,7 +581,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
                   ${isToday ? 'bg-blue-50' : ''}
                   ${isWeekend ? 'bg-gray-25' : ''}
                 `}
-                onClick={() => navigate(`/weekly?date=${format(day, 'yyyy-MM-dd')}`)} // ✅ 수정
+                onClick={() => navigate(`/weekly?date=${format(day, 'yyyy-MM-dd')}`)}
               >
                 {/* 날짜 표시 행 */}
                 <div className="flex justify-between items-center mb-2">
