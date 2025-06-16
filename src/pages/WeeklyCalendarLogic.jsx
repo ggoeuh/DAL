@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { saveUserDataToDAL, loadUserDataFromDAL } from './utils/supabaseStorage.js';
 import { useNavigate } from "react-router-dom";
 
@@ -95,7 +95,7 @@ const checkScheduleOverlap = (schedules, newSchedule) => {
   });
 };
 
-// 커스텀 훅: 캘린더 로직
+// 커스텀 훅: 캘린더 로직 (최적화됨)
 export const useWeeklyCalendarLogic = (props = {}) => {
   // props에서 필요한 값들 추출
   const { 
@@ -104,41 +104,44 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     initialTags = [],
     initialTagItems = [],
     initialMonthlyGoals = [],
-    isServerBased = true, // 기본값을 서버 기반으로 설정
-    enableAutoRefresh = true, // 자동 새로고침 옵션
-    initialDate = null // ✅ 추가된 prop
+    isServerBased = true,
+    enableAutoRefresh = false, // ✅ 기본값을 false로 변경 (필요시에만 활성화)
+    initialDate = null
   } = props;
   
   const navigate = useNavigate();
 
-  // 서버 상태 관리
+  // ✅ 서버 상태 관리 (안정적인 초기값 설정)
   const [schedules, setSchedules] = useState(initialSchedules);
   const [monthlyGoals, setMonthlyGoals] = useState(initialMonthlyGoals);
   const [tags, setTags] = useState(initialTags);
   const [tagItems, setTagItems] = useState(initialTagItems);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // ✅ 저장 상태 추가
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
-  // 안전한 데이터 접근을 위한 변수들
-  const safeSchedules = Array.isArray(schedules) ? schedules : [];
-  const safeTags = Array.isArray(tags) ? tags : [];
-  const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
-  const safeMonthlyGoals = Array.isArray(monthlyGoals) ? monthlyGoals : [];
+  // ✅ 데이터 로딩 완료 상태 추가
+  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
 
-  // ✅ 초기 날짜 계산 함수
-  const getInitialDate = useCallback(() => {
+  // 안전한 데이터 접근을 위한 변수들 - useMemo로 최적화
+  const safeSchedules = useMemo(() => Array.isArray(schedules) ? schedules : [], [schedules]);
+  const safeTags = useMemo(() => Array.isArray(tags) ? tags : [], [tags]);
+  const safeTagItems = useMemo(() => Array.isArray(tagItems) ? tagItems : [], [tagItems]);
+  const safeMonthlyGoals = useMemo(() => Array.isArray(monthlyGoals) ? monthlyGoals : [], [monthlyGoals]);
+
+  // ✅ 초기 날짜 계산 함수 - useMemo로 최적화
+  const getInitialDate = useMemo(() => {
     if (initialDate) {
-      // URL에서 전달된 날짜가 있으면 해당 날짜 사용
       const targetDate = new Date(initialDate);
       console.log('✅ URL에서 받은 날짜:', initialDate, '→', targetDate.toISOString().split('T')[0]);
       return targetDate;
     }
-    return new Date(); // 기본값은 오늘
+    return new Date();
   }, [initialDate]);
 
-  // ✅ 날짜 상태 관리 - 수정됨
+  // ✅ 날짜 상태 관리 - useMemo로 최적화
   const [currentWeek, setCurrentWeek] = useState(() => {
-    const today = getInitialDate();
+    const today = getInitialDate;
     return Array(7).fill().map((_, i) => {
       const date = new Date(today);
       date.setDate(today.getDate() - today.getDay() + i);
@@ -146,18 +149,18 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     });
   });
 
-  // ✅ 초기 포커스 날짜 인덱스도 initialDate에 맞게 설정
+  // ✅ 초기 포커스 날짜 인덱스 - useMemo로 최적화
   const [focusedDayIndex, setFocusedDayIndex] = useState(() => {
     if (initialDate) {
       const targetDate = new Date(initialDate);
-      return targetDate.getDay(); // 해당 날짜의 요일 인덱스
+      return targetDate.getDay();
     }
-    return new Date().getDay(); // 기본값은 오늘 요일
+    return new Date().getDay();
   });
   
-  // ✅ visibleDays를 initialDate 기준으로 설정
+  // ✅ visibleDays 초기값 - useMemo로 최적화
   const [visibleDays, setVisibleDays] = useState(() => {
-    const baseDate = getInitialDate();
+    const baseDate = getInitialDate;
     const visibleDates = [];
     for (let i = -2; i <= 2; i++) {
       const date = new Date(baseDate);
@@ -167,12 +170,14 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     return visibleDates;
   });
   
-  // 시간 슬롯
-  const timeSlots = Array.from({ length: 48 }, (_, i) => {
-    const hour = Math.floor(i / 2);
-    const minute = i % 2 === 0 ? "00" : "30";
-    return `${hour.toString().padStart(2, "0")}:${minute}`;
-  });
+  // ✅ 시간 슬롯 - useMemo로 최적화
+  const timeSlots = useMemo(() => {
+    return Array.from({ length: 48 }, (_, i) => {
+      const hour = Math.floor(i / 2);
+      const minute = i % 2 === 0 ? "00" : "30";
+      return `${hour.toString().padStart(2, "0")}:${minute}`;
+    });
+  }, []);
 
   // 폼 및 UI 상태들
   const [form, setForm] = useState({ 
@@ -206,15 +211,19 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [autoScrollTimer, setAutoScrollTimer] = useState(null);
   
-  const repeatOptions = Array.from({ length: 15 }, (_, i) => i + 2);
-  const intervalOptions = [
+  // ✅ 상수들 - useMemo로 최적화
+  const repeatOptions = useMemo(() => Array.from({ length: 15 }, (_, i) => i + 2), []);
+  const intervalOptions = useMemo(() => [
     { value: "1", label: "매주" },
     { value: "2", label: "격주" },
     { value: "3", label: "3주마다" },
     { value: "4", label: "4주마다" }
-  ];
+  ], []);
 
-  // ✅ initialDate가 변경되면 주간 뷰 업데이트
+  // ✅ 마지막 저장 시간을 추적하여 중복 저장 방지
+  const lastSaveTimeRef = useRef(0);
+
+  // ✅ initialDate 변경 시 주간 뷰 업데이트 - 의존성 최적화
   useEffect(() => {
     if (initialDate) {
       const targetDate = new Date(initialDate);
@@ -225,7 +234,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         dayOfWeek: targetDate.getDay()
       });
       
-      // currentWeek 업데이트 (해당 날짜가 포함된 주)
+      // currentWeek 업데이트
       const startOfWeek = new Date(targetDate);
       startOfWeek.setDate(targetDate.getDate() - targetDate.getDay());
       
@@ -238,7 +247,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       setCurrentWeek(newWeek);
       setFocusedDayIndex(targetDate.getDay());
       
-      // visibleDays 업데이트 (클릭한 날짜 중심의 5일)
+      // visibleDays 업데이트
       const newVisibleDays = [];
       for (let i = -2; i <= 2; i++) {
         const date = new Date(targetDate);
@@ -247,25 +256,26 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       }
       setVisibleDays(newVisibleDays);
       
-      console.log('✅ initialDate로 주간뷰 설정 완료:', {
-        targetDate: targetDate.toISOString().split('T')[0],
-        focusedDayIndex: targetDate.getDay(),
-        weekRange: `${newWeek[0].toISOString().split('T')[0]} ~ ${newWeek[6].toISOString().split('T')[0]}`,
-        visibleRange: `${newVisibleDays[0].toISOString().split('T')[0]} ~ ${newVisibleDays[4].toISOString().split('T')[0]}`
-      });
+      console.log('✅ initialDate로 주간뷰 설정 완료');
     }
-  }, [initialDate]); // initialDate가 변경될 때마다 실행
+  }, [initialDate]);
 
-  // 서버에서 데이터 불러오기 - useCallback으로 메모이제이션
-  const loadDataFromServer = useCallback(async (silent = false) => {
+  // ✅ 서버에서 데이터 불러오기 - 중복 호출 방지 개선
+  const loadDataFromServer = useCallback(async (forceRefresh = false) => {
     if (!currentUser) {
-      if (!silent) console.log('❌ currentUser가 없어서 서버 데이터를 로드하지 않습니다.');
+      console.log('❌ currentUser가 없어서 서버 데이터를 로드하지 않습니다.');
       setIsLoading(false);
       return { success: false, error: 'No currentUser' };
     }
 
+    // ✅ 이미 로딩 중이거나, 초기 로드가 완료되었고 강제 새로고침이 아닌 경우 스킵
+    if (isLoading || (isInitialLoadComplete && !forceRefresh)) {
+      console.log('⏭️ 로딩 스킵 (이미 로딩 중이거나 완료됨)');
+      return { success: false, error: 'Already loading or loaded' };
+    }
+
     try {
-      if (!silent) setIsLoading(true);
+      setIsLoading(true);
       console.log('🔄 서버에서 사용자 데이터 불러오기 시작:', currentUser);
 
       const result = await loadUserDataFromDAL(currentUser);
@@ -278,6 +288,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         setTags(serverData.tags || []);
         setTagItems(serverData.tagItems || []);
         setLastSyncTime(new Date());
+        setIsInitialLoadComplete(true); // ✅ 초기 로드 완료 표시
         
         console.log('✅ 서버 데이터 로드 성공:', {
           schedules: serverData.schedules?.length || 0,
@@ -289,34 +300,49 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         return { success: true, data: serverData };
       } else {
         console.warn('⚠️ 서버 데이터 로드 실패 또는 빈 데이터:', result.error);
-        // 서버에 데이터가 없는 경우 빈 배열로 초기화
         setSchedules([]);
         setMonthlyGoals([]);
         setTags([]);
         setTagItems([]);
         setLastSyncTime(new Date());
+        setIsInitialLoadComplete(true); // ✅ 빈 데이터라도 초기 로드 완료 표시
         
         return { success: true, data: null };
       }
     } catch (error) {
       console.error('❌ 서버 데이터 로드 중 오류:', error);
-      if (!silent) {
-        console.error('서버 데이터를 불러오는 중 오류가 발생했습니다:', error.message);
-      }
       return { success: false, error: error.message };
     } finally {
-      if (!silent) setIsLoading(false);
+      setIsLoading(false);
     }
-  }, [currentUser]); // currentUser만 의존성으로 추가
+  }, [currentUser, isLoading, isInitialLoadComplete]);
 
-  // 서버에 데이터 저장하기 - useCallback으로 메모이제이션
-  const saveDataToServer = useCallback(async (updatedData, silent = false) => {
+  // ✅ 서버에 데이터 저장하기 - 중복 저장 방지 개선
+  const saveDataToServer = useCallback(async (updatedData, options = {}) => {
+    const { silent = false, debounceMs = 1000 } = options;
+    
     if (!currentUser) {
       if (!silent) console.log('❌ currentUser가 없어서 서버에 데이터를 저장하지 않습니다.');
       return { success: false, error: 'No currentUser' };
     }
 
+    // ✅ 너무 자주 저장하는 것 방지 (디바운싱)
+    const now = Date.now();
+    if (now - lastSaveTimeRef.current < debounceMs) {
+      console.log('⏭️ 저장 스킵 (디바운싱)');
+      return { success: false, error: 'Debounced' };
+    }
+
+    // ✅ 이미 저장 중인 경우 스킵
+    if (isSaving) {
+      console.log('⏭️ 저장 스킵 (이미 저장 중)');
+      return { success: false, error: 'Already saving' };
+    }
+
     try {
+      setIsSaving(true);
+      lastSaveTimeRef.current = now;
+      
       if (!silent) console.log('💾 서버에 데이터 저장 시작:', currentUser);
       
       const dataToSave = {
@@ -336,36 +362,44 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         alert('서버에 데이터를 저장하는 중 오류가 발생했습니다: ' + error.message);
       }
       return { success: false, error: error.message };
+    } finally {
+      setIsSaving(false);
     }
-  }, [currentUser, safeSchedules, safeMonthlyGoals, safeTags, safeTagItems]);
+  }, [currentUser, safeSchedules, safeMonthlyGoals, safeTags, safeTagItems, isSaving]);
 
-  // 초기 데이터 로드
+  // ✅ 초기 데이터 로드 - 한 번만 실행되도록 최적화
   useEffect(() => {
-    if (isServerBased && currentUser) {
-      console.log('🌐 서버 기반 모드 - 서버에서 데이터 로드');
-      loadDataFromServer();
-    } else {
+    if (isServerBased && currentUser && !isInitialLoadComplete) {
+      console.log('🌐 서버 기반 모드 - 서버에서 데이터 로드 (최초 1회)');
+      loadDataFromServer(true); // 강제 새로고침으로 초기 로드
+    } else if (!isServerBased) {
       console.log('📦 props 기반 모드 - 전달받은 데이터 사용');
       setSchedules(initialSchedules);
       setTags(initialTags);
       setTagItems(initialTagItems);
       setMonthlyGoals(initialMonthlyGoals);
+      setIsInitialLoadComplete(true);
     }
-  }, [currentUser, isServerBased, loadDataFromServer, initialSchedules, initialTags, initialTagItems, initialMonthlyGoals]);
+  }, [currentUser, isServerBased, isInitialLoadComplete]); // ✅ 불필요한 의존성 제거
 
-  // 페이지 포커스 시 자동 새로고침 (CalendarPage 패턴 적용) - 디바운싱 추가
+  // ✅ 페이지 포커스 시 자동 새로고침 - 선택적 활성화
   useEffect(() => {
-    if (!isServerBased || !enableAutoRefresh || !currentUser) return;
+    if (!isServerBased || !enableAutoRefresh || !currentUser || !isInitialLoadComplete) return;
 
     let debounceTimer = null;
+    let lastFocusTime = 0;
 
     const handleFocus = () => {
-      // 디바운싱으로 너무 자주 호출되는 것 방지
+      const now = Date.now();
+      // ✅ 5초 이상 간격이 있을 때만 새로고침
+      if (now - lastFocusTime < 5000) return;
+      
+      lastFocusTime = now;
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
-        loadDataFromServer(true); // silent 모드로 새로고침
-      }, 1000); // 1초 디바운싱
+        loadDataFromServer(true);
+      }, 2000); // 2초 디바운싱
     };
 
     const handleVisibilityChange = () => {
@@ -382,36 +416,34 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [currentUser, isServerBased, enableAutoRefresh, loadDataFromServer]);
+  }, [currentUser, isServerBased, enableAutoRefresh, isInitialLoadComplete, loadDataFromServer]);
 
-  // props 변경 시 로컬 상태 업데이트 (비서버 모드) - 무한 렌더링 방지
-  const prevInitialSchedulesRef = useRef();
-  const prevInitialTagsRef = useRef();
-  const prevInitialTagItemsRef = useRef();
-  const prevInitialMonthlyGoalsRef = useRef();
+  // ✅ props 변경 시 로컬 상태 업데이트 - 깊은 비교로 불필요한 업데이트 방지
+  const prevInitialDataRef = useRef({
+    schedules: null,
+    tags: null,
+    tagItems: null,
+    monthlyGoals: null
+  });
 
   useEffect(() => {
     if (!isServerBased) {
-      // JSON.stringify로 깊은 비교 (또는 lodash isEqual 사용 가능)
-      const schedulesChanged = JSON.stringify(prevInitialSchedulesRef.current) !== JSON.stringify(initialSchedules);
-      const tagsChanged = JSON.stringify(prevInitialTagsRef.current) !== JSON.stringify(initialTags);
-      const tagItemsChanged = JSON.stringify(prevInitialTagItemsRef.current) !== JSON.stringify(initialTagItems);
-      const monthlyGoalsChanged = JSON.stringify(prevInitialMonthlyGoalsRef.current) !== JSON.stringify(initialMonthlyGoals);
-
-      if (schedulesChanged) {
-        prevInitialSchedulesRef.current = initialSchedules;
+      const prev = prevInitialDataRef.current;
+      
+      if (JSON.stringify(prev.schedules) !== JSON.stringify(initialSchedules)) {
+        prev.schedules = initialSchedules;
         setSchedules(initialSchedules);
       }
-      if (tagsChanged) {
-        prevInitialTagsRef.current = initialTags;
+      if (JSON.stringify(prev.tags) !== JSON.stringify(initialTags)) {
+        prev.tags = initialTags;
         setTags(initialTags);
       }
-      if (tagItemsChanged) {
-        prevInitialTagItemsRef.current = initialTagItems;
+      if (JSON.stringify(prev.tagItems) !== JSON.stringify(initialTagItems)) {
+        prev.tagItems = initialTagItems;
         setTagItems(initialTagItems);
       }
-      if (monthlyGoalsChanged) {
-        prevInitialMonthlyGoalsRef.current = initialMonthlyGoals;
+      if (JSON.stringify(prev.monthlyGoals) !== JSON.stringify(initialMonthlyGoals)) {
+        prev.monthlyGoals = initialMonthlyGoals;
         setMonthlyGoals(initialMonthlyGoals);
       }
     }
@@ -425,17 +457,17 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   }, []);
 
   // 현재 시간 표시 라인 위치 계산
-  const getCurrentTimeLine = () => {
+  const getCurrentTimeLine = useCallback(() => {
     const now = new Date();
     const hours = now.getHours();
     const minutes = now.getMinutes();
     const totalMinutes = hours * 60 + minutes;
     const slotPosition = (totalMinutes / 30) * SLOT_HEIGHT;
     return slotPosition;
-  };
+  }, []);
 
   // 새 태그 타입에 색상 할당
-  const assignNewTagColor = (tagType) => {
+  const assignNewTagColor = useCallback((tagType) => {
     const existingTag = safeTags.find(t => t.tagType === tagType);
     if (existingTag) {
       return existingTag.color;
@@ -449,11 +481,10 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     return availableColors.length > 0 
       ? availableColors[0] 
       : PASTEL_COLORS[safeTags.length % PASTEL_COLORS.length];
-  };
+  }, [safeTags]);
 
-  // 포커스 날짜 변경 핸들러 - 수정됨
-  const handleDayFocus = (clickedDate) => {
-    // 클릭한 날짜를 중심으로 연속된 5일 생성
+  // 포커스 날짜 변경 핸들러
+  const handleDayFocus = useCallback((clickedDate) => {
     const newVisibleDays = [];
     for (let i = -2; i <= 2; i++) {
       const date = new Date(clickedDate);
@@ -462,9 +493,8 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     }
     
     setVisibleDays(newVisibleDays);
-    setFocusedDayIndex(2); // 중앙이 포커스
+    setFocusedDayIndex(2);
     
-    // currentWeek도 업데이트 (전체 주 정보 유지용)
     const startOfWeek = new Date(clickedDate);
     startOfWeek.setDate(clickedDate.getDate() - clickedDate.getDay());
     
@@ -475,24 +505,24 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       newWeek.push(date);
     }
     setCurrentWeek(newWeek);
-  };
+  }, []);
 
   // 시간 슬롯 계산 헬퍼 함수
-  const calculateSlotPosition = (time) => {
+  const calculateSlotPosition = useCallback((time) => {
     const minutes = parseTimeToMinutes(time);
     const slotIndex = minutes / 30;
     return slotIndex * SLOT_HEIGHT;
-  };
+  }, []);
 
-  // 리사이즈 핸들러들
-  const handleResizeStart = (e, scheduleId, type) => {
+  // ✅ 리사이즈 핸들러들 - 저장 최적화
+  const handleResizeStart = useCallback((e, scheduleId, type) => {
     e.preventDefault();
     e.stopPropagation();
     setResizing(scheduleId);
     setResizeType(type);
-  };
+  }, []);
 
-  const handleResizeMove = (e) => {
+  const handleResizeMove = useCallback((e) => {
     if (!resizing || !containerRef.current) return;
     
     const containerRect = containerRef.current.getBoundingClientRect();
@@ -519,15 +549,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
           updatedSchedules[scheduleIndex] = updatedSchedule;
           setSchedules(updatedSchedules);
           
-          // 서버에 저장
-          if (isServerBased && currentUser) {
-            saveDataToServer({
-              schedules: updatedSchedules,
-              monthlyGoals: safeMonthlyGoals,
-              tags: safeTags,
-              tagItems: safeTagItems
-            }, true); // silent 모드
-          }
+          // ✅ 리사이즈 중에는 저장하지 않음 (handleResizeEnd에서 처리)
         } else {
           setShowOverlapMessage(true);
           setTimeout(() => setShowOverlapMessage(false), 3000);
@@ -548,36 +570,38 @@ export const useWeeklyCalendarLogic = (props = {}) => {
           updatedSchedules[scheduleIndex] = updatedSchedule;
           setSchedules(updatedSchedules);
           
-          // 서버에 저장
-          if (isServerBased && currentUser) {
-            saveDataToServer({
-              schedules: updatedSchedules,
-              monthlyGoals: safeMonthlyGoals,
-              tags: safeTags,
-              tagItems: safeTagItems
-            }, true); // silent 모드
-          }
+          // ✅ 리사이즈 중에는 저장하지 않음
         } else {
           setShowOverlapMessage(true);
           setTimeout(() => setShowOverlapMessage(false), 3000);
         }
       }
     }
-  };
+  }, [resizing, resizeType, safeSchedules]);
   
-  const handleResizeEnd = () => {
+  const handleResizeEnd = useCallback(async () => {
+    if (resizing && isServerBased && currentUser) {
+      // ✅ 리사이즈 완료 시에만 저장
+      await saveDataToServer({
+        schedules: safeSchedules,
+        monthlyGoals: safeMonthlyGoals,
+        tags: safeTags,
+        tagItems: safeTagItems
+      }, { silent: true, debounceMs: 500 });
+    }
+    
     setResizing(null);
     setResizeType(null);
-  };
+  }, [resizing, isServerBased, currentUser, safeSchedules, safeMonthlyGoals, safeTags, safeTagItems, saveDataToServer]);
 
   // 태그 색상 가져오기
-  const getTagColor = (tagType) => {
+  const getTagColor = useCallback((tagType) => {
     const tag = safeTags.find(t => t.tagType === tagType);
     return tag ? tag.color : { bg: "bg-gray-100", text: "text-gray-800" };
-  };
+  }, [safeTags]);
 
-  // 일정 추가/수정/삭제 헬퍼 함수들
-  const addSchedule = async (newSchedule) => {
+  // ✅ 일정 추가/수정/삭제 헬퍼 함수들 - 즉시 저장
+  const addSchedule = useCallback(async (newSchedule) => {
     const updatedSchedules = [...safeSchedules, newSchedule];
     setSchedules(updatedSchedules);
     
@@ -587,12 +611,12 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         monthlyGoals: safeMonthlyGoals,
         tags: safeTags,
         tagItems: safeTagItems
-      });
+      }, { debounceMs: 0 }); // 즉시 저장
     }
     return { success: true };
-  };
+  }, [safeSchedules, safeMonthlyGoals, safeTags, safeTagItems, isServerBased, currentUser, saveDataToServer]);
 
-  const updateSchedule = async (scheduleId, updatedData) => {
+  const updateSchedule = useCallback(async (scheduleId, updatedData) => {
     const scheduleIndex = safeSchedules.findIndex(s => s.id === scheduleId);
     if (scheduleIndex === -1) return { success: false, error: 'Schedule not found' };
     
@@ -606,12 +630,12 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         monthlyGoals: safeMonthlyGoals,
         tags: safeTags,
         tagItems: safeTagItems
-      });
+      }, { debounceMs: 0 }); // 즉시 저장
     }
     return { success: true };
-  };
+  }, [safeSchedules, safeMonthlyGoals, safeTags, safeTagItems, isServerBased, currentUser, saveDataToServer]);
 
-  const deleteSchedule = async (scheduleId) => {
+  const deleteSchedule = useCallback(async (scheduleId) => {
     const updatedSchedules = safeSchedules.filter(s => s.id !== scheduleId);
     setSchedules(updatedSchedules);
     
@@ -621,10 +645,13 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         monthlyGoals: safeMonthlyGoals,
         tags: safeTags,
         tagItems: safeTagItems
-      });
+      }, { debounceMs: 0 }); // 즉시 저장
     }
     return { success: true };
-  };
+  }, [safeSchedules, safeMonthlyGoals, safeTags, safeTagItems, isServerBased, currentUser, saveDataToServer]);
+
+  // ✅ 태그 관련 데이터 계산 - useMemo로 최적화
+  const tagTotals = useMemo(() => calculateTagTotals(safeSchedules), [safeSchedules]);
 
   return {
     // 상태들
@@ -663,7 +690,9 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     autoScrollTimer,
     setAutoScrollTimer,
     isLoading,
+    isSaving, // ✅ 저장 상태 추가
     lastSyncTime,
+    isInitialLoadComplete, // ✅ 초기 로드 완료 상태 추가
     
     // 상태 설정 함수들
     setSchedules,
@@ -676,7 +705,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     safeTags,
     safeTagItems,
     safeMonthlyGoals,
-    tagTotals: calculateTagTotals(safeSchedules),
+    tagTotals,
     repeatOptions,
     intervalOptions,
     
