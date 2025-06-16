@@ -197,14 +197,14 @@ const CalendarPage = ({ currentUser, onLogout }) => {
     // 1. 먼저 서버에서 로드된 tags 배열에서 검색
     const savedTag = tags.find(t => t.tagType === tagType);
     if (savedTag && savedTag.color) {
-      console.log(`🎨 서버 저장된 색상 사용: ${tagType}`, savedTag.color);
+      // console.log(`🎨 서버 저장된 색상 사용: ${tagType}`, savedTag.color); // 로그 제거
       return savedTag.color;
     }
     
     // 2. tags에서 찾지 못한 경우 기본 색상 로직 사용
     const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
     const defaultColor = PASTEL_COLORS[index];
-    console.log(`🎨 기본 색상 사용: ${tagType}`, defaultColor);
+    // console.log(`🎨 기본 색상 사용: ${tagType}`, defaultColor); // 로그 제거
     return defaultColor;
   };
 
@@ -235,10 +235,10 @@ const CalendarPage = ({ currentUser, onLogout }) => {
           tagItems: result.data.tagItems?.length || 0
         });
         
-        // ✅ 로드된 tags 데이터 확인 로그
-        if (result.data.tags && result.data.tags.length > 0) {
-          console.log('🎨 로드된 태그 색상 정보:', result.data.tags);
-        }
+        // ✅ 로드된 tags 데이터 확인 로그 (필요시에만)
+        // if (result.data.tags && result.data.tags.length > 0) {
+        //   console.log('🎨 로드된 태그 색상 정보:', result.data.tags);
+        // }
       } else {
         console.warn('⚠️ 서버 데이터 로드 실패 또는 빈 데이터:', result.error);
         // 서버에 데이터가 없는 경우 빈 배열로 초기화
@@ -261,27 +261,27 @@ const CalendarPage = ({ currentUser, onLogout }) => {
     loadDataFromServer();
   }, [currentUser]);
 
-  // 페이지 포커스시 데이터 새로고침
-  useEffect(() => {
-    const handleFocus = () => {
-      console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
-      loadDataFromServer();
-    };
+  // ❌ 페이지 포커스시 자동 새로고침 제거 (불필요한 서버 요청 방지)
+  // useEffect(() => {
+  //   const handleFocus = () => {
+  //     console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
+  //     loadDataFromServer();
+  //   };
 
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        handleFocus();
-      }
-    };
+  //   const handleVisibilityChange = () => {
+  //     if (!document.hidden) {
+  //       handleFocus();
+  //     }
+  //   };
 
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+  //   window.addEventListener('focus', handleFocus);
+  //   document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [currentUser]);
+  //   return () => {
+  //     window.removeEventListener('focus', handleFocus);
+  //     document.removeEventListener('visibilitychange', handleVisibilityChange);
+  //   };
+  // }, [currentUser]);
 
   // 현재 월의 날짜들
   const days = eachDayOfInterval({
@@ -391,7 +391,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
               <button
                 onClick={() => loadDataFromServer()}
                 className="bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded text-sm"
-                title="서버에서 새로고침"
+                title="수동 새로고침 (필요시에만 사용)"
                 disabled={isLoading}
               >
                 {isLoading ? '🔄 로딩...' : '🔄 새로고침'}
@@ -611,22 +611,21 @@ const CalendarPage = ({ currentUser, onLogout }) => {
         {/* 서버 연동 상태 표시 */}
         <div className="mt-2 text-xs text-blue-600">
           <span className="font-medium">🌐 서버 연동:</span> 
-          모든 데이터가 Supabase 서버에 저장됩니다. 
-          페이지를 새로고침하거나 다시 접속해도 데이터가 유지됩니다.
+          데이터가 Supabase 서버에 저장됩니다. 
           {lastSyncTime && (
             <span className="ml-2 text-gray-500">
-              (마지막 동기화: {format(lastSyncTime, 'yyyy-MM-dd HH:mm:ss')})
+              (마지막 동기화: {format(lastSyncTime, 'HH:mm:ss')})
             </span>
           )}
         </div>
         
-        {/* ✅ 태그 색상 디버그 정보 (개발용) */}
-        {tags.length > 0 && (
+        {/* ❌ 태그 색상 디버그 정보 제거 (불필요) */}
+        {/* {tags.length > 0 && (
           <div className="mt-2 text-xs text-gray-500">
             <span className="font-medium">🎨 로드된 태그:</span> 
             {tags.map(tag => tag.tagType).join(', ')}
           </div>
-        )}
+        )} */
       </div>
     </div>
   );
