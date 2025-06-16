@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 // 상수들
 const SLOT_HEIGHT = 24;
@@ -133,14 +133,14 @@ export const useWeeklyCalendarLogic = ({
     return newVisibleDays;
   });
   
-  // 시간 슬롯 - useMemo로 메모이제이션하거나 상수로 처리
-  const timeSlots = useState(() => 
+  // 시간 슬롯 - useMemo로 메모이제이션
+  const timeSlots = useMemo(() => 
     Array.from({ length: 48 }, (_, i) => {
       const hour = Math.floor(i / 2);
       const minute = i % 2 === 0 ? "00" : "30";
       return `${hour.toString().padStart(2, "0")}:${minute}`;
-    })
-  )[0];
+    }), []
+  );
 
   // 폼 및 UI 상태들
   const [form, setForm] = useState({ 
@@ -174,14 +174,14 @@ export const useWeeklyCalendarLogic = ({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [autoScrollTimer, setAutoScrollTimer] = useState(null);
   
-  // 상수들을 useState로 초기화하여 재생성 방지
-  const repeatOptions = useState(() => Array.from({ length: 15 }, (_, i) => i + 2))[0];
-  const intervalOptions = useState(() => [
+  // 상수들을 useMemo로 메모이제이션
+  const repeatOptions = useMemo(() => Array.from({ length: 15 }, (_, i) => i + 2), []);
+  const intervalOptions = useMemo(() => [
     { value: "1", label: "매주" },
     { value: "2", label: "격주" },
     { value: "3", label: "3주마다" },
     { value: "4", label: "4주마다" }
-  ])[0];
+  ], []);
 
   // 초기 스크롤 설정
   useEffect(() => {
@@ -314,6 +314,11 @@ export const useWeeklyCalendarLogic = ({
     return tag ? tag.color : { bg: "bg-gray-100", text: "text-gray-800" };
   }, [safeTags]);
 
+  // 태그 총합 계산 - useMemo로 메모이제이션
+  const tagTotals = useMemo(() => {
+    return calculateTagTotals(safeSchedules);
+  }, [safeSchedules]);
+
   return {
     // 상태들
     currentWeek,
@@ -355,7 +360,7 @@ export const useWeeklyCalendarLogic = ({
     safeSchedules,
     safeTags,
     safeTagItems,
-    tagTotals: calculateTagTotals(safeSchedules),
+    tagTotals,
     repeatOptions,
     intervalOptions,
     
