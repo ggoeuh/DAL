@@ -515,10 +515,10 @@ const MonthlyPlan = ({
               {Object.entries(getGroupedGoals).map(([tagType, goalItems]) => {
                 const colors = getTagColor(tagType);
                 
-                // 실제 계획된 시간 합계 (목표가 아닌 실제 계획들만)
-                const actualPlannedTime = goalItems
-                  .filter(item => !item.isGoal)
-                  .reduce((sum, item) => sum + item.estimatedTime, 0);
+                // 실제 계획된 시간 합계 - plans에서 직접 계산 (goalItems 대신)
+                const actualPlannedTime = plans
+                  .filter(plan => plan.tagType === tagType)
+                  .reduce((sum, plan) => sum + plan.estimatedTime, 0);
                 
                 const targetHours = getTargetHoursForTagType(tagType);
                 // 달성률 = (실제 계획 시간 / 목표 시간) * 100
