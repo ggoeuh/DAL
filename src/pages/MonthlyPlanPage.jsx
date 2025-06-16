@@ -145,60 +145,19 @@ const MonthlyPlan = ({
     }
   }, [currentUser, saving, schedules, tags, tagItems, monthlyGoals, monthlyPlans]);
 
-  // ✨ 월간 목표 자동 생성 및 저장
-  const generateAndSaveMonthlyGoals = useCallback(async (updatedPlans) => {
+  // ✨ 월간 계획만 저장 (목표 자동 생성 제거)
+  const saveMonthlyPlans = useCallback(async (updatedPlans) => {
     if (!currentUser) return;
 
-    console.log('🎯 월간 목표 생성 시작:', { updatedPlans, currentMonthKey });
+    console.log('💾 월간 계획 저장 시작:', { updatedPlans, currentMonthKey });
 
-    // 빈 배열이면 해당 월의 목표 삭제
-    if (updatedPlans.length === 0) {
-      console.log('📝 빈 계획 배열 - 월간 목표도 삭제');
-      const updatedGoals = safeMonthlyGoals.filter(goal => goal.month !== currentMonthKey);
-      setMonthlyGoals(updatedGoals);
-      
-      await saveUserDataToServer({
-        monthlyGoals: updatedGoals,
-        monthlyPlans: updatedPlans
-      });
-      return;
-    }
-
-    // 태그타입별 시간 집계
-    const goalsByTagType = {};
-    updatedPlans.forEach(plan => {
-      if (!goalsByTagType[plan.tagType]) {
-        goalsByTagType[plan.tagType] = 0;
-      }
-      goalsByTagType[plan.tagType] += plan.estimatedTime;
-    });
-
-    // 목표 배열 생성
-    const goalsArray = Object.entries(goalsByTagType).map(([tagType, totalHours]) => ({
-      tagType,
-      targetHours: `${totalHours.toString().padStart(2, '0')}:00`
-    }));
-
-    // 기존 월간 목표에서 현재 월 목표 업데이트
-    const updatedGoals = [...safeMonthlyGoals];
-    const existingIndex = updatedGoals.findIndex(goal => goal.month === currentMonthKey);
-    
-    if (existingIndex >= 0) {
-      updatedGoals[existingIndex] = { month: currentMonthKey, goals: goalsArray };
-    } else {
-      updatedGoals.push({ month: currentMonthKey, goals: goalsArray });
-    }
-
-    setMonthlyGoals(updatedGoals);
-    
-    // 서버에 저장
+    // 서버에 월간 계획만 저장
     await saveUserDataToServer({
-      monthlyGoals: updatedGoals,
       monthlyPlans: updatedPlans
     });
 
-    console.log('✅ 월간 목표 생성 및 저장 완료');
-  }, [currentUser, currentMonthKey, safeMonthlyGoals, saveUserDataToServer]);
+    console.log('✅ 월간 계획 저장 완료');
+  }, [currentUser, currentMonthKey, saveUserDataToServer]);
 
   // ✨ 초기 데이터 로드
   useEffect(() => {
@@ -344,8 +303,8 @@ const MonthlyPlan = ({
 
     console.log('📊 업데이트된 plans:', updatedPlans);
 
-    // 월간 목표 생성 및 서버 저장
-    await generateAndSaveMonthlyGoals(updatedPlans);
+    // 월간 계획만 저장
+    await saveMonthlyPlans(updatedPlans);
 
     setForm({
       tagType: '',
@@ -355,16 +314,16 @@ const MonthlyPlan = ({
       estimatedTime: ''
     });
     setSelectedTagType('');
-  }, [form, plans, generateAndSaveMonthlyGoals]);
+  }, [form, plans, saveMonthlyPlans]);
   
   const handleDeletePlan = useCallback(async (id) => {
     const updatedPlans = plans.filter(plan => plan.id !== id);
     setPlans(updatedPlans);
     setMonthlyPlans(updatedPlans);
 
-    // 월간 목표 업데이트 및 서버 저장
-    await generateAndSaveMonthlyGoals(updatedPlans);
-  }, [plans, generateAndSaveMonthlyGoals]);
+    // 월간 계획만 업데이트
+    await saveMonthlyPlans(updatedPlans);
+  }, [plans, saveMonthlyPlans]);
 
   const handleGoBack = useCallback(() => {
     console.log('뒤로가기 버튼 클릭됨');
@@ -395,8 +354,8 @@ const MonthlyPlan = ({
       setPlans(cleanedPlans);
       setMonthlyPlans(cleanedPlans);
 
-      // 월간 목표 재생성
-      await generateAndSaveMonthlyGoals(cleanedPlans);
+      // 월간 계획만 재저장
+      await saveMonthlyPlans(cleanedPlans);
 
       console.log('✅ 서버 데이터 정리 완료');
       alert('✅ 서버 데이터 정리가 완료되었습니다.');
@@ -407,7 +366,7 @@ const MonthlyPlan = ({
     } finally {
       setSaving(false);
     }
-  }, [currentUser, tags, tagItems, plans, loadUserDataFromServer, generateAndSaveMonthlyGoals]);
+  }, [currentUser, tags, tagItems, plans, loadUserDataFromServer, saveMonthlyPlans]);
 
   if (loading) {
     return (
