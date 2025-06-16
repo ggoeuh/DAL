@@ -100,6 +100,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   // props에서 필요한 값들 추출
   const { 
     currentUser = null,
+    initialDate = null,
     initialSchedules = [],
     initialTags = [],
     initialTagItems = [],
@@ -286,7 +287,14 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   }, [initialSchedules, initialTags, initialTagItems, initialMonthlyGoals, isServerBased]);
 
   // 날짜 상태 관리 - 수정됨
-  const today = new Date();
+  const getInitialDate = () => {
+    if (props.initialDate) {
+      return new Date(props.initialDate);
+    }
+    return new Date();
+  };
+  
+  const today = getInitialDate(); // ← 수정
   const [currentWeek, setCurrentWeek] = useState(
     Array(7).fill().map((_, i) => {
       const date = new Date(today);
