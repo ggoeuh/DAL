@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { saveUserDataToDAL, loadUserDataFromDAL } from './utils/supabaseStorage.js';
 import { useNavigate } from "react-router-dom";
 
@@ -124,8 +124,8 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
   const safeMonthlyGoals = Array.isArray(monthlyGoals) ? monthlyGoals : [];
 
-  // 서버에서 데이터 불러오기
-  const loadDataFromServer = async (silent = false) => {
+  // 서버에서 데이터 불러오기 - useCallback으로 메모이제이션
+  const loadDataFromServer = useCallback(async (silent = false) => {
     if (!currentUser) {
       if (!silent) console.log('❌ currentUser가 없어서 서버 데이터를 로드하지 않습니다.');
       setIsLoading(false);
@@ -175,10 +175,10 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     } finally {
       if (!silent) setIsLoading(false);
     }
-  };
+  }, [currentUser]); // currentUser만 의존성으로 추가
 
-  // 서버에 데이터 저장하기
-  const saveDataToServer = async (updatedData, silent = false) => {
+  // 서버에 데이터 저장하기 - useCallback으로 메모이제이션
+  const saveDataToServer = useCallback(async (updatedData, silent = false) => {
     if (!currentUser) {
       if (!silent) console.log('❌ currentUser가 없어서 서버에 데이터를 저장하지 않습니다.');
       return { success: false, error: 'No currentUser' };
@@ -205,7 +205,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       }
       return { success: false, error: error.message };
     }
-  };
+  }, [currentUser, safeSchedules, safeMonthlyGoals, safeTags, safeTagItems]);
 
   // 초기 데이터 로드
   useEffect(() => {
@@ -221,13 +221,19 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     }
   }, [currentUser, isServerBased]);
 
-  // 페이지 포커스 시 자동 새로고침 (CalendarPage 패턴 적용)
+  // 페이지 포커스 시 자동 새로고침 (CalendarPage 패턴 적용) - 디바운싱 추가
   useEffect(() => {
     if (!isServerBased || !enableAutoRefresh || !currentUser) return;
 
+    let debounceTimer = null;
+
     const handleFocus = () => {
-      console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
-      loadDataFromServer(true); // silent 모드로 새로고침
+      // 디바운싱으로 너무 자주 호출되는 것 방지
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
+        loadDataFromServer(true); // silent 모드로 새로고침
+      }, 1000); // 1초 디바운싱
     };
 
     const handleVisibilityChange = () => {
@@ -240,18 +246,42 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [currentUser, isServerBased, enableAutoRefresh]);
 
-  // props 변경 시 로컬 상태 업데이트 (비서버 모드)
+  // props 변경 시 로컬 상태 업데이트 (비서버 모드) - 무한 렌더링 방지
+  const prevInitialSchedulesRef = useRef();
+  const prevInitialTagsRef = useRef();
+  const prevInitialTagItemsRef = useRef();
+  const prevInitialMonthlyGoalsRef = useRef();
+
   useEffect(() => {
     if (!isServerBased) {
-      setSchedules(initialSchedules);
-      setTags(initialTags);
-      setTagItems(initialTagItems);
-      setMonthlyGoals(initialMonthlyGoals);
+      // JSON.stringify로 깊은 비교 (또는 lodash isEqual 사용 가능)
+      const schedulesChanged = JSON.stringify(prevInitialSchedulesRef.current) !== JSON.stringify(initialSchedules);
+      const tagsChanged = JSON.stringify(prevInitialTagsRef.current) !== JSON.stringify(initialTags);
+      const tagItemsChanged = JSON.stringify(prevInitialTagItemsRef.current) !== JSON.stringify(initialTagItems);
+      const monthlyGoalsChanged = JSON.stringify(prevInitialMonthlyGoalsRef.current) !== JSON.stringify(initialMonthlyGoals);
+
+      if (schedulesChanged) {
+        prevInitialSchedulesRef.current = initialSchedules;
+        setSchedules(initialSchedules);
+      }
+      if (tagsChanged) {
+        prevInitialTagsRef.current = initialTags;
+        setTags(initialTags);
+      }
+      if (tagItemsChanged) {
+        prevInitialTagItemsRef.current = initialTagItems;
+        setTagItems(initialTagItems);
+      }
+      if (monthlyGoalsChanged) {
+        prevInitialMonthlyGoalsRef.current = initialMonthlyGoals;
+        setMonthlyGoals(initialMonthlyGoals);
+      }
     }
   }, [initialSchedules, initialTags, initialTagItems, initialMonthlyGoals, isServerBased]);
 
