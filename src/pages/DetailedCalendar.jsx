@@ -157,7 +157,6 @@ const ScheduleDetailModal = ({
             <label className="block text-sm font-medium text-gray-600 mb-1">태그</label>
             <div className={`inline-block px-3 py-1 rounded-full text-sm ${tagColor.bg} ${tagColor.text} ${tagColor.border || ''} border`}>
               {getTagDisplayInfo()}
-              <span className="ml-2 text-xs opacity-70">🌐 서버 색상</span>
             </div>
           </div>
           
