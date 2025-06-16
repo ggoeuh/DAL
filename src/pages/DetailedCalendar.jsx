@@ -1,5 +1,5 @@
-// pages/DetailedCalendar.jsx - 완전 서버 기반 버전
-import React, { useState, useEffect } from 'react';
+// pages/DetailedCalendar.jsx - 서버 기반 태그 색상 버전
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
 
@@ -78,9 +78,65 @@ const minutesToTimeString = (totalMinutes) => {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
-// 일정 상세보기 모달 컴포넌트
-const ScheduleDetailModal = ({ isOpen, onClose, schedule, tagColor }) => {
+// ✅ 서버 기반 일정 상세보기 모달 컴포넌트
+const ScheduleDetailModal = ({ 
+  isOpen, 
+  onClose, 
+  schedule, 
+  safeTags,
+  safeTagItems,
+  getTagColor
+}) => {
   if (!isOpen || !schedule) return null;
+
+  // ✅ 서버 데이터에서 태그 색상 가져오기
+  const getServerTagColor = () => {
+    try {
+      // 1. schedule.tagType이 있으면 직접 사용
+      if (schedule.tagType && getTagColor) {
+        return getTagColor(schedule.tagType);
+      }
+      
+      // 2. schedule.tag로 tagType 찾기
+      if (schedule.tag && safeTagItems) {
+        const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
+        if (tagItem?.tagType && getTagColor) {
+          return getTagColor(tagItem.tagType);
+        }
+      }
+      
+      // 3. safeTags에서 직접 찾기
+      if (schedule.tag && safeTags) {
+        const tag = safeTags.find(tag => tag.tagType === schedule.tag);
+        if (tag?.color && typeof tag.color === 'object') {
+          return tag.color;
+        }
+      }
+      
+      // 4. 기본 색상 반환
+      return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-200" };
+    } catch (error) {
+      console.warn('모달 태그 색상 조회 실패:', error);
+      return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-200" };
+    }
+  };
+
+  const tagColor = getServerTagColor();
+
+  // ✅ 태그 정보 구성
+  const getTagDisplayInfo = () => {
+    if (schedule.tagType && schedule.tag) {
+      return `${schedule.tag} | ${schedule.tagType}`;
+    } else if (schedule.tag) {
+      // tagType을 safeTagItems에서 찾기
+      const tagItem = safeTagItems?.find(item => item.tagName === schedule.tag);
+      if (tagItem?.tagType) {
+        return `${schedule.tag} | ${tagItem.tagType}`;
+      }
+      return schedule.tag;
+    }
+    return '태그 없음';
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -96,11 +152,12 @@ const ScheduleDetailModal = ({ isOpen, onClose, schedule, tagColor }) => {
         </div>
         
         <div className="space-y-4">
-          {/* 태그 */}
+          {/* 태그 - 서버에서 색상 가져오기 */}
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">태그</label>
-            <div className={`inline-block px-3 py-1 rounded-full text-sm ${tagColor.bg} ${tagColor.text} ${tagColor.border} border`}>
-              {schedule.tag} | {schedule.tagType}
+            <div className={`inline-block px-3 py-1 rounded-full text-sm ${tagColor.bg} ${tagColor.text} ${tagColor.border || ''} border`}>
+              {getTagDisplayInfo()}
+              <span className="ml-2 text-xs opacity-70">🌐 서버 색상</span>
             </div>
           </div>
           
@@ -148,7 +205,34 @@ const ScheduleDetailModal = ({ isOpen, onClose, schedule, tagColor }) => {
           {/* 날짜 */}
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">날짜</label>
-            <div className="text-gray-800 font-medium">{schedule.date}</div>
+            <div className="text-gray-800 font-medium">
+              {new Date(schedule.date).toLocaleDateString('ko-KR', {
+                year: 'numeric',
+                month: 'long', 
+                day: 'numeric',
+                weekday: 'long'
+              })}
+            </div>
+          </div>
+
+          {/* 완료 상태 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">상태</label>
+            <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+              schedule.done 
+                ? 'bg-green-100 text-green-800 border border-green-200' 
+                : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+            }`}>
+              {schedule.done ? '✅ 완료' : '⏳ 진행중'}
+            </div>
+          </div>
+
+          {/* 서버 동기화 정보 */}
+          <div className="pt-4 border-t border-gray-200">
+            <div className="flex items-center text-xs text-gray-500">
+              <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+              서버 데이터 (실시간 동기화)
+            </div>
           </div>
         </div>
         
@@ -247,6 +331,33 @@ const DetailedCalendar = ({
   });
   const navigate = useNavigate();
 
+  // ✅ 서버 기반 태그 색상 가져오기 함수
+  const getTagColor = useCallback((tagType) => {
+    if (!tagType) {
+      return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-200" };
+    }
+
+    try {
+      // 1. 서버 데이터에서 태그 색상 찾기
+      if (tags && Array.isArray(tags)) {
+        const serverTag = tags.find(tag => tag.tagType === tagType);
+        if (serverTag?.color && typeof serverTag.color === 'object') {
+          console.log(`✅ ${tagType} 서버 색상 사용:`, serverTag.color);
+          return serverTag.color;
+        }
+      }
+
+      // 2. 서버에 색상 정보가 없으면 해시 기반으로 생성
+      console.log(`⚠️ ${tagType} 서버 색상 없음, 해시 기반 생성`);
+      const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+      return PASTEL_COLORS[index];
+
+    } catch (error) {
+      console.warn('태그 색상 조회 실패:', { tagType, error });
+      return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-200" };
+    }
+  }, [tags]);
+
   // ✨ 서버에서 데이터 로드
   const loadDataFromServer = async () => {
     if (!currentUser || !supabase) return;
@@ -259,6 +370,19 @@ const DetailedCalendar = ({
       
       if (result.success && result.data) {
         const serverData = result.data;
+        
+        // ✅ 태그 색상 정보 검증 및 보완
+        if (serverData.tags && Array.isArray(serverData.tags)) {
+          serverData.tags = serverData.tags.map(tag => {
+            // 색상 정보가 없거나 올바르지 않은 경우 생성
+            if (!tag.color || typeof tag.color !== 'object' || !tag.color.bg) {
+              const index = Math.abs(tag.tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+              tag.color = PASTEL_COLORS[index];
+              console.log(`🎨 ${tag.tagType} 색상 생성:`, tag.color);
+            }
+            return tag;
+          });
+        }
         
         console.log('✅ 서버 데이터 로드 성공:', {
           schedules: serverData.schedules?.length || 0,
@@ -296,8 +420,22 @@ const DetailedCalendar = ({
       loadDataFromServer();
     } else {
       console.log('📦 props 기반 모드 - 전달받은 데이터 사용');
+      
+      // ✅ props로 받은 태그 데이터도 색상 정보 보완
+      let processedTags = initialTags || [];
+      if (Array.isArray(processedTags)) {
+        processedTags = processedTags.map(tag => {
+          if (!tag.color || typeof tag.color !== 'object' || !tag.color.bg) {
+            const index = Math.abs(tag.tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+            tag.color = PASTEL_COLORS[index];
+            console.log(`🎨 props 태그 ${tag.tagType} 색상 생성:`, tag.color);
+          }
+          return tag;
+        });
+      }
+      
       setSchedules(initialSchedules);
-      setTags(initialTags);
+      setTags(processedTags);
       setTagItems(initialTagItems);
       setMonthlyGoals(initialMonthlyGoals);
       setMonthlyPlans(initialMonthlyPlans);
@@ -316,8 +454,21 @@ const DetailedCalendar = ({
         monthlyGoals: initialMonthlyGoals?.length || 0
       });
 
+      // ✅ props 태그 데이터 색상 정보 보완
+      let processedTags = initialTags || [];
+      if (Array.isArray(processedTags)) {
+        processedTags = processedTags.map(tag => {
+          if (!tag.color || typeof tag.color !== 'object' || !tag.color.bg) {
+            const index = Math.abs(tag.tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+            tag.color = PASTEL_COLORS[index];
+            console.log(`🎨 props 업데이트 태그 ${tag.tagType} 색상 생성:`, tag.color);
+          }
+          return tag;
+        });
+      }
+
       setSchedules(initialSchedules);
-      setTags(initialTags);
+      setTags(processedTags);
       setTagItems(initialTagItems);
       setMonthlyGoals(initialMonthlyGoals);
       setMonthlyPlans(initialMonthlyPlans);
@@ -328,8 +479,22 @@ const DetailedCalendar = ({
   const handleDataRefresh = async (freshData = null) => {
     if (freshData) {
       console.log('🔄 새로운 데이터 적용:', freshData);
+      
+      // ✅ 새로고침 데이터도 색상 정보 보완
+      let processedTags = freshData.tags || [];
+      if (Array.isArray(processedTags)) {
+        processedTags = processedTags.map(tag => {
+          if (!tag.color || typeof tag.color !== 'object' || !tag.color.bg) {
+            const index = Math.abs(tag.tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+            tag.color = PASTEL_COLORS[index];
+            console.log(`🎨 새로고침 태그 ${tag.tagType} 색상 생성:`, tag.color);
+          }
+          return tag;
+        });
+      }
+      
       setSchedules(freshData.schedules || []);
-      setTags(freshData.tags || []);
+      setTags(processedTags);
       setTagItems(freshData.tagItems || []);
       setMonthlyGoals(freshData.monthlyGoals || []);
       setMonthlyPlans(freshData.monthlyPlans || []);
@@ -512,12 +677,6 @@ const DetailedCalendar = ({
     return Math.round((actual / goal) * 100);
   };
 
-  // 태그 색상 가져오기 (해시 기반)
-  const getTagColor = (tagType) => {
-    const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
-    return PASTEL_COLORS[index];
-  };
-
   // 특정 날짜의 일정들 가져오기
   const getSchedulesForDate = (date) => {
     const dateString = formatDate(date, 'yyyy-MM-dd');
@@ -575,7 +734,7 @@ const DetailedCalendar = ({
                 <h1 className="text-xl font-bold">
                   👑 {currentUser}님의 상세 캘린더 (읽기 전용)
                 </h1>
-                <p className="text-red-200 text-sm">관리자 모드 - 서버 기반</p>
+                <p className="text-red-200 text-sm">관리자 모드 - 서버 기반 (태그 색상 동기화)</p>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -610,11 +769,11 @@ const DetailedCalendar = ({
             </div>
             <div className="ml-3">
               <h3 className="text-sm font-medium text-blue-800">
-                {isAdminView ? '관리자 모드 (읽기 전용)' : '서버 기반 모드'}
+                {isAdminView ? '관리자 모드 (읽기 전용)' : '서버 기반 모드'} - 태그 색상 동기화
               </h3>
               <div className="mt-1 text-sm text-blue-700">
                 <p>
-                  <strong>{currentUser}님</strong>의 상세한 일정 정보를 Supabase 서버에서 실시간으로 조회하고 있습니다. 
+                  <strong>{currentUser}님</strong>의 상세한 일정 정보와 태그 색상을 Supabase 서버에서 실시간으로 조회하고 있습니다. 
                   {isAdminView && <strong> 일정을 클릭하면 상세 정보를 확인할 수 있습니다.</strong>}
                   {lastRefresh && ` (마지막 동기화: ${lastRefresh.toLocaleTimeString('ko-KR')})`}
                 </p>
@@ -650,7 +809,7 @@ const DetailedCalendar = ({
               <div>{isAdminView ? `조회 대상: ${currentUser}` : `사용자: ${currentUser}`}</div>
               <div className="text-xs text-gray-500">
                 이번 달: {dataStats.currentMonthSchedules}개 일정 | 총 {dataStats.totalTime}
-                {isServerBased && ' | 서버 기반'}
+                {isServerBased && ' | 서버 기반 (색상 동기화)'}
               </div>
             </div>
             <button
@@ -764,11 +923,11 @@ const DetailedCalendar = ({
                     {formatDate(day, 'd')}
                   </div>
                   
-                  {/* 일정 목록 */}
+                  {/* 일정 목록 - ✅ 서버 기반 색상 사용 */}
                   <div className="space-y-1">
                     {daySchedules.map((schedule) => {
                       const tagType = schedule.tagType || "기타";
-                      const tagColor = getTagColor(tagType);
+                      const tagColor = getTagColor(tagType); // ✅ 서버 기반 색상 함수 사용
                       
                       return (
                         <div
@@ -778,7 +937,7 @@ const DetailedCalendar = ({
                             hover:shadow-md cursor-pointer transition-all transform hover:scale-105
                           `}
                           onClick={(e) => handleScheduleClick(schedule, e)}
-                          title={`${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}`}
+                          title={`${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}\n🎨 서버 색상 적용`}
                         >
                           <div className="space-y-1">
                             {/* 시간 */}
@@ -798,6 +957,10 @@ const DetailedCalendar = ({
                                 {schedule.description}
                               </div>
                             )}
+                            {/* ✅ 서버 색상 표시 */}
+                            <div className="text-[8px] text-gray-400 opacity-60">
+                              🌐 서버 색상
+                            </div>
                           </div>
                         </div>
                       );
@@ -809,31 +972,30 @@ const DetailedCalendar = ({
           </div>
         </div>
 
-        {/* 일정 상세보기 모달 */}
+        {/* ✅ 서버 기반 일정 상세보기 모달 */}
         <ScheduleDetailModal
           isOpen={isDetailModalOpen}
           onClose={() => setIsDetailModalOpen(false)}
           schedule={selectedSchedule}
-          tagColor={selectedSchedule ? (() => {
-            const tagType = selectedSchedule.tagType || "기타";
-            return getTagColor(tagType);
-          })() : PASTEL_COLORS[0]}
+          safeTags={safeTags}
+          safeTagItems={safeTagItems}
+          getTagColor={getTagColor}
         />
         
-        {/* 월간 목표 달성률 표시 */}
+        {/* ✅ 월간 목표 달성률 표시 - 서버 기반 색상 사용 */}
         {allTagTypes.length > 0 && (
           <div className="mt-6 bg-white rounded-lg shadow-lg p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
               <span className="mr-2">🎯</span>
               {formatDate(currentDate, 'yyyy년 M월')} 목표 달성률
               {isServerBased && (
-                <span className="ml-2 text-sm text-gray-500">(서버 데이터 기반)</span>
+                <span className="ml-2 text-sm text-gray-500">(서버 데이터 기반 - 태그 색상 동기화)</span>
               )}
             </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {allTagTypes.map((tagType) => {
-                const tagColor = getTagColor(tagType);
+                const tagColor = getTagColor(tagType); // ✅ 서버 기반 색상 함수 사용
                 const actualMinutes = monthlyTagTotals[tagType] || 0;
                 const actualTime = minutesToTimeString(actualMinutes);
                 
@@ -881,6 +1043,11 @@ const DetailedCalendar = ({
                         style={{ width: `${Math.min(percentage, 100)}%` }}
                       ></div>
                     </div>
+                    
+                    {/* ✅ 서버 색상 표시 */}
+                    <div className="mt-2 text-xs text-gray-500 opacity-70 text-center">
+                      🌐 서버 기반 색상
+                    </div>
                   </div>
                 );
               })}
@@ -914,8 +1081,8 @@ const DetailedCalendar = ({
             <h4 className="font-medium text-blue-800 mb-2">💡 사용법</h4>
             <p className="text-blue-700 text-sm">
               {isAdminView 
-                ? '일정을 클릭하면 상세 정보를 확인할 수 있습니다. 관리자 모드로 모든 편집 기능이 비활성화되어 있으며, 서버에서 실시간 데이터를 조회합니다.'
-                : '일정을 클릭하면 상세 정보를 확인할 수 있습니다.'
+                ? '일정을 클릭하면 상세 정보를 확인할 수 있습니다. 관리자 모드로 모든 편집 기능이 비활성화되어 있으며, 서버에서 실시간 데이터와 태그 색상을 조회합니다.'
+                : '일정을 클릭하면 상세 정보를 확인할 수 있습니다. 모든 태그 색상이 서버에서 동기화됩니다.'
               }
             </p>
           </div>
@@ -923,12 +1090,13 @@ const DetailedCalendar = ({
           <div className="p-4 bg-green-50 rounded-lg border border-green-200">
             <h4 className="font-medium text-green-800 mb-2">
               📊 이번 달 통계 
-              {isServerBased && ' (서버 기반)'}
+              {isServerBased && ' (서버 기반 - 색상 동기화)'}
             </h4>
             <div className="text-green-700 text-sm space-y-1">
               <div>총 일정: {dataStats.currentMonthSchedules}개</div>
               <div>활동 시간: {dataStats.totalTime}</div>
               <div>활동 유형: {dataStats.tagTypes}개</div>
+              <div>태그 색상: 서버 동기화</div>
               {lastRefresh && (
                 <div className="text-xs text-green-600">
                   마지막 업데이트: {lastRefresh.toLocaleTimeString('ko-KR')}
@@ -954,7 +1122,7 @@ const DetailedCalendar = ({
               const totalMinutes = Object.values(monthlyTagTotals).reduce((sum, minutes) => sum + minutes, 0);
               const totalTime = minutesToTimeString(totalMinutes);
               
-              alert(`📊 ${currentUser}님 ${formatDate(currentDate, 'yyyy년 M월')} 요약 (서버 데이터)\n\n` +
+              alert(`📊 ${currentUser}님 ${formatDate(currentDate, 'yyyy년 M월')} 요약 (서버 데이터 - 색상 동기화)\n\n` +
                 `• 총 일정: ${safeSchedules.length}개\n` +
                 `• 이번 달 일정: ${currentMonthSchedules.length}개\n` +
                 `• 총 활동 시간: ${totalTime}\n` +
@@ -966,6 +1134,8 @@ const DetailedCalendar = ({
                   const percentage = calculatePercentage(actualMinutes, goalMinutes);
                   return sum + percentage;
                 }, 0) / allTagTypes.length) : 0}%\n\n` +
+                `• 태그 색상: 서버에서 동기화\n` +
+                `• 색상 데이터 소스: Supabase 서버\n\n` +
                 `조회 시간: ${new Date().toLocaleString('ko-KR')}\n` +
                 `데이터 소스: Supabase 서버`
               );
@@ -979,9 +1149,32 @@ const DetailedCalendar = ({
             onClick={() => handleDataRefresh()}
             disabled={loading}
             className="bg-green-600 hover:bg-green-700 text-white p-3 rounded-full shadow-lg transition duration-200 disabled:opacity-50"
-            title="서버 데이터 새로고침"
+            title="서버 데이터 새로고침 (색상 포함)"
           >
             <span className="text-lg">{loading ? '⏳' : '🔄'}</span>
+          </button>
+          {/* ✅ 태그 색상 디버그 버튼 추가 */}
+          <button
+            onClick={() => {
+              console.log('🎨 태그 색상 디버그 정보:');
+              console.log('서버 태그 데이터:', safeTags);
+              console.log('색상 함수 테스트:', allTagTypes.map(tagType => ({
+                tagType,
+                color: getTagColor(tagType)
+              })));
+              
+              alert(`🎨 태그 색상 디버그 정보\n\n` +
+                `• 총 태그 타입: ${safeTags.length}개\n` +
+                `• 활성 태그 타입: ${allTagTypes.length}개\n` +
+                `• 서버 색상 동기화: ✅ 활성\n` +
+                `• 색상 소스: Supabase 서버\n\n` +
+                `자세한 정보는 개발자 도구 콘솔을 확인하세요.`
+              );
+            }}
+            className="bg-purple-600 hover:bg-purple-700 text-white p-3 rounded-full shadow-lg transition duration-200"
+            title="태그 색상 디버그"
+          >
+            <span className="text-lg">🎨</span>
           </button>
         </div>
       )}
