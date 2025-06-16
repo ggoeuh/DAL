@@ -389,21 +389,32 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   };
 
   // 포커스 날짜 변경 핸들러
-  const handleDayFocus = (dayIndex) => {
-    if (dayIndex === focusedDayIndex) return;
+  const handleDayFocus = (clickedDate) => { // dayIndex 대신 실제 Date 객체를 받음
+    // 클릭한 날짜를 기준으로 새로운 주 생성
+    const newWeek = [];
+    const clickedDay = clickedDate.getDay(); // 0(일요일) ~ 6(토요일)
     
-    setFocusedDayIndex(dayIndex);
+    // 클릭한 날짜가 속한 주의 일요일부터 토요일까지 생성
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(clickedDate);
+      date.setDate(clickedDate.getDate() - clickedDay + i);
+      newWeek.push(date);
+    }
     
+    setCurrentWeek(newWeek);
+    
+    // 클릭한 날짜가 중앙(인덱스 3)에 오도록 visibleDays 설정
     const newVisibleDays = [];
     const focusPosition = 3;
     
     for (let i = 0; i < 5; i++) {
       const offset = i - focusPosition;
-      const newIndex = (dayIndex + offset + 7) % 7;
+      const newIndex = (clickedDay + offset + 7) % 7;
       newVisibleDays.push(newIndex);
     }
     
     setVisibleDays(newVisibleDays);
+    setFocusedDayIndex(clickedDay); // 클릭한 날짜의 요일 인덱스로 설정
   };
 
   // 시간 슬롯 계산 헬퍼 함수
