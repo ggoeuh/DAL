@@ -90,9 +90,7 @@ const MonthlyPlan = ({
         setMonthlyPlans(serverData.monthlyPlans || []);
         
         // monthlyPlans를 plans로 설정 (호환성)
-        let finalPlans = serverData.monthlyPlans || [];
-        
-        setPlans(finalPlans);
+        setPlans(serverData.monthlyPlans || []);
         setLastSyncTime(new Date());
 
       } else {
@@ -337,9 +335,14 @@ const MonthlyPlan = ({
       estimatedTime: parseInt(form.estimatedTime) || 0
     };
     
+    console.log('🆕 새 계획 생성:', newPlan);
+    console.log('📝 description 내용:', newPlan.description);
+    
     const updatedPlans = [...plans, newPlan];
     setPlans(updatedPlans);
     setMonthlyPlans(updatedPlans);
+
+    console.log('📊 업데이트된 plans:', updatedPlans);
 
     // 월간 목표 생성 및 서버 저장
     await generateAndSaveMonthlyGoals(updatedPlans);
@@ -564,10 +567,10 @@ const MonthlyPlan = ({
                                     )}
                                   </div>
                                 </div>
-                                {item.description && item.description.trim() && (
+                                {item.description && (
                                   <div className={`text-sm ${colors.text} opacity-75`}>
-                                    {item.description.split(', ').map((desc, idx) => (
-                                      <div key={idx}>• {desc}</div>
+                                    {item.description.split(', ').filter(desc => desc.trim()).map((desc, idx) => (
+                                      <div key={idx}>• {desc.trim()}</div>
                                     ))}
                                   </div>
                                 )}
