@@ -120,46 +120,6 @@ function Appcopy() {
     }
   }, []);
 
-  // ✅ 새로 추가: 중앙집중식 데이터 새로고침 함수
-  const refreshUserDataFromServer = useCallback(async () => {
-    if (!currentUser || isAdmin) {
-      console.log('⚠️ 새로고침 스킵: 사용자 없음 또는 관리자');
-      return;
-    }
-
-    console.log('🔄 중앙집중식 데이터 새로고침 시작:', currentUser);
-    
-    try {
-      const userData = await loadUserDataFromServer(currentUser);
-      
-      if (userData) {
-        // 상태 업데이트
-        setSchedules(userData.schedules || []);
-        setTags(userData.tags || []);
-        setTagItems(userData.tagItems || []);
-        setMonthlyPlans(userData.monthlyPlans || []);
-        setMonthlyGoals(userData.monthlyGoals || []);
-        
-        // 이전 데이터 레퍼런스 업데이트
-        prevDataRef.current = {
-          schedules: userData.schedules || [],
-          tags: userData.tags || [],
-          tagItems: userData.tagItems || [],
-          monthlyPlans: userData.monthlyPlans || [],
-          monthlyGoals: userData.monthlyGoals || []
-        };
-        
-        setLastSyncTime(new Date());
-        console.log('✅ 중앙집중식 새로고침 완료');
-      } else {
-        console.warn('⚠️ 새로고침할 서버 데이터 없음');
-      }
-    } catch (error) {
-      console.error('❌ 중앙집중식 새로고침 실패:', error);
-      throw error;
-    }
-  }, [currentUser, isAdmin, loadUserDataFromServer]);
-
   // ✨ 개선된 서버에 사용자 데이터 저장 (무한동기화 방지 강화)
   const saveUserDataToServer = useCallback(async () => {
     if (!currentUser || isLoading || isAdmin) return;
@@ -713,7 +673,6 @@ function Appcopy() {
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 lastSyncTime={lastSyncTime}
-                onRefreshData={refreshUserDataFromServer}  // ✅ 새로고침 함수 제공
                 isServerBased={true}
               />
             </ProtectedRoute>
