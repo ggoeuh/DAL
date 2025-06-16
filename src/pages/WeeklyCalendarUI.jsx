@@ -1,16 +1,394 @@
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+
+// ✅ 개별 컴포넌트들을 React.memo로 최적화
+const SyncStatusDisplay = React.memo(({ isLoading, isSaving, lastSyncTime }) => {
+  if (isSaving) {
+    return (
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-orange-100 text-orange-800 px-4 py-2 rounded-lg shadow-md z-50 flex items-center">
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-500 mr-2"></div>
+        💾 서버에 저장 중...
+      </div>
+    );
+  }
+  
+  if (isLoading) {
+    return (
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50 flex items-center">
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+        🔄 서버 데이터 동기화 중...
+      </div>
+    );
+  }
+  
+  return null;
+});
+
+const OverlapMessage = React.memo(({ showOverlapMessage }) => {
+  if (!showOverlapMessage) return null;
+  
+  return (
+    <div className="fixed top-4 right-4 bg-red-100 text-red-800 px-4 py-2 rounded-lg shadow-md z-50">
+      일정이 다른 일정과 겹칩니다
+    </div>
+  );
+});
+
+const CopyModeMessage = React.memo(({ copyingSchedule }) => {
+  if (!copyingSchedule) return null;
+  
+  return (
+    <div className="fixed top-4 left-4 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50">
+      📋 복사 모드: "{copyingSchedule.title}" - 원하는 위치에 클릭하세요
+    </div>
+  );
+});
+
+const ContextMenu = React.memo(({ contextMenu, handleCopySchedule, handleDeleteSchedule }) => {
+  if (!contextMenu.visible) return null;
+  
+  return (
+    <div 
+      className="fixed bg-white shadow-lg rounded-lg overflow-hidden z-50 border"
+      style={{ top: contextMenu.y, left: contextMenu.x }}
+    >
+      <div 
+        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm" 
+        onClick={handleCopySchedule}
+      >
+        📋 복사
+      </div>
+      <div 
+        className="px-4 py-2 hover:bg-gray-100 text-red-600 cursor-pointer text-sm" 
+        onClick={handleDeleteSchedule}
+      >
+        🗑️ 삭제
+      </div>
+    </div>
+  );
+});
+
+const TagSummary = React.memo(({ tagTotals, getTagColor }) => {
+  const tagEntries = Object.entries(tagTotals);
+  
+  if (tagEntries.length === 0) {
+    return (
+      <div className="text-gray-500 text-sm italic">
+        아직 등록된 일정이 없습니다
+      </div>
+    );
+  }
+  
+  return (
+    <div className="flex gap-4 flex-wrap">
+      {tagEntries.map(([tagType, totalTime]) => {
+        const tagColor = getTagColor(tagType);
+        return (
+          <div 
+            key={tagType} 
+            className={`${tagColor.bg} ${tagColor.text} rounded-lg px-3 py-1 text-sm font-medium flex items-center`}
+          >
+            <span>{tagType}</span>
+            <span className="ml-2 font-bold">{totalTime}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+const TimeSlotGrid = React.memo(({ 
+  timeSlots, 
+  SLOT_HEIGHT, 
+  visibleDays, 
+  safeSchedules,
+  filterSchedulesByDate,
+  calculateSlotPosition,
+  getTagColor,
+  safeTagItems,
+  getCurrentTimeLine,
+  activeTimeSlot,
+  handleTimeSlotClick,
+  handleDayFocus,
+  handleDragStart,
+  handleContextMenu,
+  handleResizeStart,
+  handleCheckboxChange,
+  dragging,
+  isServerBased,
+  currentUser
+}) => {
+  return (
+    <div className="flex">
+      {/* 시간 열 */}
+      <div className="w-10 flex-shrink-0 relative" style={{ height: `${SLOT_HEIGHT * 48}px` }}>
+        {timeSlots.map((time, i) => (
+          <div
+            key={time}
+            className="absolute w-full pl-2 text-xs text-gray-500"
+            style={{ top: `${i * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
+          >
+            <div className="text-right pr-1">{time}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 날짜 열들 */}
+      <div className="flex flex-1 min-w-0">
+        {visibleDays.map((date, i) => {
+          const isFocusDay = i === 2;
+          const isToday = date.toDateString() === new Date().toDateString();
+          const dateSchedules = filterSchedulesByDate(safeSchedules, date);
+
+          return (
+            <DayColumn
+              key={`${date.toISOString()}-${i}`}
+              date={date}
+              dayIndex={i}
+              isFocusDay={isFocusDay}
+              isToday={isToday}
+              dateSchedules={dateSchedules}
+              timeSlots={timeSlots}
+              SLOT_HEIGHT={SLOT_HEIGHT}
+              activeTimeSlot={activeTimeSlot}
+              handleTimeSlotClick={handleTimeSlotClick}
+              handleDayFocus={handleDayFocus}
+              getCurrentTimeLine={getCurrentTimeLine}
+              calculateSlotPosition={calculateSlotPosition}
+              getTagColor={getTagColor}
+              safeTagItems={safeTagItems}
+              handleDragStart={handleDragStart}
+              handleContextMenu={handleContextMenu}
+              handleResizeStart={handleResizeStart}
+              handleCheckboxChange={handleCheckboxChange}
+              dragging={dragging}
+              isServerBased={isServerBased}
+              currentUser={currentUser}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+const DayColumn = React.memo(({ 
+  date,
+  dayIndex,
+  isFocusDay,
+  isToday,
+  dateSchedules,
+  timeSlots,
+  SLOT_HEIGHT,
+  activeTimeSlot,
+  handleTimeSlotClick,
+  handleDayFocus,
+  getCurrentTimeLine,
+  calculateSlotPosition,
+  getTagColor,
+  safeTagItems,
+  handleDragStart,
+  handleContextMenu,
+  handleResizeStart,
+  handleCheckboxChange,
+  dragging,
+  isServerBased,
+  currentUser
+}) => {
+  const handleDayClick = useCallback(() => {
+    handleDayFocus(date);
+  }, [date, handleDayFocus]);
+
+  return (
+    <div
+      data-day-index={dayIndex}
+      className={`relative border-l border-gray-200 flex flex-col transition-all duration-300 ${
+        isToday ? 'border-blue-300 border-2' : ''
+      }`}
+      style={{ flexGrow: isFocusDay ? 2 : 1.5, minWidth: 0 }}
+    >
+      <div
+        className={`flex-1 relative ${
+          isFocusDay ? 'bg-blue-50 bg-opacity-30' : ''
+        } ${isToday ? 'bg-blue-50 bg-opacity-20' : ''}`}
+        style={{ height: `${SLOT_HEIGHT * 48}px` }}
+      >
+        {/* 시간 슬롯 */}
+        {timeSlots.map((time, timeIndex) => (
+          <div
+            key={time}
+            className={`absolute w-full border-t border-gray-200 border-dashed hover:bg-gray-100 hover:bg-opacity-50 transition-colors ${
+              activeTimeSlot === time && isFocusDay ? 'bg-gray-300 bg-opacity-20' : ''
+            }`}
+            style={{ top: `${timeIndex * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
+            onClick={() => isFocusDay && handleTimeSlotClick(time)}
+          />
+        ))}
+
+        {/* 현재 시간 표시 */}
+        {isToday && (
+          <div
+            className="absolute w-full border-t-2 border-red-500 z-10"
+            style={{ top: `${getCurrentTimeLine()}px` }}
+          >
+            <div className="absolute -left-2 -top-2 w-4 h-4 bg-red-500 rounded-full" />
+          </div>
+        )}
+
+        {/* 일정들 */}
+        {dateSchedules.map((schedule) => (
+          <ScheduleItem
+            key={schedule.id}
+            schedule={schedule}
+            isFocusDay={isFocusDay}
+            calculateSlotPosition={calculateSlotPosition}
+            getTagColor={getTagColor}
+            safeTagItems={safeTagItems}
+            handleDragStart={handleDragStart}
+            handleContextMenu={handleContextMenu}
+            handleResizeStart={handleResizeStart}
+            handleCheckboxChange={handleCheckboxChange}
+            dragging={dragging}
+            isServerBased={isServerBased}
+            currentUser={currentUser}
+          />
+        ))}
+      </div>
+    </div>
+  );
+});
+
+const ScheduleItem = React.memo(({ 
+  schedule,
+  isFocusDay,
+  calculateSlotPosition,
+  getTagColor,
+  safeTagItems,
+  handleDragStart,
+  handleContextMenu,
+  handleResizeStart,
+  handleCheckboxChange,
+  dragging,
+  isServerBased,
+  currentUser
+}) => {
+  const top = calculateSlotPosition(schedule.start);
+  const bottom = calculateSlotPosition(schedule.end);
+  const height = bottom - top;
+  const tagTypeForItem = safeTagItems.find(item => item.tagName === schedule.tag)?.tagType || schedule.tagType;
+  const tagColor = getTagColor(tagTypeForItem);
+  const isDragging = dragging === schedule.id;
+
+  const handleMouseDown = useCallback((e) => {
+    if (e.button === 0) {
+      handleDragStart(e, schedule.id);
+    }
+  }, [handleDragStart, schedule.id]);
+
+  const handleRightClick = useCallback((e) => {
+    handleContextMenu(e, schedule.id);
+  }, [handleContextMenu, schedule.id]);
+
+  const handleTopResize = useCallback((e) => {
+    if (e.button === 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleResizeStart(e, schedule.id, 'top');
+    }
+  }, [handleResizeStart, schedule.id]);
+
+  const handleBottomResize = useCallback((e) => {
+    if (e.button === 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleResizeStart(e, schedule.id, 'bottom');
+    }
+  }, [handleResizeStart, schedule.id]);
+
+  const handleCheckboxClick = useCallback((e) => {
+    e.stopPropagation();
+    handleCheckboxChange(schedule.id, schedule.done);
+  }, [handleCheckboxChange, schedule.id, schedule.done]);
+
+  return (
+    <div
+      className="absolute left-0 w-full px-1"
+      style={{ 
+        top: `${top}px`, 
+        height: `${height}px`,
+        zIndex: isDragging ? 50 : 1
+      }}
+    >
+      <div 
+        className={`h-full flex flex-col text-xs rounded-lg px-2 py-1 shadow ${tagColor.bg} ${tagColor.text} relative overflow-hidden cursor-move select-none transition-all ${
+          isDragging ? 'opacity-50 ring-2 ring-blue-400 scale-105' : 'hover:shadow-md hover:scale-105'
+        } ${schedule.done ? 'opacity-70' : ''}`}
+        onMouseDown={handleMouseDown}
+        onContextMenu={handleRightClick}
+      >
+        {isFocusDay && (
+          <>
+            <div
+              className="absolute top-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-t-lg z-20 hover:bg-opacity-30"
+              onMouseDown={handleTopResize}
+            />
+            <div
+              className="absolute bottom-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-b-lg z-20 hover:bg-opacity-30"
+              onMouseDown={handleBottomResize}
+            />
+          </>
+        )}
+
+        {/* 첫째줄: 체크박스 + 태그 + 항목명 */}
+        <div className="flex items-center gap-1 mb-1">
+          <input
+            type="checkbox"
+            checked={schedule.done}
+            className="pointer-events-auto flex-shrink-0"
+            onChange={handleCheckboxClick}
+          />
+          {schedule.tag && (
+            <span className="px-2 py-0.5 text-[10px] bg-white bg-opacity-30 rounded-md font-bold flex-shrink-0">
+              {tagTypeForItem ? `${tagTypeForItem}` : schedule.tag}
+            </span>
+          )}
+          <span className={`text-[10px] font-bold truncate ${schedule.done ? "line-through opacity-60" : ""}`}>
+            {schedule.tag ? schedule.tag : ''}
+          </span>
+        </div>
+
+        {/* 둘째줄: 시간 표기 */}
+        <div className="text-[12px] mb-1 opacity-80">
+          {schedule.start} - {schedule.end}
+        </div>
+
+        {/* 셋째줄: 일정명 */}
+        <div className={`text-[11px] font-bold mb-1 truncate ${schedule.done ? "line-through opacity-60" : ""}`}>
+          {schedule.title}
+        </div>
+
+        {/* 넷째줄: 일정 내용 */}
+        {schedule.description && (
+          <div className="text-[9px] opacity-70 flex-1 overflow-hidden">
+            <div className="line-clamp-2">
+              {schedule.description}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
 
 export const WeeklyCalendarUI = ({ 
   calendarLogic,
   currentUser,
   onLogout,
-  // 서버 관련 새로운 props
   isServerBased = true,
   isLoading = false,
+  isSaving = false, // ✅ 저장 상태 추가
   lastSyncTime = null,
   onManualRefresh,
-  // 추가 핸들러들을 props로 받음
   handleContextMenu,
   handleCopySchedule,
   handleDeleteSchedule,
@@ -83,11 +461,11 @@ export const WeeklyCalendarUI = ({
     handleResizeMove,
     handleResizeEnd,
     
-    // 서버 관련 함수들 (새로 추가)
+    // 서버 관련 함수들
     saveDataToServer
   } = calendarLogic;
 
-  // 체크박스 변경 핸들러를 useCallback으로 메모이제이션
+  // ✅ 체크박스 변경 핸들러 - 최적화된 버전
   const handleCheckboxChange = useCallback(async (scheduleId, currentDone) => {
     const updatedSchedules = safeSchedules.map(item =>
       item.id === scheduleId ? { ...item, done: !currentDone } : item
@@ -97,23 +475,22 @@ export const WeeklyCalendarUI = ({
       calendarLogic.setSchedules(updatedSchedules);
     }
     
-    // 서버 기반 모드에서는 새로운 saveDataToServer 사용
+    // ✅ 서버 기반 모드에서는 즉시 저장
     if (isServerBased && currentUser && saveDataToServer) {
       const result = await saveDataToServer({
         schedules: updatedSchedules,
         tags: safeTags,
         tagItems: safeTagItems,
         monthlyGoals: calendarLogic.safeMonthlyGoals
-      }, true); // silent 모드
+      }, { silent: true, debounceMs: 0 }); // 즉시 저장
       
       if (!result.success) {
         console.error('체크박스 상태 저장 실패:', result.error);
-        // 실패 시 롤백할 수도 있음
       }
     }
   }, [safeSchedules, safeTags, safeTagItems, calendarLogic, isServerBased, currentUser, saveDataToServer]);
 
-  // 이벤트 리스너 등록 - useCallback으로 메모이제이션
+  // ✅ 이벤트 리스너 등록 - 최적화된 버전
   const handleClickOutside = useCallback(() => {
     setContextMenu({ ...contextMenu, visible: false });
   }, [contextMenu, setContextMenu]);
@@ -166,50 +543,38 @@ export const WeeklyCalendarUI = ({
     handleDragMove, handleDragEnd, handleClickOutside
   ]);
 
+  // ✅ 네비게이션 핸들러들을 useMemo로 최적화
+  const navigationHandlers = useMemo(() => ({
+    goToCalendar: () => navigate("/calendar"),
+    goToPreviousWeek,
+    goToNextWeek,
+    goToCurrentWeek
+  }), [navigate, goToPreviousWeek, goToNextWeek, goToCurrentWeek]);
+
+  // ✅ 폼 핸들러들을 useMemo로 최적화
+  const formHandlers = useMemo(() => ({
+    setTitle: (title) => setForm({ ...form, title }),
+    setEnd: (end) => setForm({ ...form, end }),
+    setDescription: (description) => setForm({ ...form, description }),
+    setStartSlot: calendarLogic.setStartSlot
+  }), [form, setForm, calendarLogic.setStartSlot]);
+
+  // ✅ 헤더 날짜 범위를 useMemo로 최적화
+  const dateRange = useMemo(() => {
+    return `${formatDate(currentWeek[0])} - ${formatDate(currentWeek[6])}`;
+  }, [currentWeek, formatDate]);
+
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-50">
-      {/* 중복 알림 메시지 */}
-      {showOverlapMessage && (
-        <div className="fixed top-4 right-4 bg-red-100 text-red-800 px-4 py-2 rounded-lg shadow-md z-50">
-          일정이 다른 일정과 겹칩니다
-        </div>
-      )}
-      
-      {/* 복사 모드 안내 메시지 */}
-      {copyingSchedule && (
-        <div className="fixed top-4 left-4 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50">
-          📋 복사 모드: "{copyingSchedule.title}" - 원하는 위치에 클릭하세요
-        </div>
-      )}
-      
-      {/* 로딩 상태 표시 */}
-      {isLoading && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50 flex items-center">
-          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
-          서버 데이터 동기화 중...
-        </div>
-      )}
-      
-      {/* 오른쪽 클릭 메뉴 */}
-      {contextMenu.visible && (
-        <div 
-          className="fixed bg-white shadow-lg rounded-lg overflow-hidden z-50 border"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-        >
-          <div 
-            className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm" 
-            onClick={handleCopySchedule}
-          >
-            📋 복사
-          </div>
-          <div 
-            className="px-4 py-2 hover:bg-gray-100 text-red-600 cursor-pointer text-sm" 
-            onClick={handleDeleteSchedule}
-          >
-            🗑️ 삭제
-          </div>
-        </div>
-      )}
+      {/* ✅ 상태 메시지들 - 최적화된 컴포넌트들 */}
+      <OverlapMessage showOverlapMessage={showOverlapMessage} />
+      <CopyModeMessage copyingSchedule={copyingSchedule} />
+      <SyncStatusDisplay isLoading={isLoading} isSaving={isSaving} lastSyncTime={lastSyncTime} />
+      <ContextMenu 
+        contextMenu={contextMenu} 
+        handleCopySchedule={handleCopySchedule} 
+        handleDeleteSchedule={handleDeleteSchedule} 
+      />
       
       {/* 헤더 및 상단 요약바 */}
       <div className="bg-white shadow-sm p-4 flex flex-col">
@@ -217,7 +582,7 @@ export const WeeklyCalendarUI = ({
           {/* 왼쪽: Back 버튼 */}
           <button 
             className="text-blue-600 flex items-center font-medium hover:text-blue-800 transition-colors"
-            onClick={() => navigate("/calendar")}
+            onClick={navigationHandlers.goToCalendar}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
               xmlns="http://www.w3.org/2000/svg" className="mr-1">
@@ -231,19 +596,19 @@ export const WeeklyCalendarUI = ({
           <div className="flex gap-2">
             <button 
               className="bg-gray-100 hover:bg-gray-200 rounded-lg px-3 py-1 text-sm transition-colors"
-              onClick={goToPreviousWeek}
+              onClick={navigationHandlers.goToPreviousWeek}
             >
               &lt;
             </button>
             <button 
               className="bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg px-3 py-1 text-sm font-medium transition-colors"
-              onClick={goToCurrentWeek}
+              onClick={navigationHandlers.goToCurrentWeek}
             >
               This Week
             </button>
             <button 
               className="bg-gray-100 hover:bg-gray-200 rounded-lg px-3 py-1 text-sm transition-colors"
-              onClick={goToNextWeek}
+              onClick={navigationHandlers.goToNextWeek}
             >
               &gt;
             </button>
@@ -252,7 +617,7 @@ export const WeeklyCalendarUI = ({
           {/* 오른쪽: 날짜 + 사용자 정보 */}
           <div className="flex items-center gap-4">
             <div className="text-gray-800 font-semibold">
-              {`${formatDate(currentWeek[0])} - ${formatDate(currentWeek[6])}`}
+              {dateRange}
             </div>
             {currentUser && (
               <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -266,14 +631,14 @@ export const WeeklyCalendarUI = ({
                     {onManualRefresh && (
                       <button
                         onClick={onManualRefresh}
-                        disabled={isLoading}
+                        disabled={isLoading || isSaving}
                         className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded transition-colors disabled:opacity-50"
                         title="서버에서 새로고침"
                       >
-                        {isLoading ? '🔄 로딩...' : '🔄 새로고침'}
+                        {isLoading || isSaving ? '🔄 로딩...' : '🔄 새로고침'}
                       </button>
                     )}
-                    {lastSyncTime && (
+                    {lastSyncTime && !isLoading && !isSaving && (
                       <div className="text-xs text-gray-500">
                         {lastSyncTime.toLocaleTimeString('ko-KR')}
                       </div>
@@ -291,26 +656,8 @@ export const WeeklyCalendarUI = ({
           </div>
         </div>
         
-        {/* 태그별 총 시간 요약 */}
-        <div className="flex gap-4 flex-wrap">
-          {Object.entries(tagTotals).map(([tagType, totalTime]) => {
-            const tagColor = getTagColor(tagType);
-            return (
-              <div 
-                key={tagType} 
-                className={`${tagColor.bg} ${tagColor.text} rounded-lg px-3 py-1 text-sm font-medium flex items-center`}
-              >
-                <span>{tagType}</span>
-                <span className="ml-2 font-bold">{totalTime}</span>
-              </div>
-            );
-          })}
-          {Object.keys(tagTotals).length === 0 && (
-            <div className="text-gray-500 text-sm italic">
-              아직 등록된 일정이 없습니다
-            </div>
-          )}
-        </div>
+        {/* ✅ 태그별 총 시간 요약 - 최적화된 컴포넌트 */}
+        <TagSummary tagTotals={tagTotals} getTagColor={getTagColor} />
       </div>
 
       {/* 메인 컨텐츠 */}
@@ -327,7 +674,7 @@ export const WeeklyCalendarUI = ({
               <div className="sticky top-0 z-10 flex bg-white border-b border-gray-200">
                 <div className="w-10 flex-shrink-0 bg-white border-r border-gray-200" />
                 {visibleDays.map((date, i) => {
-                  const isFocusDay = i === 2; // 중앙이 포커스 (인덱스 2)
+                  const isFocusDay = i === 2;
                   const isToday = date.toDateString() === new Date().toDateString();
                   
                   return (
@@ -346,169 +693,28 @@ export const WeeklyCalendarUI = ({
                 })}
               </div>
 
-              {/* 콘텐츠 */}
-              <div className="flex">
-                {/* 시간 열 */}
-                <div className="w-10 flex-shrink-0 relative" style={{ height: `${SLOT_HEIGHT * 48}px` }}>
-                  {timeSlots.map((time, i) => (
-                    <div
-                      key={time}
-                      className="absolute w-full pl-2 text-xs text-gray-500"
-                      style={{ top: `${i * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
-                    >
-                      <div className="text-right pr-1">{time}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* 날짜 열들 */}
-                <div className="flex flex-1 min-w-0">
-                  {visibleDays.map((date, i) => {
-                    const isFocusDay = i === 2; // 중앙이 포커스
-                    const isToday = date.toDateString() === new Date().toDateString();
-                    const dateSchedules = filterSchedulesByDate(safeSchedules, date);
-
-                    return (
-                      <div
-                        key={i}
-                        data-day-index={i}
-                        className={`relative border-l border-gray-200 flex flex-col transition-all duration-300 ${
-                          isToday ? 'border-blue-300 border-2' : ''
-                        }`}
-                        style={{ flexGrow: isFocusDay ? 2 : 1.5, minWidth: 0 }}
-                      >
-                        {/* 시간 슬롯 + 일정 */}
-                        <div
-                          className={`flex-1 relative ${
-                            isFocusDay ? 'bg-blue-50 bg-opacity-30' : ''
-                          } ${isToday ? 'bg-blue-50 bg-opacity-20' : ''}`}
-                          style={{ height: `${SLOT_HEIGHT * 48}px` }}
-                        >
-                          {timeSlots.map((time, timeIndex) => (
-                            <div
-                              key={time}
-                              className={`absolute w-full border-t border-gray-200 border-dashed hover:bg-gray-100 hover:bg-opacity-50 transition-colors ${
-                                activeTimeSlot === time && isFocusDay ? 'bg-gray-300 bg-opacity-20' : ''
-                              }`}
-                              style={{ top: `${timeIndex * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
-                              onClick={() => isFocusDay && handleTimeSlotClick(time)}
-                            />
-                          ))}
-
-                          {/* 현재 시간 표시 */}
-                          {isToday && (
-                            <div
-                              className="absolute w-full border-t-2 border-red-500 z-10"
-                              style={{ top: `${getCurrentTimeLine()}px` }}
-                            >
-                              <div className="absolute -left-2 -top-2 w-4 h-4 bg-red-500 rounded-full" />
-                            </div>
-                          )}
-
-                          {/* 일정들 */}
-                          {dateSchedules.map((s) => {
-                            const top = calculateSlotPosition(s.start);
-                            const bottom = calculateSlotPosition(s.end);
-                            const height = bottom - top;
-                            const tagTypeForItem = safeTagItems.find(item => item.tagName === s.tag)?.tagType || s.tagType;
-                            const tagColor = getTagColor(tagTypeForItem);
-                            const isDragging = dragging === s.id;
-
-                            return (
-                              <div
-                                key={s.id}
-                                className="absolute left-0 w-full px-1"
-                                style={{ 
-                                  top: `${top}px`, 
-                                  height: `${height}px`,
-                                  zIndex: isDragging ? 50 : 1
-                                }}
-                              >
-                                <div 
-                                  className={`h-full flex flex-col text-xs rounded-lg px-2 py-1 shadow ${tagColor.bg} ${tagColor.text} relative overflow-hidden cursor-move select-none transition-all ${
-                                    isDragging ? 'opacity-50 ring-2 ring-blue-400 scale-105' : 'hover:shadow-md hover:scale-105'
-                                  } ${s.done ? 'opacity-70' : ''}`}
-                                  onMouseDown={(e) => {
-                                    if (e.button === 0) {
-                                      handleDragStart(e, s.id);
-                                    }
-                                  }}
-                                  onContextMenu={(e) => handleContextMenu(e, s.id)}
-                                >
-                                  {isFocusDay && (
-                                    <>
-                                      <div
-                                        className="absolute top-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-t-lg z-20 hover:bg-opacity-30"
-                                        onMouseDown={(e) => {
-                                          if (e.button === 0) {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            handleResizeStart(e, s.id, 'top');
-                                          }
-                                        }}
-                                      />
-                                      <div
-                                        className="absolute bottom-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-b-lg z-20 hover:bg-opacity-30"
-                                        onMouseDown={(e) => {
-                                          if (e.button === 0) {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            handleResizeStart(e, s.id, 'bottom');
-                                          }
-                                        }}
-                                      />
-                                    </>
-                                  )}
-
-                                  {/* 첫째줄: 체크박스 + 태그(라운드 네모칸) + 항목명 */}
-                                  <div className="flex items-center gap-1 mb-1">
-                                    <input
-                                      type="checkbox"
-                                      checked={s.done}
-                                      className="pointer-events-auto flex-shrink-0"
-                                      onChange={(e) => {
-                                        e.stopPropagation();
-                                        handleCheckboxChange(s.id, s.done);
-                                      }}
-                                    />
-                                    {s.tag && (
-                                      <span className="px-2 py-0.5 text-[10px] bg-white bg-opacity-30 rounded-md font-bold flex-shrink-0">
-                                        {tagTypeForItem ? `${tagTypeForItem}` : s.tag}
-                                      </span>
-                                    )}
-                                    <span className={`text-[10px] font-bold truncate ${s.done ? "line-through opacity-60" : ""}`}>
-                                      {s.tag ? s.tag : ''}
-                                    </span>
-                                  </div>
-
-                                  {/* 둘째줄: 시간 표기 */}
-                                  <div className="text-[12px] mb-1 opacity-80">
-                                    {s.start} - {s.end}
-                                  </div>
-
-                                  {/* 셋째줄: 일정명 */}
-                                  <div className={`text-[11px] font-bold mb-1 truncate ${s.done ? "line-through opacity-60" : ""}`}>
-                                    {s.title}
-                                  </div>
-
-                                  {/* 넷째줄: 일정 내용 */}
-                                  {s.description && (
-                                    <div className="text-[9px] opacity-70 flex-1 overflow-hidden">
-                                      <div className="line-clamp-2">
-                                        {s.description}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              {/* ✅ 시간 슬롯 그리드 - 최적화된 컴포넌트 */}
+              <TimeSlotGrid
+                timeSlots={timeSlots}
+                SLOT_HEIGHT={SLOT_HEIGHT}
+                visibleDays={visibleDays}
+                safeSchedules={safeSchedules}
+                filterSchedulesByDate={filterSchedulesByDate}
+                calculateSlotPosition={calculateSlotPosition}
+                getTagColor={getTagColor}
+                safeTagItems={safeTagItems}
+                getCurrentTimeLine={getCurrentTimeLine}
+                activeTimeSlot={activeTimeSlot}
+                handleTimeSlotClick={handleTimeSlotClick}
+                handleDayFocus={handleDayFocus}
+                handleDragStart={handleDragStart}
+                handleContextMenu={handleContextMenu}
+                handleResizeStart={handleResizeStart}
+                handleCheckboxChange={handleCheckboxChange}
+                dragging={dragging}
+                isServerBased={isServerBased}
+                currentUser={currentUser}
+              />
             </div>
           </div>
         </div>
@@ -532,7 +738,7 @@ export const WeeklyCalendarUI = ({
                   placeholder="일정 명을 적어주세요."
                   className="w-full bg-gray-50 border-0 border-b border-gray-200 px-2 py-2 mb-3 focus:outline-none focus:border-gray-400"
                   value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  onChange={(e) => formHandlers.setTitle(e.target.value)}
                 />
                 
                 <div className="flex gap-3 mb-3">
@@ -547,7 +753,7 @@ export const WeeklyCalendarUI = ({
                       <select
                         className="ml-2 w-full bg-transparent border-0 focus:outline-none appearance-none"
                         value={startSlot || ""}
-                        onChange={(e) => calendarLogic.setStartSlot(e.target.value)}
+                        onChange={(e) => formHandlers.setStartSlot(e.target.value)}
                       >
                         {timeSlots.map(time => (
                           <option key={`start-${time}`} value={time}>{time}</option>
@@ -567,7 +773,7 @@ export const WeeklyCalendarUI = ({
                       <select
                         className="ml-2 w-full bg-transparent border-0 focus:outline-none appearance-none"
                         value={form.end}
-                        onChange={(e) => setForm({ ...form, end: e.target.value })}
+                        onChange={(e) => formHandlers.setEnd(e.target.value)}
                       >
                         {timeSlots
                           .filter((t) => !startSlot || parseTimeToMinutes(t) > parseTimeToMinutes(startSlot))
@@ -583,10 +789,10 @@ export const WeeklyCalendarUI = ({
                   placeholder="내용을 적어주세요"
                   className="w-full h-24 bg-white border rounded-md p-3 mb-3 focus:outline-none focus:border-gray-400 resize-none"
                   value={form.description || ""}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  onChange={(e) => formHandlers.setDescription(e.target.value)}
                 ></textarea>
                 
-                {/* 반복 옵션 영역 */}
+                {/* 태그 선택 영역 */}
                 <div className="mb-3">
                   <h3 className="font-medium mb-2">태그 선택</h3>
                   <div className="h-48 overflow-y-auto pr-1 border rounded-md p-3 bg-white">
@@ -672,31 +878,38 @@ export const WeeklyCalendarUI = ({
               <button
                 className="w-full bg-green-500 hover:bg-green-600 text-white text-center py-3 rounded-lg text-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleAdd}
-                disabled={!form.title || !startSlot || !form.end || isLoading}
+                disabled={!form.title || !startSlot || !form.end || isLoading || isSaving}
               >
-                {isLoading ? (
+                {isLoading || isSaving ? (
                   <div className="flex items-center justify-center">
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    저장 중...
+                    {isSaving ? '저장 중...' : '로딩 중...'}
                   </div>
                 ) : (
                   '일정 추가하기'
                 )}
               </button>
 
-              {/* 서버 연동 상태 정보 */}
+              {/* ✅ 서버 연동 상태 정보 - 개선된 버전 */}
               {isServerBased && (
                 <div className="mt-3 p-2 bg-blue-50 rounded-lg text-xs text-blue-700">
                   <div className="flex items-center justify-between">
                     <span>🌐 서버 자동 저장 활성화</span>
-                    {lastSyncTime && (
+                    {lastSyncTime && !isLoading && !isSaving && (
                       <span className="text-blue-500">
-                        {lastSyncTime.toLocaleTimeString('ko-KR')}
+                        ✅ {lastSyncTime.toLocaleTimeString('ko-KR')}
+                      </span>
+                    )}
+                    {(isLoading || isSaving) && (
+                      <span className="text-orange-600">
+                        {isSaving ? '💾 저장 중...' : '🔄 로딩 중...'}
                       </span>
                     )}
                   </div>
                   <div className="mt-1 text-blue-600">
-                    모든 변경사항이 실시간으로 서버에 저장됩니다
+                    {isSaving ? '서버에 데이터를 저장하고 있습니다' :
+                     isLoading ? '서버에서 최신 데이터를 가져오고 있습니다' :
+                     '모든 변경사항이 실시간으로 서버에 저장됩니다'}
                   </div>
                 </div>
               )}
