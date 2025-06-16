@@ -1,13 +1,12 @@
-// Appcopy.jsx - 완전 서버 기반 버전 + 무한동기화 해결 + /weekly 라우트 추가
+// Appcopy.jsx - 완전 서버 기반 버전 + 무한동기화 해결 (기존 구조 유지)
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
 import CalendarPage from './pages/CalendarPage';
+import DayDetailPagecopy from './pages/DayDetailPagecopy';
 import MonthlyPlanPage from './pages/MonthlyPlanPage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminMemberView from './pages/AdminMemberView';
-// ✅ WeeklyCalendar 임포트 (기존 DayDetailPagecopy 대체)
-import WeeklyCalendar from './pages/DayDetailPagecopy';
 
 // ✨ Supabase 전용 import (로컬 저장소 시스템 제거)
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './pages/utils/supabaseStorage.js';
@@ -48,7 +47,7 @@ function Appcopy() {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
-  // 🔧 서버 저장 상태 관리
+  // 🔧 서버 저장 상태 관리 (무한동기화 방지 강화)
   const isSavingRef = useRef(false);
   const saveTimeoutRef = useRef(null);
   const lastSaveDataRef = useRef('');
@@ -78,7 +77,7 @@ function Appcopy() {
     return JSON.stringify(obj1) === JSON.stringify(obj2);
   }, []);
 
-  // 🔧 데이터 해시 생성 (변경 감지용)
+  // 🔧 데이터 해시 생성 (변경 감지용) - 개선
   const generateDataHash = useCallback((schedules, tags, tagItems, monthlyPlans, monthlyGoals) => {
     return JSON.stringify({
       s: schedules?.length || 0,
@@ -86,8 +85,9 @@ function Appcopy() {
       ti: tagItems?.length || 0,
       mp: monthlyPlans?.length || 0,
       mg: monthlyGoals?.length || 0,
-      sData: schedules?.slice(0, 5), // 최근 5개 샘플링
-      timestamp: Math.floor(Date.now() / 1000) // 초 단위
+      // 최근 데이터 샘플링으로 변경 감지 정확도 향상
+      sData: schedules?.slice(-3) || [], // 최근 3개
+      timestamp: Math.floor(Date.now() / 10000) // 10초 단위로 타임스탬프
     });
   }, []);
 
@@ -120,7 +120,7 @@ function Appcopy() {
     }
   }, []);
 
-  // ✨ 개선된 서버에 사용자 데이터 저장 (중복 저장 방지 강화)
+  // ✨ 개선된 서버에 사용자 데이터 저장 (무한동기화 방지 강화)
   const saveUserDataToServer = useCallback(async () => {
     if (!currentUser || isLoading || isAdmin) return;
 
@@ -174,7 +174,7 @@ function Appcopy() {
       // ✅ 일정 시간 후 저장 플래그 해제 (네트워크 지연 고려)
       setTimeout(() => {
         isSavingRef.current = false;
-      }, 1500); // 1.5초로 증가
+      }, 2000); // 2초로 증가
     }
   }, [currentUser, isLoading, isAdmin, schedules, tags, tagItems, monthlyPlans, monthlyGoals, checkIsAdmin, generateDataHash]);
 
@@ -423,7 +423,36 @@ function Appcopy() {
     setDataLoaded(true);
   }, [checkIsAdmin, loadUserDataFromServer, generateDataHash]);
 
-  // ✅ 개선된 자동 저장 로직 (무한 루프 방지)
+  // ✨ 개선된 로그인 상태 확인 (세션 기반)
+  useEffect(() => {
+    const checkLoginStatus = async () => {
+      console.log('🔐 로그인 상태 확인 시작 (세션 기반)');
+      
+      const currentUser = sessionStorage.getItem('currentUser');
+      const userType = sessionStorage.getItem('userType');
+      
+      console.log('🔐 저장된 세션 정보:', { currentUser, userType });
+      
+      if (currentUser) {
+        setIsLoggedIn(true);
+        setCurrentUser(currentUser);
+        
+        // 데이터 로딩을 완전히 완료한 후에만 다음 단계로
+        await loadCurrentUserData(currentUser);
+        console.log('✅ 서버 기반 모든 초기화 완료');
+      } else {
+        console.log('❌ 세션 정보 없음');
+        setIsLoading(false);
+        setDataLoaded(true);
+      }
+      
+      setIsLoading(false);
+    };
+    
+    checkLoginStatus();
+  }, [loadCurrentUserData]);
+
+  // ✅ 개선된 자동 저장 로직 (무한 루프 방지 강화)
   useEffect(() => {
     if (!currentUser || isLoading || isAdmin || !dataLoaded) return;
 
@@ -485,35 +514,6 @@ function Appcopy() {
     setMonthlyGoals(newGoals);
     console.log('🎯 월간목표 상태 업데이트:', newGoals?.length || 0, '개');
   }, []);
-
-  // ✨ 개선된 로그인 상태 확인 (세션 기반)
-  useEffect(() => {
-    const checkLoginStatus = async () => {
-      console.log('🔐 로그인 상태 확인 시작 (세션 기반)');
-      
-      const currentUser = sessionStorage.getItem('currentUser');
-      const userType = sessionStorage.getItem('userType');
-      
-      console.log('🔐 저장된 세션 정보:', { currentUser, userType });
-      
-      if (currentUser) {
-        setIsLoggedIn(true);
-        setCurrentUser(currentUser);
-        
-        // 데이터 로딩을 완전히 완료한 후에만 다음 단계로
-        await loadCurrentUserData(currentUser);
-        console.log('✅ 서버 기반 모든 초기화 완료');
-      } else {
-        console.log('❌ 세션 정보 없음');
-        setIsLoading(false);
-        setDataLoaded(true);
-      }
-      
-      setIsLoading(false);
-    };
-    
-    checkLoginStatus();
-  }, [loadCurrentUserData]);
 
   // ✨ 수정된 로그아웃 함수 (세션 기반)
   const handleLogout = useCallback(() => {
@@ -656,6 +656,7 @@ function Appcopy() {
           }
         />
 
+        {/* ✅ 기존 구조 유지: App.jsx에서 props로 데이터 전달 */}
         <Route
           path="/calendar"
           element={
@@ -667,6 +668,8 @@ function Appcopy() {
                 setTags={updateTags}
                 tagItems={tagItems}
                 setTagItems={updateTagItems}
+                monthlyGoals={monthlyGoals}
+                setMonthlyGoals={updateMonthlyGoals}
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 lastSyncTime={lastSyncTime}
@@ -676,31 +679,21 @@ function Appcopy() {
           }
         />
 
-        {/* ✅ 주간 캘린더 라우트 (기존 DayDetailPagecopy 대체) */}
-        <Route
-          path="/weekly"
-          element={
-            <ProtectedRoute>
-              <WeeklyCalendar
-                currentUser={currentUser}
-                onLogout={handleLogout}
-                isServerBased={true}
-                enableAutoRefresh={false}
-              />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* ✅ 기존 /day/:date 라우트를 /weekly로 변경 */}
         <Route
           path="/day/:date"
           element={
             <ProtectedRoute>
-              <WeeklyCalendar
+              <DayDetailPagecopy
+                schedules={schedules}
+                setSchedules={updateSchedules}
+                tags={tags}
+                setTags={updateTags}
+                tagItems={tagItems}
+                setTagItems={updateTagItems}
                 currentUser={currentUser}
                 onLogout={handleLogout}
+                lastSyncTime={lastSyncTime}
                 isServerBased={true}
-                enableAutoRefresh={false}
               />
             </ProtectedRoute>
           }
