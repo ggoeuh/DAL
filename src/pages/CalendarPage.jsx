@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -198,83 +198,61 @@ const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) =
   );
 };
 
-const CalendarPage = ({ currentUser, onLogout }) => {
+// ✅ 기존 구조 유지: App.jsx에서 props로 데이터 받음 (무한동기화 해결)
+const CalendarPage = ({ 
+  schedules, 
+  setSchedules,
+  tags,
+  setTags,
+  tagItems,
+  setTagItems,
+  monthlyGoals,
+  setMonthlyGoals,
+  currentUser, 
+  onLogout, 
+  lastSyncTime 
+}) => {
   const currentDate = new Date();
   const navigate = useNavigate();
 
-  // 서버에서 불러온 데이터 상태
-  const [schedules, setSchedules] = useState([]);
-  const [monthlyGoals, setMonthlyGoals] = useState([]);
-  const [tags, setTags] = useState([]);
-  const [tagItems, setTagItems] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // ✅ 로딩 상태만 로컬에서 관리 (서버 호출 제거)
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState(null);
 
-  // 서버에서 데이터 불러오기 (useCallback으로 최적화)
-  const loadDataFromServer = useCallback(async () => {
-    if (!currentUser) {
-      setIsLoading(false);
-      return;
-    }
-
+  // ✅ 수동 새로고침 함수 (App.jsx의 데이터를 다시 로드)
+  const handleManualRefresh = useCallback(async () => {
+    if (isLoading || isSaving || !currentUser) return;
+    
+    console.log('🔄 수동 새로고침 시작');
+    setIsLoading(true);
+    
     try {
-      setIsLoading(true);
-      console.log('🔄 서버에서 사용자 데이터 불러오기 시작:', currentUser);
-
       const result = await loadUserDataFromDAL(currentUser);
       
       if (result.success && result.data) {
-        setSchedules(result.data.schedules || []);
-        setMonthlyGoals(result.data.monthlyGoals || []);
-        setTags(result.data.tags || []);
-        setTagItems(result.data.tagItems || []);
-        setLastSyncTime(new Date());
+        // App.jsx의 상태 업데이트 함수들 호출
+        if (setSchedules) setSchedules(result.data.schedules || []);
+        if (setTags) setTags(result.data.tags || []);
+        if (setTagItems) setTagItems(result.data.tagItems || []);
+        if (setMonthlyGoals) setMonthlyGoals(result.data.monthlyGoals || []);
         
-        console.log('✅ 서버 데이터 로드 성공:', {
-          schedules: result.data.schedules?.length || 0,
-          monthlyGoals: result.data.monthlyGoals?.length || 0,
-          tags: result.data.tags?.length || 0,
-          tagItems: result.data.tagItems?.length || 0
-        });
+        console.log('✅ 수동 새로고침 완료');
       } else {
-        console.warn('⚠️ 서버 데이터 로드 실패 또는 빈 데이터:', result.error);
-        // 서버에 데이터가 없는 경우 빈 배열로 초기화
-        setSchedules([]);
-        setMonthlyGoals([]);
-        setTags([]);
-        setTagItems([]);
-        setLastSyncTime(new Date());
+        console.warn('⚠️ 새로고침 데이터 없음');
       }
     } catch (error) {
-      console.error('❌ 서버 데이터 로드 중 오류:', error);
-      alert('서버 데이터를 불러오는 중 오류가 발생했습니다: ' + error.message);
+      console.error('❌ 수동 새로고침 실패:', error);
+      alert('새로고침 중 오류가 발생했습니다: ' + error.message);
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser]);
+  }, [currentUser, isLoading, isSaving, setSchedules, setTags, setTagItems, setMonthlyGoals]);
 
-  // 수동 새로고침 함수
-  const handleManualRefresh = useCallback(async () => {
-    if (isLoading || isSaving) return;
-    
-    console.log('🔄 수동 새로고침 시작');
-    setIsSaving(true);
-    
-    try {
-      await loadDataFromServer();
-      console.log('✅ 수동 새로고침 완료');
-    } catch (error) {
-      console.error('❌ 수동 새로고침 실패:', error);
-    } finally {
-      setIsSaving(false);
-    }
-  }, [loadDataFromServer, isLoading, isSaving]);
-
-  // 컴포넌트 마운트시에만 데이터 로드
-  useEffect(() => {
-    loadDataFromServer();
-  }, [loadDataFromServer]);
+  // ✅ 서버 데이터 리셋 후 콜백
+  const handleDataChanged = useCallback(async () => {
+    console.log('🔄 서버 데이터 변경 후 새로고침');
+    await handleManualRefresh();
+  }, [handleManualRefresh]);
 
   // 현재 월의 날짜들
   const days = eachDayOfInterval({
@@ -283,7 +261,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
   });
   
   // 현재 월의 일정들만 필터링
-  const currentMonthSchedules = schedules.filter(schedule => {
+  const currentMonthSchedules = (schedules || []).filter(schedule => {
     const scheduleDate = new Date(schedule.date);
     const currentMonth = format(currentDate, 'yyyy-MM');
     const scheduleMonth = format(scheduleDate, 'yyyy-MM');
@@ -291,7 +269,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
   });
 
   // 현재 월의 월간 목표 가져오기
-  const currentMonthGoals = monthlyGoals.find(mg => mg.month === format(currentDate, 'yyyy-MM'))?.goals || [];
+  const currentMonthGoals = (monthlyGoals || []).find(mg => mg.month === format(currentDate, 'yyyy-MM'))?.goals || [];
 
   // 태그별 총 시간 계산 (실제 사용 시간)
   const calculateMonthlyTagTotals = () => {
@@ -357,19 +335,6 @@ const CalendarPage = ({ currentUser, onLogout }) => {
   // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
   const allTagTypes = [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
   
-  if (isLoading) {
-    return (
-      <div className="p-6 max-w-6xl mx-auto">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">서버에서 데이터를 불러오는 중...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* 헤더 */}
@@ -412,7 +377,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
               
               <ServerDataResetButton 
                 currentUser={currentUser} 
-                onDataChanged={loadDataFromServer}
+                onDataChanged={handleDataChanged}
               />
             </div>
           )}
@@ -526,7 +491,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
             const isToday = format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
             const isWeekend = index % 7 === 0 || index % 7 === 6;
             const dateStr = format(day, 'yyyy-MM-dd');
-            const daySchedules = schedules.filter(schedule => schedule.date === dateStr);
+            const daySchedules = (schedules || []).filter(schedule => schedule.date === dateStr);
             const dayTotalHours = getDayTotalHours(day);
             
             return (
@@ -537,7 +502,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
                   ${isToday ? 'bg-blue-50' : ''}
                   ${isWeekend ? 'bg-gray-25' : ''}
                 `}
-                onClick={() => navigate(`/weekly?date=${format(day, 'yyyy-MM-dd')}`)}
+                onClick={() => navigate(`/day/${format(day, 'yyyy-MM-dd')}`)}
               >
                 {/* 날짜 표시 행 */}
                 <div className="flex justify-between items-center mb-2">
