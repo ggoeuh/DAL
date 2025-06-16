@@ -96,18 +96,59 @@ const checkScheduleOverlap = (schedules, newSchedule) => {
 
 // 커스텀 훅: 캘린더 로직
 export const useWeeklyCalendarLogic = ({ 
-  schedules = [], 
-  setSchedules, 
-  tags = [], 
-  setTags, 
-  tagItems = [], 
-  setTagItems, 
-  currentUser 
-}) => {
-  // 안전한 배열 보장
-  const safeSchedules = Array.isArray(schedules) ? schedules : [];
-  const safeTags = Array.isArray(tags) ? tags : [];
-  const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
+  const currentDate = new Date();
+  const navigate = useNavigate();
+
+  // 서버에서 불러온 데이터 상태
+  const [schedules, setSchedules] = useState([]);
+  const [monthlyGoals, setMonthlyGoals] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [tagItems, setTagItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+
+  // 서버에서 데이터 불러오기
+  const loadDataFromServer = async () => {
+    if (!currentUser) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      console.log('🔄 서버에서 사용자 데이터 불러오기 시작:', currentUser);
+
+      const result = await loadUserDataFromDAL(currentUser);
+      
+      if (result.success && result.data) {
+        setSchedules(result.data.schedules || []);
+        setMonthlyGoals(result.data.monthlyGoals || []);
+        setTags(result.data.tags || []);
+        setTagItems(result.data.tagItems || []);
+        setLastSyncTime(new Date());
+        
+        console.log('✅ 서버 데이터 로드 성공:', {
+          schedules: result.data.schedules?.length || 0,
+          monthlyGoals: result.data.monthlyGoals?.length || 0,
+          tags: result.data.tags?.length || 0,
+          tagItems: result.data.tagItems?.length || 0
+        });
+      } else {
+        console.warn('⚠️ 서버 데이터 로드 실패 또는 빈 데이터:', result.error);
+        // 서버에 데이터가 없는 경우 빈 배열로 초기화
+        setSchedules([]);
+        setMonthlyGoals([]);
+        setTags([]);
+        setTagItems([]);
+        setLastSyncTime(new Date());
+      }
+    } catch (error) {
+      console.error('❌ 서버 데이터 로드 중 오류:', error);
+      alert('서버 데이터를 불러오는 중 오류가 발생했습니다: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // 날짜 상태 관리
   const today = new Date();
