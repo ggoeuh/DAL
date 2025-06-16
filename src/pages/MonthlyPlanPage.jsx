@@ -90,7 +90,9 @@ const MonthlyPlan = ({
         setMonthlyPlans(serverData.monthlyPlans || []);
         
         // monthlyPlans를 plans로 설정 (호환성)
-        setPlans(serverData.monthlyPlans || []);
+        let finalPlans = serverData.monthlyPlans || [];
+        
+        setPlans(finalPlans);
         setLastSyncTime(new Date());
 
       } else {
@@ -562,10 +564,10 @@ const MonthlyPlan = ({
                                     )}
                                   </div>
                                 </div>
-                                {item.description && (
+                                {item.description && item.description.trim() && (
                                   <div className={`text-sm ${colors.text} opacity-75`}>
-                                    {item.description.split(', ').filter(desc => desc.trim()).map((desc, idx) => (
-                                      <div key={idx}>• {desc.trim()}</div>
+                                    {item.description.split(', ').map((desc, idx) => (
+                                      <div key={idx}>• {desc}</div>
                                     ))}
                                   </div>
                                 )}
