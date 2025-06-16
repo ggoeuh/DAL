@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { saveUserDataToDAL } from './utils/supabaseStorage.js';
+import { useNavigate } from "react-router-dom";
 
 const SLOT_HEIGHT = 24;
 const DAYS_OF_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
