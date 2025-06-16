@@ -934,7 +934,5 @@ export const WeeklyCalendarUI = ({
   );
 };
 
+// ✅ default export만 사용 (중복 export 제거)
 export default WeeklyCalendarUI;
-
-// ✅ 하위 호환성을 위해 named export도 제공
-export { WeeklyCalendarUI };
