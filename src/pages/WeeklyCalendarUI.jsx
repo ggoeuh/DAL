@@ -338,7 +338,7 @@ export const WeeklyCalendarUI = ({
                         isFocusDay ? 'bg-blue-50 font-bold' : 'bg-white hover:bg-gray-50'
                       } ${isToday ? 'border-blue-300 border-2' : ''}`}
                       style={{ flexGrow: isFocusDay ? 2 : 1.5, minWidth: 0 }}
-                      onClick={() => handleDayFocus(dayIndex)}
+                      onClick={() => handleDayFocus(date)} // dayIndex 대신 date 전달
                     >
                       <div className={isToday ? 'text-blue-600 font-bold' : ''}>{getDayOfWeek(date)}</div>
                       <div className={`text-sm ${isToday ? 'text-blue-600 font-bold' : ''}`}>{formatDate(date)}</div>
@@ -346,7 +346,6 @@ export const WeeklyCalendarUI = ({
                   );
                 })}
               </div>
-
               {/* 콘텐츠 */}
               <div className="flex">
                 {/* 시간 열 */}
@@ -637,7 +636,7 @@ export const WeeklyCalendarUI = ({
                               ? "bg-blue-100 text-blue-700 border-blue-300"
                               : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                           }`}
-                          onClick={() => handleWeekdaySelect(day)}
+                          onClick={() => handleDayFocus(date)} // 실제 Date 객체 전달
                         >
                           {day}
                         </button>
