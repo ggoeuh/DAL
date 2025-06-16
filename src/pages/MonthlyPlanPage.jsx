@@ -86,16 +86,12 @@ const MonthlyPlan = ({
         setSchedules(serverData.schedules || []);
         setTags(serverData.tags || []);
         setTagItems(serverData.tagItems || []);
-        setMonthlyGoals(serverData.monthlyGoals || []); // ✅ 중요: 목표 데이터 설정
+        setMonthlyGoals(serverData.monthlyGoals || []);
         setMonthlyPlans(serverData.monthlyPlans || []);
         
         // monthlyPlans를 plans로 설정 (호환성)
         setPlans(serverData.monthlyPlans || []);
         setLastSyncTime(new Date());
-
-        // ✅ 디버깅: 목표 데이터 확인
-        console.log('🎯 로드된 월간 목표:', serverData.monthlyGoals);
-        console.log('🎯 현재 월 키:', currentMonthKey);
 
       } else {
         console.warn('⚠️ 서버 데이터 없음 또는 로드 실패:', result.error);
@@ -130,8 +126,6 @@ const MonthlyPlan = ({
         monthlyGoals: updatedData.monthlyGoals || monthlyGoals,
         monthlyPlans: updatedData.monthlyPlans || monthlyPlans
       };
-
-      console.log('💾 저장할 데이터:', dataToSave);
 
       const result = await saveUserDataToDAL(currentUser, dataToSave);
       
@@ -179,15 +173,11 @@ const MonthlyPlan = ({
       goalsByTagType[plan.tagType] += plan.estimatedTime;
     });
 
-    console.log('📊 태그타입별 집계:', goalsByTagType);
-
     // 목표 배열 생성
     const goalsArray = Object.entries(goalsByTagType).map(([tagType, totalHours]) => ({
       tagType,
       targetHours: `${totalHours.toString().padStart(2, '0')}:00`
     }));
-
-    console.log('🎯 생성된 목표 배열:', goalsArray);
 
     // 기존 월간 목표에서 현재 월 목표 업데이트
     const updatedGoals = [...safeMonthlyGoals];
@@ -195,13 +185,9 @@ const MonthlyPlan = ({
     
     if (existingIndex >= 0) {
       updatedGoals[existingIndex] = { month: currentMonthKey, goals: goalsArray };
-      console.log('📝 기존 목표 업데이트');
     } else {
       updatedGoals.push({ month: currentMonthKey, goals: goalsArray });
-      console.log('📝 새 목표 추가');
     }
-
-    console.log('🎯 최종 업데이트된 목표:', updatedGoals);
 
     setMonthlyGoals(updatedGoals);
     
@@ -211,7 +197,7 @@ const MonthlyPlan = ({
       monthlyPlans: updatedPlans
     });
 
-    console.log('✅ 월간 목표 생성 및 저장 완료:', { currentUser, currentMonthKey, goalsArray });
+    console.log('✅ 월간 목표 생성 및 저장 완료');
   }, [currentUser, currentMonthKey, safeMonthlyGoals, saveUserDataToServer]);
 
   // ✨ 초기 데이터 로드
@@ -295,31 +281,17 @@ const MonthlyPlan = ({
     return tag ? tag.color : { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' };
   }, [safeTags]);
 
-  // ✅ 계획과 목표를 함께 그룹화하는 함수
-  const getGroupedPlansWithGoals = useMemo(() => {
+  // ✅ 블록 UI를 위한 태그별 그룹화 함수 (기존 스타일 유지)
+  const getGroupedPlans = useMemo(() => {
     const grouped = {};
-    
-    // 계획을 태그타입별로 그룹화
     plans.forEach(plan => {
       if (!grouped[plan.tagType]) {
-        grouped[plan.tagType] = {
-          plans: [],
-          targetHours: 0,
-          plannedHours: 0
-        };
+        grouped[plan.tagType] = [];
       }
-      grouped[plan.tagType].plans.push(plan);
-      grouped[plan.tagType].plannedHours += plan.estimatedTime;
+      grouped[plan.tagType].push(plan);
     });
-
-    // 목표 시간 추가
-    Object.keys(grouped).forEach(tagType => {
-      grouped[tagType].targetHours = getTargetHoursForTagType(tagType);
-    });
-
-    console.log('📊 계획과 목표 그룹화 결과:', grouped);
     return grouped;
-  }, [plans, getTargetHoursForTagType]);
+  }, [plans]);
 
   const handleAddPlan = useCallback(async () => {
     const firstDesc = form.descriptions[0]?.trim();
@@ -384,7 +356,7 @@ const MonthlyPlan = ({
       // 서버에서 최신 데이터 로드
       await loadUserDataFromServer();
       
-      // 데이터 정리 로직 (예: 중복 제거, 유효하지 않은 데이터 제거)
+      // 데이터 정리 로직
       const cleanedTags = tags.filter(tag => tag.tagType && tag.tagType.trim());
       const cleanedTagItems = tagItems.filter(item => item.tagType && item.tagName && item.tagType.trim() && item.tagName.trim());
       const cleanedPlans = plans.filter(plan => plan.tagType && plan.tag && plan.tagType.trim() && plan.tag.trim());
@@ -434,7 +406,6 @@ const MonthlyPlan = ({
             <span className="text-blue-600">
               사용자: {currentUser}
             </span>
-            {/* ✅ 목표 정보 표시 */}
             <span className="text-purple-600">
               이번 달 목표: {currentMonthGoals.length}개
             </span>
@@ -459,7 +430,7 @@ const MonthlyPlan = ({
         </div>
       </div>
 
-      {/* 왼쪽: 월간 계획 */}
+      {/* 왼쪽: 월간 계획 - 기존 블록 스타일 유지 */}
       <div className="flex-1 p-6 overflow-hidden mt-12">
         <div className="bg-white rounded-lg shadow-sm p-6 h-full">
           {/* 헤더 */}
@@ -500,7 +471,7 @@ const MonthlyPlan = ({
             </div>
           </div>
 
-          {/* ✅ 서버 기반 안내 메시지 - 목표 정보 포함 */}
+          {/* 서버 기반 안내 메시지 */}
           <div className="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
             <p className="text-green-800 text-sm">
               <span className="font-medium">🌐 서버 기반:</span> 모든 변경사항이 Supabase 서버에 자동으로 저장됩니다. 
@@ -515,30 +486,30 @@ const MonthlyPlan = ({
             )}
           </div>
 
-          {/* ✅ 태그별 그룹화된 계획들 - 목표와 함께 표시 */}
+          {/* ✅ 기존 블록 스타일의 태그별 그룹화된 계획들 */}
           <div className="flex-1 overflow-y-auto">
             <div className="space-y-6">
-              {Object.entries(getGroupedPlansWithGoals).map(([tagType, data]) => {
+              {Object.entries(getGroupedPlans).map(([tagType, tagPlans]) => {
                 const colors = getTagColor(tagType);
-                const { plans: tagPlans, targetHours, plannedHours } = data;
+                const totalEstimatedTime = tagPlans.reduce((sum, plan) => sum + plan.estimatedTime, 0);
                 
-                // ✅ 목표 달성률 계산
-                const achievementRate = targetHours > 0 ? Math.round((plannedHours / targetHours) * 100) : 0;
-                const isOverTarget = plannedHours > targetHours;
-                const isUnderTarget = plannedHours < targetHours && targetHours > 0;
+                // ✅ 목표 시간 조회
+                const targetHours = getTargetHoursForTagType(tagType);
+                const achievementRate = targetHours > 0 ? Math.round((totalEstimatedTime / targetHours) * 100) : 0;
 
                 return (
                   <div key={tagType} className="flex items-start space-x-4">
+                    {/* ✅ 왼쪽 태그 헤더 블록 */}
                     <div className="flex flex-col items-center min-w-[120px] flex-shrink-0">
                       <div className={`px-4 py-3 rounded-lg text-lg font-semibold text-left bg-white ${colors.text} w-full border-2 ${colors.border}`}>
                         <div className="font-bold">{tagType}</div>
                         <div className="text-sm mt-1 opacity-80">
-                          계획: {plannedHours}시간
+                          계획: {totalEstimatedTime}시간
                         </div>
                         {/* ✅ 목표 정보 표시 */}
                         {targetHours > 0 && (
                           <div className="text-xs mt-1">
-                            <div className={`font-medium ${targetHours === plannedHours ? 'text-green-600' : isOverTarget ? 'text-orange-600' : 'text-blue-600'}`}>
+                            <div className={`font-medium ${targetHours === totalEstimatedTime ? 'text-green-600' : totalEstimatedTime > targetHours ? 'text-orange-600' : 'text-blue-600'}`}>
                               목표: {targetHours}시간
                             </div>
                             <div className={`text-xs ${achievementRate >= 100 ? 'text-green-600' : achievementRate >= 80 ? 'text-blue-600' : 'text-orange-600'}`}>
@@ -554,6 +525,7 @@ const MonthlyPlan = ({
                       </div>
                     </div>
 
+                    {/* ✅ 오른쪽 계획 블록들 (가로 스크롤) */}
                     <div className="flex-1 min-w-0">
                       <div className="overflow-x-auto">
                         <div className="flex space-x-4 pb-4" style={{ minWidth: 'max-content' }}>
@@ -591,7 +563,7 @@ const MonthlyPlan = ({
                 );
               })}
               
-              {Object.keys(getGroupedPlansWithGoals).length === 0 && (
+              {Object.keys(getGroupedPlans).length === 0 && (
                 <div className="text-center py-12 text-gray-500">
                   <h3 className="text-xl font-medium mb-2">서버에 등록된 월간 계획이 없습니다</h3>
                   <p className="text-sm mb-4">오른쪽 패널에서 새로운 계획을 추가해보세요!</p>
@@ -807,31 +779,6 @@ const MonthlyPlan = ({
                     );
                   })}
                 </div>
-              </div>
-            )}
-
-            {/* ✅ 디버깅 정보 (개발 중에만 표시) */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <h4 className="text-sm font-medium text-gray-800 mb-2">🔧 디버깅 정보</h4>
-                <div className="text-xs text-gray-600 space-y-1">
-                  <div>현재 월: {currentMonthKey}</div>
-                  <div>로드된 목표: {safeMonthlyGoals.length}개</div>
-                  <div>현재 월 목표: {currentMonthGoals.length}개</div>
-                  <div>계획: {plans.length}개</div>
-                  <div>태그: {safeTags.length}개</div>
-                  <div>태그 아이템: {safeTagItems.length}개</div>
-                </div>
-                {currentMonthGoals.length > 0 && (
-                  <div className="mt-2 text-xs text-gray-600">
-                    <div className="font-medium">목표 상세:</div>
-                    {currentMonthGoals.map((goal, idx) => (
-                      <div key={idx}>
-                        {goal.tagType}: {goal.targetHours}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
           </div>
