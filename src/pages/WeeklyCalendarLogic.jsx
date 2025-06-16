@@ -389,32 +389,29 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   };
 
   // 포커스 날짜 변경 핸들러
-  const handleDayFocus = (clickedDate) => { // dayIndex 대신 실제 Date 객체를 받음
-    // 클릭한 날짜를 기준으로 새로운 주 생성
-    const newWeek = [];
-    const clickedDay = clickedDate.getDay(); // 0(일요일) ~ 6(토요일)
-    
-    // 클릭한 날짜가 속한 주의 일요일부터 토요일까지 생성
-    for (let i = 0; i < 7; i++) {
+  const handleDayFocus = (clickedDate) => {
+    // 클릭한 날짜를 중심으로 연속된 5일 생성 (앞 2일, 클릭일, 뒤 2일)
+    const newVisibleDays = [];
+    for (let i = -2; i <= 2; i++) {
       const date = new Date(clickedDate);
-      date.setDate(clickedDate.getDate() - clickedDay + i);
+      date.setDate(clickedDate.getDate() + i);
+      newVisibleDays.push(date);
+    }
+    
+    // 이 5일을 포함하는 주 전체를 currentWeek으로 설정
+    const startOfWeek = new Date(clickedDate);
+    startOfWeek.setDate(clickedDate.getDate() - clickedDate.getDay());
+    
+    const newWeek = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startOfWeek);
+      date.setDate(startOfWeek.getDate() + i);
       newWeek.push(date);
     }
     
     setCurrentWeek(newWeek);
-    
-    // 클릭한 날짜가 중앙(인덱스 3)에 오도록 visibleDays 설정
-    const newVisibleDays = [];
-    const focusPosition = 3;
-    
-    for (let i = 0; i < 5; i++) {
-      const offset = i - focusPosition;
-      const newIndex = (clickedDay + offset + 7) % 7;
-      newVisibleDays.push(newIndex);
-    }
-    
-    setVisibleDays(newVisibleDays);
-    setFocusedDayIndex(clickedDay); // 클릭한 날짜의 요일 인덱스로 설정
+    setVisibleDays([0, 1, 2, 3, 4]); // 항상 첫 5일
+    setFocusedDayIndex(2); // 가운데가 포커스
   };
 
   // 시간 슬롯 계산 헬퍼 함수
