@@ -1,6 +1,128 @@
 import React, { useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
+// 🛠️ 안전한 데이터 필터링 함수들
+const createSafeSchedules = (rawSchedules) => {
+  if (!Array.isArray(rawSchedules)) {
+    console.warn('⚠️ schedules가 배열이 아닙니다:', rawSchedules);
+    return [];
+  }
+
+  // 🔍 디버깅: 원본 데이터 상태 확인
+  console.log('🔍 원본 schedules 데이터:', {
+    총개수: rawSchedules.length,
+    샘플: rawSchedules.slice(0, 3),
+    ID없는항목: rawSchedules.filter(s => !s?.id).length,
+    중복가능성: rawSchedules.length - new Set(rawSchedules.map(s => s?.id)).size
+  });
+
+  // Step 1: ID가 없거나 유효하지 않은 항목 필터링
+  const withValidIds = rawSchedules.filter(schedule => {
+    if (!schedule) {
+      console.warn('❌ null/undefined schedule 발견');
+      return false;
+    }
+    
+    if (!schedule.id || schedule.id === '' || schedule.id === null) {
+      console.warn('❌ ID가 없는 schedule:', schedule);
+      return false;
+    }
+    
+    return true;
+  });
+
+  // Step 2: 중복 ID 제거 (첫 번째 것만 유지)
+  const deduplicatedSchedules = withValidIds.filter((schedule, index, array) => {
+    const firstIndex = array.findIndex(s => s.id === schedule.id);
+    
+    if (firstIndex !== index) {
+      console.warn(`🚨 중복 ID "${schedule.id}" 제거:`, schedule);
+      return false;
+    }
+    
+    return true;
+  });
+
+  // Step 3: 빈 ID나 잘못된 형식 재검증
+  const finalSchedules = deduplicatedSchedules.map(schedule => {
+    // ID가 문자열이 아니면 문자열로 변환
+    if (typeof schedule.id !== 'string') {
+      console.warn('⚠️ ID가 문자열이 아님, 변환:', schedule.id);
+      schedule.id = String(schedule.id);
+    }
+    
+    // 필수 필드 기본값 설정
+    return {
+      id: schedule.id,
+      title: schedule.title || '제목 없음',
+      start: schedule.start || '09:00',
+      end: schedule.end || '10:00',
+      date: schedule.date || new Date().toISOString().split('T')[0],
+      tag: schedule.tag || '',
+      tagType: schedule.tagType || '',
+      description: schedule.description || '',
+      done: Boolean(schedule.done),
+      ...schedule // 나머지 필드 유지
+    };
+  });
+
+  // 🔍 최종 결과 로깅
+  console.log('✅ 안전한 schedules 생성 완료:', {
+    원본개수: rawSchedules.length,
+    최종개수: finalSchedules.length,
+    제거된개수: rawSchedules.length - finalSchedules.length,
+    최종ID들: finalSchedules.map(s => s.id)
+  });
+
+  return finalSchedules;
+};
+
+// 디버깅 훅
+const useScheduleDebugging = (safeSchedules) => {
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    
+    console.log('🔍 WeeklyCalendarUI 렌더링 시 데이터 검증');
+    
+    if (!Array.isArray(safeSchedules)) {
+      console.error('❌ safeSchedules가 배열이 아닙니다:', safeSchedules);
+      return;
+    }
+
+    // ID 중복 재검사
+    const ids = safeSchedules.map(s => s.id);
+    const uniqueIds = [...new Set(ids)];
+    
+    if (ids.length !== uniqueIds.length) {
+      console.error('🚨 UI 렌더링 시점에도 중복 ID 발견!');
+      
+      // 중복된 ID들 찾기
+      const duplicates = ids.filter((id, idx) => ids.indexOf(id) !== idx);
+      const uniqueDuplicates = [...new Set(duplicates)];
+      
+      console.error('중복된 ID들:', uniqueDuplicates);
+      
+      // 각 중복 ID의 상세 정보
+      uniqueDuplicates.forEach(dupId => {
+        const conflictSchedules = safeSchedules.filter(s => s.id === dupId);
+        console.error(`ID "${dupId}"의 충돌 일정들:`, conflictSchedules);
+      });
+    } else {
+      console.log('✅ 모든 schedule ID가 고유함');
+    }
+
+    // 빈 값 검사
+    const invalidSchedules = safeSchedules.filter(s => 
+      !s.id || s.id === '' || !s.title || !s.start || !s.end
+    );
+    
+    if (invalidSchedules.length > 0) {
+      console.warn('⚠️ 일부 필수 필드가 없는 일정들:', invalidSchedules);
+    }
+
+  }, [safeSchedules]);
+};
+
 export const WeeklyCalendarUI = ({ 
   calendarLogic,
   currentUser,
@@ -56,7 +178,7 @@ export const WeeklyCalendarUI = ({
     autoScrollTimer,
     
     // 계산된 값들
-    safeSchedules,
+    safeSchedules: rawSafeSchedules,
     safeTags,
     safeTagItems,
     tagTotals,
@@ -83,35 +205,13 @@ export const WeeklyCalendarUI = ({
     handleResizeEnd
   } = calendarLogic;
 
-  // 🔧 디버깅용 로그 추가 - key 중복 검증
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 Key 중복 검증:');
-      console.log('visibleDays:', visibleDays);
-      
-      // visibleDays 중복 검사
-      const uniqueVisibleDays = [...new Set(visibleDays)];
-      if (uniqueVisibleDays.length !== visibleDays.length) {
-        console.error('❌ visibleDays에 중복된 값이 있습니다:', visibleDays);
-      }
-      
-      // timeSlots 중복 검사
-      const uniqueTimeSlots = [...new Set(timeSlots)];
-      if (uniqueTimeSlots.length !== timeSlots.length) {
-        console.error('❌ timeSlots에 중복된 값이 있습니다:', timeSlots);
-      }
-      
-      // schedules ID 중복 검사
-      const scheduleIds = safeSchedules.map(s => s.id);
-      const uniqueScheduleIds = [...new Set(scheduleIds)];
-      if (uniqueScheduleIds.length !== scheduleIds.length) {
-        console.error('❌ safeSchedules에 중복된 ID가 있습니다:', scheduleIds);
-        console.error('중복된 일정들:', safeSchedules.filter((s, i, arr) => 
-          arr.findIndex(item => item.id === s.id) !== i
-        ));
-      }
-    }
-  }, [visibleDays, timeSlots, safeSchedules]);
+  // 🔧 안전한 schedules 생성 - 서버 데이터 검증 및 중복 제거
+  const safeSchedules = React.useMemo(() => {
+    return createSafeSchedules(rawSafeSchedules || []);
+  }, [rawSafeSchedules]);
+
+  // 🔍 디버깅 훅 사용
+  useScheduleDebugging(safeSchedules);
 
   // ✨ 체크박스 변경 핸들러 - useCallback 완전 제거하여 무한 루프 방지
   const handleCheckboxChange = (scheduleId, currentDone) => {
@@ -121,7 +221,7 @@ export const WeeklyCalendarUI = ({
     const updateSchedule = calendarLogic.setSchedules;
     if (updateSchedule && currentUser) {
       // 현재 schedules를 직접 가져와서 업데이트
-      const currentSchedules = calendarLogic.safeSchedules;
+      const currentSchedules = safeSchedules;
       const updated = currentSchedules.map(item =>
         item.id === scheduleId ? { ...item, done: !currentDone } : item
       );
@@ -415,11 +515,11 @@ export const WeeklyCalendarUI = ({
                             </div>
                           )}
 
-                          {/* 일정들 */}
+                          {/* 일정들 - 🔧 안전한 필터링된 데이터 사용 */}
                           {dateSchedules && dateSchedules.map((s, scheduleIndex) => {
-                            // 🔧 안전 가드 - ID가 없으면 건너뛰기
+                            // 🔧 이중 안전 가드 - ID가 없으면 건너뛰기
                             if (!s || !s.id) {
-                              console.warn('일정 ID가 없습니다:', s);
+                              console.warn('렌더링 시 ID가 없는 일정 발견:', s);
                               return null;
                             }
 
@@ -774,6 +874,21 @@ export const WeeklyCalendarUI = ({
                     모든 변경사항이 Supabase 서버에 실시간 저장됩니다
                   </p>
                 </div>
+
+                {/* 🔍 개발 모드 디버깅 정보 */}
+                {process.env.NODE_ENV === 'development' && (
+                  <div className="mt-4 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <div className="flex items-center text-yellow-800 text-sm mb-2">
+                      <span className="mr-2">🔧</span>
+                      <span className="font-medium">개발 모드 디버깅</span>
+                    </div>
+                    <div className="text-yellow-700 text-xs space-y-1">
+                      <div>총 일정: {safeSchedules?.length || 0}개</div>
+                      <div>안전 필터링 완료: ✅</div>
+                      <div>중복 ID 제거: ✅</div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
