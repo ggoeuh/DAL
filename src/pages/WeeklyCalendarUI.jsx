@@ -1,11 +1,15 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { saveUserDataToDAL } from './utils/supabaseStorage.js';
 
 export const WeeklyCalendarUI = ({ 
   calendarLogic,
   currentUser,
   onLogout,
+  // 서버 관련 새로운 props
+  isServerBased = true,
+  isLoading = false,
+  lastSyncTime = null,
+  onManualRefresh,
   // 추가 핸들러들을 props로 받음
   handleContextMenu,
   handleCopySchedule,
@@ -77,47 +81,90 @@ export const WeeklyCalendarUI = ({
     // 이벤트 핸들러들
     handleResizeStart,
     handleResizeMove,
-    handleResizeEnd
+    handleResizeEnd,
+    
+    // 서버 관련 함수들 (새로 추가)
+    saveDataToServer
   } = calendarLogic;
 
-  // 이벤트 리스너 등록
+  // 체크박스 변경 핸들러를 useCallback으로 메모이제이션
+  const handleCheckboxChange = useCallback(async (scheduleId, currentDone) => {
+    const updatedSchedules = safeSchedules.map(item =>
+      item.id === scheduleId ? { ...item, done: !currentDone } : item
+    );
+    
+    if (calendarLogic.setSchedules) {
+      calendarLogic.setSchedules(updatedSchedules);
+    }
+    
+    // 서버 기반 모드에서는 새로운 saveDataToServer 사용
+    if (isServerBased && currentUser && saveDataToServer) {
+      const result = await saveDataToServer({
+        schedules: updatedSchedules,
+        tags: safeTags,
+        tagItems: safeTagItems,
+        monthlyGoals: calendarLogic.safeMonthlyGoals
+      }, true); // silent 모드
+      
+      if (!result.success) {
+        console.error('체크박스 상태 저장 실패:', result.error);
+        // 실패 시 롤백할 수도 있음
+      }
+    }
+  }, [safeSchedules, safeTags, safeTagItems, calendarLogic, isServerBased, currentUser, saveDataToServer]);
+
+  // 이벤트 리스너 등록 - useCallback으로 메모이제이션
+  const handleClickOutside = useCallback(() => {
+    setContextMenu({ ...contextMenu, visible: false });
+  }, [contextMenu, setContextMenu]);
+
   useEffect(() => {
+    const cleanup = [];
+    
     if (resizing) {
       window.addEventListener('mousemove', handleResizeMove);
       window.addEventListener('mouseup', handleResizeEnd);
+      cleanup.push(
+        () => window.removeEventListener('mousemove', handleResizeMove),
+        () => window.removeEventListener('mouseup', handleResizeEnd)
+      );
     }
     
     if (copyingSchedule) {
       window.addEventListener('mousemove', handleCopyMove);
       window.addEventListener('mouseup', handleCopyEnd);
+      cleanup.push(
+        () => window.removeEventListener('mousemove', handleCopyMove),
+        () => window.removeEventListener('mouseup', handleCopyEnd)
+      );
     }
     
     if (dragging) {
       window.addEventListener('mousemove', handleDragMove);
       window.addEventListener('mouseup', handleDragEnd);
+      cleanup.push(
+        () => window.removeEventListener('mousemove', handleDragMove),
+        () => window.removeEventListener('mouseup', handleDragEnd)
+      );
     }
     
     if (contextMenu.visible) {
-      const handleClickOutside = () => {
-        setContextMenu({ ...contextMenu, visible: false });
-      };
       window.addEventListener('click', handleClickOutside);
-      return () => window.removeEventListener('click', handleClickOutside);
+      cleanup.push(() => window.removeEventListener('click', handleClickOutside));
+    }
+    
+    if (autoScrollTimer) {
+      cleanup.push(() => clearTimeout(autoScrollTimer));
     }
     
     return () => {
-      window.removeEventListener('mousemove', handleResizeMove);
-      window.removeEventListener('mouseup', handleResizeEnd);
-      window.removeEventListener('mousemove', handleCopyMove);
-      window.removeEventListener('mouseup', handleCopyEnd);
-      window.removeEventListener('mousemove', handleDragMove);
-      window.removeEventListener('mouseup', handleDragEnd);
-      
-      if (autoScrollTimer) {
-        clearTimeout(autoScrollTimer);
-      }
+      cleanup.forEach(fn => fn());
     };
-  }, [resizing, copyingSchedule, dragging, contextMenu.visible, autoScrollTimer, dragOffset, focusedDayIndex]);
+  }, [
+    resizing, copyingSchedule, dragging, contextMenu.visible, autoScrollTimer,
+    handleResizeMove, handleResizeEnd, handleCopyMove, handleCopyEnd,
+    handleDragMove, handleDragEnd, handleClickOutside
+  ]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-50">
@@ -132,6 +179,14 @@ export const WeeklyCalendarUI = ({
       {copyingSchedule && (
         <div className="fixed top-4 left-4 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50">
           📋 복사 모드: "{copyingSchedule.title}" - 원하는 위치에 클릭하세요
+        </div>
+      )}
+      
+      {/* 로딩 상태 표시 */}
+      {isLoading && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50 flex items-center">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+          서버 데이터 동기화 중...
         </div>
       )}
       
@@ -161,7 +216,7 @@ export const WeeklyCalendarUI = ({
         <div className="flex items-center justify-between mb-4">
           {/* 왼쪽: Back 버튼 */}
           <button 
-            className="text-blue-600 flex items-center font-medium"
+            className="text-blue-600 flex items-center font-medium hover:text-blue-800 transition-colors"
             onClick={() => navigate("/calendar")}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
@@ -175,19 +230,19 @@ export const WeeklyCalendarUI = ({
           {/* 가운데: This Week 버튼 */}
           <div className="flex gap-2">
             <button 
-              className="bg-gray-100 rounded-lg px-3 py-1 text-sm"
+              className="bg-gray-100 hover:bg-gray-200 rounded-lg px-3 py-1 text-sm transition-colors"
               onClick={goToPreviousWeek}
             >
               &lt;
             </button>
             <button 
-              className="bg-blue-100 text-blue-700 rounded-lg px-3 py-1 text-sm font-medium"
+              className="bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg px-3 py-1 text-sm font-medium transition-colors"
               onClick={goToCurrentWeek}
             >
               This Week
             </button>
             <button 
-              className="bg-gray-100 rounded-lg px-3 py-1 text-sm"
+              className="bg-gray-100 hover:bg-gray-200 rounded-lg px-3 py-1 text-sm transition-colors"
               onClick={goToNextWeek}
             >
               &gt;
@@ -202,6 +257,29 @@ export const WeeklyCalendarUI = ({
             {currentUser && (
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <span>🧑‍💻 {currentUser}</span>
+                {/* 서버 연동 상태 및 새로고침 버튼 */}
+                {isServerBased && (
+                  <>
+                    <div className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                      🌐 서버 연동
+                    </div>
+                    {onManualRefresh && (
+                      <button
+                        onClick={onManualRefresh}
+                        disabled={isLoading}
+                        className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded transition-colors disabled:opacity-50"
+                        title="서버에서 새로고침"
+                      >
+                        {isLoading ? '🔄 로딩...' : '🔄 새로고침'}
+                      </button>
+                    )}
+                    {lastSyncTime && (
+                      <div className="text-xs text-gray-500">
+                        {lastSyncTime.toLocaleTimeString('ko-KR')}
+                      </div>
+                    )}
+                  </>
+                )}
                 <button
                   onClick={onLogout}
                   className="text-red-500 hover:text-red-700 underline"
@@ -227,6 +305,11 @@ export const WeeklyCalendarUI = ({
               </div>
             );
           })}
+          {Object.keys(tagTotals).length === 0 && (
+            <div className="text-gray-500 text-sm italic">
+              아직 등록된 일정이 없습니다
+            </div>
+          )}
         </div>
       </div>
 
@@ -246,17 +329,19 @@ export const WeeklyCalendarUI = ({
                 {visibleDays.map((dayIndex, i) => {
                   const date = currentWeek[dayIndex];
                   const isFocusDay = i === 3;
+                  const isToday = date.toDateString() === new Date().toDateString();
+                  
                   return (
                     <div
                       key={dayIndex}
-                      className={`p-2 text-center border-l border-gray-200 cursor-pointer ${
-                        isFocusDay ? 'bg-blue-50 font-bold' : 'bg-white'
-                      }`}
+                      className={`p-2 text-center border-l border-gray-200 cursor-pointer transition-colors ${
+                        isFocusDay ? 'bg-blue-50 font-bold' : 'bg-white hover:bg-gray-50'
+                      } ${isToday ? 'border-blue-300 border-2' : ''}`}
                       style={{ flexGrow: isFocusDay ? 2 : 1.5, minWidth: 0 }}
                       onClick={() => handleDayFocus(dayIndex)}
                     >
-                      <div>{getDayOfWeek(date)}</div>
-                      <div className="text-sm">{formatDate(date)}</div>
+                      <div className={isToday ? 'text-blue-600 font-bold' : ''}>{getDayOfWeek(date)}</div>
+                      <div className={`text-sm ${isToday ? 'text-blue-600 font-bold' : ''}`}>{formatDate(date)}</div>
                     </div>
                   );
                 })}
@@ -282,25 +367,30 @@ export const WeeklyCalendarUI = ({
                   {visibleDays.map((dayIndex, i) => {
                     const date = currentWeek[dayIndex];
                     const isFocusDay = i === 3;
+                    const isToday = date.toDateString() === new Date().toDateString();
                     const dateSchedules = filterSchedulesByDate(safeSchedules, date);
 
                     return (
                       <div
                         key={dayIndex}
                         data-day-index={dayIndex}
-                        className="relative border-l border-gray-200 flex flex-col transition-all duration-300"
+                        className={`relative border-l border-gray-200 flex flex-col transition-all duration-300 ${
+                          isToday ? 'border-blue-300 border-2' : ''
+                        }`}
                         style={{ flexGrow: isFocusDay ? 2 : 1.5, minWidth: 0 }}
                       >
                         {/* 시간 슬롯 + 일정 */}
                         <div
-                          className={`flex-1 relative ${isFocusDay ? 'bg-blue-50 bg-opacity-30' : ''}`}
+                          className={`flex-1 relative ${
+                            isFocusDay ? 'bg-blue-50 bg-opacity-30' : ''
+                          } ${isToday ? 'bg-blue-50 bg-opacity-20' : ''}`}
                           style={{ height: `${SLOT_HEIGHT * 48}px` }}
                         >
                           {timeSlots.map((time, i) => (
                             <div
                               key={time}
-                              className={`absolute w-full border-t border-gray-200 border-dashed ${
-                                activeTimeSlot === time && isFocusDay ? 'bg-gray-300 bg-opacity-10' : ''
+                              className={`absolute w-full border-t border-gray-200 border-dashed hover:bg-gray-100 hover:bg-opacity-50 transition-colors ${
+                                activeTimeSlot === time && isFocusDay ? 'bg-gray-300 bg-opacity-20' : ''
                               }`}
                               style={{ top: `${i * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
                               onClick={() => isFocusDay && handleTimeSlotClick(time)}
@@ -308,7 +398,7 @@ export const WeeklyCalendarUI = ({
                           ))}
 
                           {/* 현재 시간 표시 */}
-                          {date.toDateString() === new Date().toDateString() && (
+                          {isToday && (
                             <div
                               className="absolute w-full border-t-2 border-red-500 z-10"
                               style={{ top: `${getCurrentTimeLine()}px` }}
@@ -337,9 +427,9 @@ export const WeeklyCalendarUI = ({
                                 }}
                               >
                                 <div 
-                                  className={`h-full flex flex-col text-xs rounded-lg px-2 py-1 shadow ${tagColor.bg} ${tagColor.text} relative overflow-hidden cursor-move select-none ${
-                                    isDragging ? 'opacity-50 ring-2 ring-blue-400' : 'hover:shadow-md'
-                                  }`}
+                                  className={`h-full flex flex-col text-xs rounded-lg px-2 py-1 shadow ${tagColor.bg} ${tagColor.text} relative overflow-hidden cursor-move select-none transition-all ${
+                                    isDragging ? 'opacity-50 ring-2 ring-blue-400 scale-105' : 'hover:shadow-md hover:scale-105'
+                                  } ${s.done ? 'opacity-70' : ''}`}
                                   onMouseDown={(e) => {
                                     if (e.button === 0) {
                                       handleDragStart(e, s.id);
@@ -350,7 +440,7 @@ export const WeeklyCalendarUI = ({
                                   {isFocusDay && (
                                     <>
                                       <div
-                                        className="absolute top-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-t-lg z-20"
+                                        className="absolute top-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-t-lg z-20 hover:bg-opacity-30"
                                         onMouseDown={(e) => {
                                           if (e.button === 0) {
                                             e.preventDefault();
@@ -360,7 +450,7 @@ export const WeeklyCalendarUI = ({
                                         }}
                                       />
                                       <div
-                                        className="absolute bottom-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-b-lg z-20"
+                                        className="absolute bottom-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-b-lg z-20 hover:bg-opacity-30"
                                         onMouseDown={(e) => {
                                           if (e.button === 0) {
                                             e.preventDefault();
@@ -380,19 +470,7 @@ export const WeeklyCalendarUI = ({
                                       className="pointer-events-auto flex-shrink-0"
                                       onChange={(e) => {
                                         e.stopPropagation();
-                                        if (calendarLogic.setSchedules && currentUser) {
-                                          const updated = safeSchedules.map(item =>
-                                            item.id === s.id ? { ...item, done: !item.done } : item
-                                          );
-                                          calendarLogic.setSchedules(updated);
-                                          
-                                          // storage에도 반영
-                                          saveUserDataToDAL(currentUser, {
-                                            schedules: updated,
-                                            tags: safeTags,
-                                            tagItems: safeTagItems
-                                          });
-                                        }
+                                        handleCheckboxChange(s.id, s.done);
                                       }}
                                     />
                                     {s.tag && (
@@ -440,7 +518,14 @@ export const WeeklyCalendarUI = ({
         {/* 오른쪽: 입력 폼 */}
         <div className="w-80 border-l border-gray-200 bg-white overflow-hidden p-4">
           <div className="h-full flex flex-col">
-            <h2 className="text-2xl font-bold mt-2 mb-4">일정 추가</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">일정 추가</h2>
+              {isServerBased && (
+                <div className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+                  🌐 서버 저장
+                </div>
+              )}
+            </div>
             
             <div className="flex-1 overflow-y-auto pr-1">
               <div className="bg-gray-50 p-4 rounded-lg shadow-sm mb-4">
@@ -540,6 +625,7 @@ export const WeeklyCalendarUI = ({
                   <div className="flex flex-wrap gap-2">
                     {DAYS_OF_WEEK.map((day, idx) => {
                       const selected = form.weekdays.includes(day);
+                      const isToday = idx === new Date().getDay();
                       return (
                         <button
                           key={idx}
@@ -547,6 +633,8 @@ export const WeeklyCalendarUI = ({
                           className={`w-7 h-7 rounded-full border text-xs font-medium transition ${
                             selected
                               ? "bg-blue-500 text-white"
+                              : isToday
+                              ? "bg-blue-100 text-blue-700 border-blue-300"
                               : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                           }`}
                           onClick={() => handleWeekdaySelect(day)}
@@ -564,21 +652,25 @@ export const WeeklyCalendarUI = ({
                     {safeTagItems.map((item, idx) => {
                       const tagGroup = safeTags.find(t => t.tagType === item.tagType);
                       const tagColor = tagGroup ? tagGroup.color : { bg: "bg-gray-100", text: "text-gray-800" };
+                      const isSelected = selectedTagType === item.tagType && form.tag === item.tagName;
                       
                       return (
-                        <div key={idx} className="flex items-center mb-2 last:mb-0">
+                        <div key={`${item.tagType}-${item.tagName}-${idx}`} className="flex items-center mb-2 last:mb-0">
                           <div className={`w-16 ${tagColor.bg} ${tagColor.text} px-2 py-1 rounded-l-md text-xs font-medium truncate`}>
                             {item.tagType}
                           </div>
                           <div 
-                            className={`flex-1 ${tagColor.bg} ${tagColor.text} px-2 py-1 text-xs cursor-pointer hover:bg-opacity-80 ${selectedTagType === item.tagType && form.tag === item.tagName ? 'ring-1 ring-blue-400' : ''}`}
+                            className={`flex-1 ${tagColor.bg} ${tagColor.text} px-2 py-1 text-xs cursor-pointer hover:bg-opacity-80 transition-colors ${
+                              isSelected ? 'ring-2 ring-blue-400 bg-opacity-90' : ''
+                            }`}
                             onClick={() => handleSelectTag(item.tagType, item.tagName)}
                           >
                             {item.tagName}
                           </div>
                           <button 
-                            className="bg-red-100 text-red-500 rounded-r-md px-2 py-1 text-xs"
+                            className="bg-red-100 text-red-500 hover:bg-red-200 rounded-r-md px-2 py-1 text-xs transition-colors"
                             onClick={() => handleDeleteTagItem(item.tagType, item.tagName)}
+                            title="태그 삭제"
                           >
                             ×
                           </button>
@@ -586,43 +678,87 @@ export const WeeklyCalendarUI = ({
                       );
                     })}
                     {safeTagItems.length === 0 && (
-                      <div className="text-center text-gray-500 py-15 text-sm">
-                        태그를 추가해주세요
+                      <div className="text-center text-gray-500 py-8 text-sm">
+                        <div className="mb-2">📝</div>
+                        <div>태그를 추가해주세요</div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          아래에서 새 태그를 만들 수 있습니다
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-1 mb-1">
-                  <input
-                    type="text"
-                    placeholder="태그"
-                    className="w-16 text-xs bg-white border rounded-l-md px-2 py-1 focus:outline-none focus:border-gray-400"
-                    value={newTagType}
-                    onChange={(e) => setNewTagType(e.target.value)}
-                  />
-                  <input
-                    type="text"
-                    placeholder="항목 이름"
-                    className="flex-1 text-xs bg-white border-y border-r-0 px-2 py-1 focus:outline-none focus:border-gray-400"
-                    value={newTagName}
-                    onChange={(e) => setNewTagName(e.target.value)}
-                  />
-                  <button 
-                    className="bg-gray-200 w-8 h-6 rounded-r-md flex items-center justify-center text-sm font-bold"
-                    onClick={handleAddTag}
-                  >
-                    +
-                  </button>
+                <div className="mb-3">
+                  <h3 className="font-medium mb-2">새 태그 추가</h3>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      placeholder="태그 타입"
+                      className="w-20 text-xs bg-white border rounded-l-md px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
+                      value={newTagType}
+                      onChange={(e) => setNewTagType(e.target.value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder="항목 이름"
+                      className="flex-1 text-xs bg-white border-y border-r-0 px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter' && newTagType.trim() && newTagName.trim()) {
+                          handleAddTag();
+                        }
+                      }}
+                    />
+                    <button 
+                      className="bg-blue-500 hover:bg-blue-600 text-white w-8 h-6 rounded-r-md flex items-center justify-center text-sm font-bold transition-colors disabled:opacity-50"
+                      onClick={handleAddTag}
+                      disabled={!newTagType.trim() || !newTagName.trim()}
+                      title="태그 추가"
+                    >
+                      +
+                    </button>
+                  </div>
+                  {newTagType.trim() && newTagName.trim() && (
+                    <div className="mt-2 text-xs text-gray-600">
+                      미리보기: <span className="bg-gray-100 px-2 py-1 rounded">{newTagType}</span> - {newTagName}
+                    </div>
+                  )}
                 </div>
               </div>
 
               <button
-                className="w-full bg-green-100 text-center py-3 rounded-lg text-xl font-medium text-green-800"
+                className="w-full bg-green-500 hover:bg-green-600 text-white text-center py-3 rounded-lg text-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleAdd}
+                disabled={!form.title || !startSlot || !form.end || isLoading}
               >
-                일정 추가하기
+                {isLoading ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    저장 중...
+                  </div>
+                ) : (
+                  '일정 추가하기'
+                )}
               </button>
+
+              {/* 서버 연동 상태 정보 */}
+              {isServerBased && (
+                <div className="mt-3 p-2 bg-blue-50 rounded-lg text-xs text-blue-700">
+                  <div className="flex items-center justify-between">
+                    <span>🌐 서버 자동 저장 활성화</span>
+                    {lastSyncTime && (
+                      <span className="text-blue-500">
+                        {lastSyncTime.toLocaleTimeString('ko-KR')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-blue-600">
+                    모든 변경사항이 실시간으로 서버에 저장됩니다
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
