@@ -90,30 +90,7 @@ const MonthlyPlan = ({
         setMonthlyPlans(serverData.monthlyPlans || []);
         
         // monthlyPlans를 plans로 설정 (호환성)
-        let finalPlans = serverData.monthlyPlans || [];
-        
-        // ✨ monthlyPlans가 비어있으면 샘플 데이터 생성 (테스트용)
-        if (finalPlans.length === 0) {
-          console.log('📋 monthlyPlans가 비어있어서 샘플 데이터 생성');
-          finalPlans = [
-            {
-              id: 'sample1',
-              tagType: 'LAB',
-              tag: '웹 구축',
-              description: '프론트엔드 개발, 백엔드 API, 데이터베이스 설계',
-              estimatedTime: 9
-            },
-            {
-              id: 'sample2',
-              tagType: '연구',
-              tag: '논문 미팅 준비',
-              description: '자료 조사, 발표 준비, 실험 계획',
-              estimatedTime: 4
-            }
-          ];
-        }
-        
-        setPlans(finalPlans);
+        setPlans(serverData.monthlyPlans || []);
         setLastSyncTime(new Date());
 
       } else {
