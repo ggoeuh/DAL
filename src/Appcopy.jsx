@@ -432,7 +432,10 @@ function Appcopy() {
   // 🔧 상태 업데이트 함수들 (서버 기반)
   const updateSchedules = (newSchedules) => {
     setSchedules(newSchedules);
-    console.log('📅 일정 상태 업데이트:', newSchedules.length, '개');
+    // 변화가 있을 때만 1초 후 저장
+    if (currentUser && !isAdmin && dataLoaded) {
+      setTimeout(() => saveUserDataToServer(), 1000);
+    }
   };
 
   const updateTags = (newTags) => {
