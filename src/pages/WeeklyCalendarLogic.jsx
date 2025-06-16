@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
-// 상수들
+// 상수들을 파일 상단으로 완전히 분리
 const SLOT_HEIGHT = 24;
 const DAYS_OF_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
-// 파스텔 색상 팔레트
 const PASTEL_COLORS = [
   { bg: "bg-purple-100", text: "text-purple-800" },
   { bg: "bg-blue-100", text: "text-blue-800" },
@@ -18,7 +17,21 @@ const PASTEL_COLORS = [
   { bg: "bg-orange-100", text: "text-orange-800" },
 ];
 
-// 유틸리티 함수들 (컴포넌트 외부로 이동)
+const REPEAT_OPTIONS = Array.from({ length: 15 }, (_, i) => i + 2);
+const INTERVAL_OPTIONS = [
+  { value: "1", label: "매주" },
+  { value: "2", label: "격주" },
+  { value: "3", label: "3주마다" },
+  { value: "4", label: "4주마다" }
+];
+
+const TIME_SLOTS = Array.from({ length: 48 }, (_, i) => {
+  const hour = Math.floor(i / 2);
+  const minute = i % 2 === 0 ? "00" : "30";
+  return `${hour.toString().padStart(2, "0")}:${minute}`;
+});
+
+// 유틸리티 함수들을 완전히 분리하여 매번 새로 생성되지 않도록 함
 const parseTimeToMinutes = (time) => {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
@@ -94,7 +107,7 @@ const checkScheduleOverlap = (schedules, newSchedule) => {
   });
 };
 
-// ✨ 커스텀 훅: 캘린더 로직 (100% 서버 기반)
+// ✨ 커스텀 훅: 캘린더 로직 (무한 루프 방지 최적화)
 export const useWeeklyCalendarLogic = ({ 
   schedules = [], 
   setSchedules, 
@@ -104,12 +117,14 @@ export const useWeeklyCalendarLogic = ({
   setTagItems, 
   currentUser 
 }) => {
-  // 안전한 배열 보장
-  const safeSchedules = Array.isArray(schedules) ? schedules : [];
-  const safeTags = Array.isArray(tags) ? tags : [];
-  const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
+  console.log('🔧 useWeeklyCalendarLogic 렌더링'); // 디버깅용
 
-  // 날짜 상태 관리 - 초기값을 함수로 변경하여 매번 새로 생성되지 않도록 함
+  // 안전한 배열 보장 - useMemo로 메모이제이션
+  const safeSchedules = useMemo(() => Array.isArray(schedules) ? schedules : [], [schedules]);
+  const safeTags = useMemo(() => Array.isArray(tags) ? tags : [], [tags]);
+  const safeTagItems = useMemo(() => Array.isArray(tagItems) ? tagItems : [], [tagItems]);
+
+  // 날짜 상태 관리 - 초기값만 함수로, 이후는 정적
   const [currentWeek, setCurrentWeek] = useState(() => {
     const today = new Date();
     return Array(7).fill().map((_, i) => {
@@ -132,15 +147,6 @@ export const useWeeklyCalendarLogic = ({
     }
     return newVisibleDays;
   });
-  
-  // 시간 슬롯 - useMemo로 메모이제이션
-  const timeSlots = useMemo(() => 
-    Array.from({ length: 48 }, (_, i) => {
-      const hour = Math.floor(i / 2);
-      const minute = i % 2 === 0 ? "00" : "30";
-      return `${hour.toString().padStart(2, "0")}:${minute}`;
-    }), []
-  );
 
   // 폼 및 UI 상태들
   const [form, setForm] = useState({ 
@@ -173,15 +179,6 @@ export const useWeeklyCalendarLogic = ({
   const [dragging, setDragging] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [autoScrollTimer, setAutoScrollTimer] = useState(null);
-  
-  // 상수들을 useMemo로 메모이제이션
-  const repeatOptions = useMemo(() => Array.from({ length: 15 }, (_, i) => i + 2), []);
-  const intervalOptions = useMemo(() => [
-    { value: "1", label: "매주" },
-    { value: "2", label: "격주" },
-    { value: "3", label: "3주마다" },
-    { value: "4", label: "4주마다" }
-  ], []);
 
   // 초기 스크롤 설정
   useEffect(() => {
@@ -190,7 +187,7 @@ export const useWeeklyCalendarLogic = ({
     }
   }, []);
 
-  // 현재 시간 표시 라인 위치 계산 - useCallback으로 메모이제이션
+  // 현재 시간 표시 라인 위치 계산 - 의존성 없는 순수 함수로
   const getCurrentTimeLine = useCallback(() => {
     const now = new Date();
     const hours = now.getHours();
@@ -198,9 +195,9 @@ export const useWeeklyCalendarLogic = ({
     const totalMinutes = hours * 60 + minutes;
     const slotPosition = (totalMinutes / 30) * SLOT_HEIGHT;
     return slotPosition;
-  }, []);
+  }, []); // 의존성 없음
 
-  // 새 태그 타입에 색상 할당 - useCallback으로 메모이제이션
+  // 새 태그 타입에 색상 할당 - 최소한의 의존성
   const assignNewTagColor = useCallback((tagType) => {
     const existingTag = safeTags.find(t => t.tagType === tagType);
     if (existingTag) {
@@ -215,34 +212,35 @@ export const useWeeklyCalendarLogic = ({
     return availableColors.length > 0 
       ? availableColors[0] 
       : PASTEL_COLORS[safeTags.length % PASTEL_COLORS.length];
-  }, [safeTags]);
+  }, [safeTags.length]); // 길이만 의존
 
-  // 포커스 날짜 변경 핸들러 - useCallback으로 메모이제이션
+  // 포커스 날짜 변경 핸들러 - 최소한의 의존성
   const handleDayFocus = useCallback((dayIndex) => {
-    if (dayIndex === focusedDayIndex) return;
-    
-    setFocusedDayIndex(dayIndex);
-    
-    const newVisibleDays = [];
-    const focusPosition = 3;
-    
-    for (let i = 0; i < 5; i++) {
-      const offset = i - focusPosition;
-      const newIndex = (dayIndex + offset + 7) % 7;
-      newVisibleDays.push(newIndex);
-    }
-    
-    setVisibleDays(newVisibleDays);
-  }, [focusedDayIndex]);
+    setFocusedDayIndex(prev => {
+      if (dayIndex === prev) return prev;
+      
+      const newVisibleDays = [];
+      const focusPosition = 3;
+      
+      for (let i = 0; i < 5; i++) {
+        const offset = i - focusPosition;
+        const newIndex = (dayIndex + offset + 7) % 7;
+        newVisibleDays.push(newIndex);
+      }
+      
+      setVisibleDays(newVisibleDays);
+      return dayIndex;
+    });
+  }, []); // 의존성 없음
 
-  // 시간 슬롯 계산 헬퍼 함수 - useCallback으로 메모이제이션
+  // 시간 슬롯 계산 헬퍼 함수 - 순수 함수
   const calculateSlotPosition = useCallback((time) => {
     const minutes = parseTimeToMinutes(time);
     const slotIndex = minutes / 30;
     return slotIndex * SLOT_HEIGHT;
-  }, []);
+  }, []); // 의존성 없음
 
-  // ✨ 리사이즈 핸들러들 - useCallback으로 메모이제이션
+  // ✨ 리사이즈 핸들러들 - setSchedules를 직접 사용하지 않음
   const handleResizeStart = useCallback((e, scheduleId, type) => {
     e.preventDefault();
     e.stopPropagation();
@@ -308,18 +306,19 @@ export const useWeeklyCalendarLogic = ({
     setResizeType(null);
   }, []);
 
-  // 태그 색상 가져오기 - useCallback으로 메모이제이션
+  // 태그 색상 가져오기 - 최소한의 의존성
   const getTagColor = useCallback((tagType) => {
     const tag = safeTags.find(t => t.tagType === tagType);
     return tag ? tag.color : { bg: "bg-gray-100", text: "text-gray-800" };
-  }, [safeTags]);
+  }, [safeTags.length]); // 길이만 의존
 
-  // 태그 총합 계산 - useMemo로 메모이제이션
+  // 태그 총합 계산 - 깊은 비교 대신 길이만 체크
   const tagTotals = useMemo(() => {
     return calculateTagTotals(safeSchedules);
-  }, [safeSchedules]);
+  }, [safeSchedules.length]); // 길이만 의존
 
-  return {
+  // 🚨 중요: 모든 함수와 값들을 안정적으로 반환
+  return useMemo(() => ({
     // 상태들
     currentWeek,
     setCurrentWeek,
@@ -327,7 +326,7 @@ export const useWeeklyCalendarLogic = ({
     setFocusedDayIndex,
     visibleDays,
     setVisibleDays,
-    timeSlots,
+    timeSlots: TIME_SLOTS, // 상수 사용
     form,
     setForm,
     startSlot,
@@ -356,20 +355,20 @@ export const useWeeklyCalendarLogic = ({
     autoScrollTimer,
     setAutoScrollTimer,
     
-    // 계산된 값들
+    // 계산된 값들 - 안정적인 참조
     safeSchedules,
     safeTags,
     safeTagItems,
     tagTotals,
-    repeatOptions,
-    intervalOptions,
+    repeatOptions: REPEAT_OPTIONS, // 상수 사용
+    intervalOptions: INTERVAL_OPTIONS, // 상수 사용
     
     // 상수들
     SLOT_HEIGHT,
     DAYS_OF_WEEK,
     PASTEL_COLORS,
     
-    // 유틸리티 함수들
+    // 유틸리티 함수들 - 순수 함수들
     parseTimeToMinutes,
     minutesToTimeString,
     pixelToNearestTimeSlot,
@@ -388,5 +387,36 @@ export const useWeeklyCalendarLogic = ({
     handleResizeStart,
     handleResizeMove,
     handleResizeEnd
-  };
+  }), [
+    // 🚨 중요: 최소한의 의존성만 포함
+    currentWeek,
+    focusedDayIndex,
+    visibleDays,
+    form,
+    startSlot,
+    activeTimeSlot,
+    resizing,
+    resizeType,
+    showOverlapMessage,
+    contextMenu,
+    copyingSchedule,
+    newTagType,
+    newTagName,
+    selectedTagType,
+    dragging,
+    dragOffset,
+    autoScrollTimer,
+    safeSchedules,
+    safeTags,
+    safeTagItems,
+    tagTotals,
+    getCurrentTimeLine,
+    assignNewTagColor,
+    handleDayFocus,
+    calculateSlotPosition,
+    getTagColor,
+    handleResizeStart,
+    handleResizeMove,
+    handleResizeEnd
+  ]);
 };
