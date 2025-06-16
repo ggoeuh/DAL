@@ -90,7 +90,30 @@ const MonthlyPlan = ({
         setMonthlyPlans(serverData.monthlyPlans || []);
         
         // monthlyPlans를 plans로 설정 (호환성)
-        setPlans(serverData.monthlyPlans || []);
+        let finalPlans = serverData.monthlyPlans || [];
+        
+        // ✨ monthlyPlans가 비어있으면 샘플 데이터 생성 (테스트용)
+        if (finalPlans.length === 0) {
+          console.log('📋 monthlyPlans가 비어있어서 샘플 데이터 생성');
+          finalPlans = [
+            {
+              id: 'sample1',
+              tagType: 'LAB',
+              tag: '웹 구축',
+              description: '프론트엔드 개발, 백엔드 API, 데이터베이스 설계',
+              estimatedTime: 9
+            },
+            {
+              id: 'sample2',
+              tagType: '연구',
+              tag: '논문 미팅 준비',
+              description: '자료 조사, 발표 준비, 실험 계획',
+              estimatedTime: 4
+            }
+          ];
+        }
+        
+        setPlans(finalPlans);
         setLastSyncTime(new Date());
 
       } else {
@@ -281,21 +304,30 @@ const MonthlyPlan = ({
     return tag ? tag.color : { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' };
   }, [safeTags]);
 
-  // ✅ 블록 UI를 위한 태그별 그룹화 함수
-  const getGroupedPlans = useMemo(() => {
+  // ✅ 목표를 기반으로 한 그룹화 (plans 대신 currentMonthGoals 사용)
+  const getGroupedGoals = useMemo(() => {
     const grouped = {};
-    console.log('🔍 Plans for grouping:', plans); // 디버깅용
+    console.log('🎯 Goals for display:', currentMonthGoals);
     
-    plans.forEach(plan => {
-      if (!grouped[plan.tagType]) {
-        grouped[plan.tagType] = [];
+    currentMonthGoals.forEach(goal => {
+      if (!grouped[goal.tagType]) {
+        grouped[goal.tagType] = [];
       }
-      grouped[plan.tagType].push(plan);
+      
+      // 목표를 계획 형태로 변환하여 표시
+      grouped[goal.tagType].push({
+        id: `goal-${goal.tagType}`,
+        tagType: goal.tagType,
+        tag: goal.tagType + ' 목표',
+        description: `목표 시간: ${goal.targetHours}`,
+        estimatedTime: parseInt(goal.targetHours.split(':')[0]) || 0,
+        isGoal: true // 목표임을 표시
+      });
     });
     
-    console.log('🔍 Grouped plans:', grouped); // 디버깅용
+    console.log('🎯 Grouped goals:', grouped);
     return grouped;
-  }, [plans]);
+  }, [currentMonthGoals]);
 
   const handleAddPlan = useCallback(async () => {
     const firstDesc = form.descriptions[0]?.trim();
@@ -490,14 +522,14 @@ const MonthlyPlan = ({
               )}
             </div>
 
-            {/* 태그별 그룹화된 계획들 - 블록 레이아웃 */}
+            {/* 태그별 그룹화된 목표들 - 블록 레이아웃 */}
             <div className="space-y-6">
-              {Object.entries(getGroupedPlans).map(([tagType, tagPlans]) => {
+              {Object.entries(getGroupedGoals).map(([tagType, goalItems]) => {
                 const colors = getTagColor(tagType);
-                const totalEstimatedTime = tagPlans.reduce((sum, plan) => sum + plan.estimatedTime, 0);
+                const totalEstimatedTime = goalItems.reduce((sum, item) => sum + item.estimatedTime, 0);
                 
                 const targetHours = getTargetHoursForTagType(tagType);
-                const achievementRate = targetHours > 0 ? Math.round((totalEstimatedTime / targetHours) * 100) : 0;
+                const achievementRate = targetHours > 0 ? Math.round((totalEstimatedTime / targetHours) * 100) : 100;
 
                 return (
                   <div key={tagType} className="flex items-start space-x-4">
@@ -522,27 +554,29 @@ const MonthlyPlan = ({
                     <div className="flex-1 min-w-0">
                       <div className="overflow-x-auto">
                         <div className="flex space-x-4 pb-4" style={{ minWidth: 'max-content' }}>
-                          {tagPlans.map((plan) => (
-                            <div key={plan.id} className="w-[250px] flex-shrink-0">
+                          {goalItems.map((item) => (
+                            <div key={item.id} className="w-[250px] flex-shrink-0">
                               <div className={`${colors.bg} ${colors.border} border rounded-lg p-3 relative`}>
                                 <div className="flex justify-between items-center mb-2">
-                                  <span className={`font-medium ${colors.text}`}>{plan.tag}</span>
+                                  <span className={`font-medium ${colors.text}`}>{item.tag}</span>
                                   <div className="flex items-center gap-2">
-                                    <span className={`text-sm ${colors.text}`}>{plan.estimatedTime}시간</span>
-                                    <button
-                                      onClick={() => handleDeletePlan(plan.id)}
-                                      disabled={saving}
-                                      className="text-red-400 hover:text-red-600 text-sm disabled:opacity-50"
-                                      title="이 계획 삭제"
-                                    >
-                                      ×
-                                    </button>
+                                    <span className={`text-sm ${colors.text}`}>{item.estimatedTime}시간</span>
+                                    {!item.isGoal && (
+                                      <button
+                                        onClick={() => handleDeletePlan(item.id)}
+                                        disabled={saving}
+                                        className="text-red-400 hover:text-red-600 text-sm disabled:opacity-50"
+                                        title="이 계획 삭제"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
-                                {plan.description && (
+                                {item.description && (
                                   <div className={`text-sm ${colors.text} opacity-75`}>
-                                    {plan.description.split(', ').map((item, idx) => (
-                                      <div key={idx}>• {item}</div>
+                                    {item.description.split(', ').map((desc, idx) => (
+                                      <div key={idx}>• {desc}</div>
                                     ))}
                                   </div>
                                 )}
@@ -556,7 +590,7 @@ const MonthlyPlan = ({
                 );
               })}
               
-              {Object.keys(getGroupedPlans).length === 0 && (
+              {Object.keys(getGroupedGoals).length === 0 && (
                 <div className="text-center py-12 text-gray-500">
                   <h3 className="text-xl font-medium mb-2">서버에 등록된 월간 계획이 없습니다</h3>
                   <p className="text-sm mb-4">오른쪽 패널에서 새로운 계획을 추가해보세요!</p>
