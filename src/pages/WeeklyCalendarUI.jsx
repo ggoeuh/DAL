@@ -327,18 +327,18 @@ export const WeeklyCalendarUI = ({
               <div className="sticky top-0 z-10 flex bg-white border-b border-gray-200">
                 <div className="w-10 flex-shrink-0 bg-white border-r border-gray-200" />
                 {visibleDays.map((date, i) => {
-                  const date = currentWeek[dayIndex];
+                  // const date = currentWeek[dayIndex]; ← 이 줄 삭제
                   const isFocusDay = i === 3;
                   const isToday = date.toDateString() === new Date().toDateString();
                   
                   return (
                     <div
-                      key={dayIndex}
+                      key={i} // dayIndex 대신 i 사용
                       className={`p-2 text-center border-l border-gray-200 cursor-pointer transition-colors ${
                         isFocusDay ? 'bg-blue-50 font-bold' : 'bg-white hover:bg-gray-50'
                       } ${isToday ? 'border-blue-300 border-2' : ''}`}
                       style={{ flexGrow: isFocusDay ? 2 : 1.5, minWidth: 0 }}
-                      onClick={() => handleDayFocus(date)} // dayIndex 대신 date 전달
+                      onClick={() => handleDayFocus(date)} // 이미 date는 map에서 받은 것을 사용
                     >
                       <div className={isToday ? 'text-blue-600 font-bold' : ''}>{getDayOfWeek(date)}</div>
                       <div className={`text-sm ${isToday ? 'text-blue-600 font-bold' : ''}`}>{formatDate(date)}</div>
