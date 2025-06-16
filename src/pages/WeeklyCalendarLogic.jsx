@@ -40,10 +40,11 @@ const getDayOfWeek = (date) => DAYS_OF_WEEK[date.getDay()];
 
 const filterSchedulesByDate = (schedules, date) => {
   const dateString = date.toISOString().split("T")[0];
-  return schedules.filter(schedule => schedule.date === dateString);
+  return (schedules || []).filter(schedule => schedule.date === dateString);
 };
 
 const calculateTagTotals = (schedules) => {
+  if (!Array.isArray(schedules)) return {};
   const totals = {};
   schedules.forEach(schedule => {
     const tagType = schedule.tagType || "기타";
@@ -61,7 +62,7 @@ const calculateTagTotals = (schedules) => {
 };
 
 const checkScheduleOverlap = (schedules, newSchedule) => {
-  const filtered = schedules.filter(s => s.date === newSchedule.date && s.id !== newSchedule.id);
+  const filtered = (schedules || []).filter(s => s.date === newSchedule.date && s.id !== newSchedule.id);
   const newStart = parseTimeToMinutes(newSchedule.start);
   const newEnd = parseTimeToMinutes(newSchedule.end);
   return filtered.some(s => {
@@ -106,10 +107,6 @@ export const useWeeklyCalendarLogic = ({ currentUser }) => {
   const [dragging, setDragging] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [autoScrollTimer, setAutoScrollTimer] = useState(null);
-
-  const safeSchedules = Array.isArray(schedules) ? schedules : [];
-  const safeTags = Array.isArray(tags) ? tags : [];
-  const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
 
   useEffect(() => {
     const loadDataFromServer = async () => {
