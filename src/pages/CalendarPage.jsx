@@ -522,7 +522,7 @@ const MonthlyPlan = ({
                 
                 const targetHours = getTargetHoursForTagType(tagType);
                 // 달성률 = (실제 계획 시간 / 목표 시간) * 100
-                const achievementRate = targetHours > 0 ? Math.round((actualPlannedTime / targetHours) * 100) : 0;
+                const achievementRate = targetHours > 0 ? Math.round((targetHours / actualPlannedTime) * 100) : 0;
 
                 return (
                   <div key={tagType} className="flex items-start space-x-4">
