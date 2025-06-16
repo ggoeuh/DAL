@@ -327,18 +327,17 @@ export const WeeklyCalendarUI = ({
               <div className="sticky top-0 z-10 flex bg-white border-b border-gray-200">
                 <div className="w-10 flex-shrink-0 bg-white border-r border-gray-200" />
                 {visibleDays.map((date, i) => {
-                  // const date = currentWeek[dayIndex]; ← 이 줄 삭제
-                  const isFocusDay = i === 3;
+                  const isFocusDay = i === 2; // 중앙이 포커스 (인덱스 2)
                   const isToday = date.toDateString() === new Date().toDateString();
                   
                   return (
                     <div
-                      key={i} // dayIndex 대신 i 사용
+                      key={i}
                       className={`p-2 text-center border-l border-gray-200 cursor-pointer transition-colors ${
                         isFocusDay ? 'bg-blue-50 font-bold' : 'bg-white hover:bg-gray-50'
                       } ${isToday ? 'border-blue-300 border-2' : ''}`}
                       style={{ flexGrow: isFocusDay ? 2 : 1.5, minWidth: 0 }}
-                      onClick={() => handleDayFocus(date)} // 이미 date는 map에서 받은 것을 사용
+                      onClick={() => handleDayFocus(date)}
                     >
                       <div className={isToday ? 'text-blue-600 font-bold' : ''}>{getDayOfWeek(date)}</div>
                       <div className={`text-sm ${isToday ? 'text-blue-600 font-bold' : ''}`}>{formatDate(date)}</div>
@@ -346,6 +345,7 @@ export const WeeklyCalendarUI = ({
                   );
                 })}
               </div>
+
               {/* 콘텐츠 */}
               <div className="flex">
                 {/* 시간 열 */}
@@ -363,39 +363,37 @@ export const WeeklyCalendarUI = ({
 
                 {/* 날짜 열들 */}
                 <div className="flex flex-1 min-w-0">
-                  {visibleDays.map((dayIndex, i) => {
-                    const date = currentWeek[dayIndex];
-                    const isFocusDay = i === 3;
+                  {visibleDays.map((date, i) => {
+                    const isFocusDay = i === 2; // 중앙이 포커스
                     const isToday = date.toDateString() === new Date().toDateString();
                     const dateSchedules = filterSchedulesByDate(safeSchedules, date);
-
+                
                     return (
                       <div
-                        key={dayIndex}
-                        data-day-index={dayIndex}
+                        key={i}
+                        data-day-index={i} // 새로운 인덱스 시스템
                         className={`relative border-l border-gray-200 flex flex-col transition-all duration-300 ${
                           isToday ? 'border-blue-300 border-2' : ''
                         }`}
                         style={{ flexGrow: isFocusDay ? 2 : 1.5, minWidth: 0 }}
                       >
-                        {/* 시간 슬롯 + 일정 */}
                         <div
                           className={`flex-1 relative ${
                             isFocusDay ? 'bg-blue-50 bg-opacity-30' : ''
                           } ${isToday ? 'bg-blue-50 bg-opacity-20' : ''}`}
                           style={{ height: `${SLOT_HEIGHT * 48}px` }}
                         >
-                          {timeSlots.map((time, i) => (
+                          {timeSlots.map((time, timeIndex) => (
                             <div
                               key={time}
                               className={`absolute w-full border-t border-gray-200 border-dashed hover:bg-gray-100 hover:bg-opacity-50 transition-colors ${
                                 activeTimeSlot === time && isFocusDay ? 'bg-gray-300 bg-opacity-20' : ''
                               }`}
-                              style={{ top: `${i * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
+                              style={{ top: `${timeIndex * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
                               onClick={() => isFocusDay && handleTimeSlotClick(time)}
                             />
                           ))}
-
+                
                           {/* 현재 시간 표시 */}
                           {isToday && (
                             <div
@@ -405,7 +403,7 @@ export const WeeklyCalendarUI = ({
                               <div className="absolute -left-2 -top-2 w-4 h-4 bg-red-500 rounded-full" />
                             </div>
                           )}
-
+                
                           {/* 일정들 */}
                           {dateSchedules.map((s) => {
                             const top = calculateSlotPosition(s.start);
@@ -414,7 +412,7 @@ export const WeeklyCalendarUI = ({
                             const tagTypeForItem = safeTagItems.find(item => item.tagName === s.tag)?.tagType || s.tagType;
                             const tagColor = getTagColor(tagTypeForItem);
                             const isDragging = dragging === s.id;
-
+                
                             return (
                               <div
                                 key={s.id}
@@ -460,8 +458,7 @@ export const WeeklyCalendarUI = ({
                                       />
                                     </>
                                   )}
-
-                                  {/* 첫째줄: 체크박스 + 태그(라운드 네모칸) + 항목명 */}
+                
                                   <div className="flex items-center gap-1 mb-1">
                                     <input
                                       type="checkbox"
@@ -481,18 +478,15 @@ export const WeeklyCalendarUI = ({
                                       {s.tag ? s.tag : ''}
                                     </span>
                                   </div>
-
-                                  {/* 둘째줄: 시간 표기 */}
+                
                                   <div className="text-[12px] mb-1 opacity-80">
                                     {s.start} - {s.end}
                                   </div>
-
-                                  {/* 셋째줄: 일정명 */}
+                
                                   <div className={`text-[11px] font-bold mb-1 truncate ${s.done ? "line-through opacity-60" : ""}`}>
                                     {s.title}
                                   </div>
-
-                                  {/* 넷째줄: 일정 내용 */}
+                
                                   {s.description && (
                                     <div className="text-[9px] opacity-70 flex-1 overflow-hidden">
                                       <div className="line-clamp-2">
@@ -508,6 +502,7 @@ export const WeeklyCalendarUI = ({
                       </div>
                     );
                   })}
+                </div>
                 </div>
               </div>
             </div>
@@ -636,7 +631,7 @@ export const WeeklyCalendarUI = ({
                               ? "bg-blue-100 text-blue-700 border-blue-300"
                               : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                           }`}
-                          onClick={() => handleDayFocus(date)} // 실제 Date 객체 전달
+                          onClick={() => handleWeekdaySelect(day)} // ✅ 올바른 함수 호출
                         >
                           {day}
                         </button>
