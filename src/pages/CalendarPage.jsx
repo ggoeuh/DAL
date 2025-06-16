@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -34,6 +34,30 @@ const minutesToTimeString = (totalMinutes) => {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
+// 동기화 상태 표시 컴포넌트
+const SyncStatus = ({ lastSyncTime, isLoading, isSaving }) => (
+  <div className="flex items-center gap-2 text-xs">
+    {isSaving ? (
+      <div className="text-orange-600 flex items-center gap-1">
+        <div className="animate-spin w-3 h-3 border border-orange-500 border-t-transparent rounded-full"></div>
+        💾 저장 중...
+      </div>
+    ) : isLoading ? (
+      <div className="text-blue-600 flex items-center gap-1">
+        <div className="animate-spin w-3 h-3 border border-blue-500 border-t-transparent rounded-full"></div>
+        🔄 로딩 중...
+      </div>
+    ) : (
+      <div className="text-green-600">✅ 동기화됨</div>
+    )}
+    {lastSyncTime && !isLoading && !isSaving && (
+      <div className="text-gray-500">
+        {format(lastSyncTime, 'HH:mm:ss')}
+      </div>
+    )}
+  </div>
+);
+
 // 서버 데이터 리셋 버튼 컴포넌트
 const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) => {
   const [showModal, setShowModal] = useState(false);
@@ -50,12 +74,8 @@ const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) =
     
     try {
       if (resetType === 'user') {
-        if (window.confirm(
-          `⚠️ ${currentUser} 사용자의 모든 서버 데이터를 삭제하시겠습니까?\n` +
-          `- 모든 일정\n` +
-          `- 모든 월간 목표\n\n` +
-          `이 작업은 되돌릴 수 없습니다.`
-        )) {
+        const confirmMessage = `⚠️ ${currentUser} 사용자의 모든 서버 데이터를 삭제하시겠습니까?\n- 모든 일정\n- 모든 월간 목표\n\n이 작업은 되돌릴 수 없습니다.`;
+        if (window.confirm(confirmMessage)) {
           const { error } = await supabase
             .from('DAL')
             .delete()
@@ -69,14 +89,12 @@ const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) =
           if (onDataChanged) onDataChanged();
         }
       } else if (resetType === 'all') {
-        if (window.confirm(
-          '⚠️ 모든 사용자의 서버 데이터를 삭제하시겠습니까?\n' +
-          '이 작업은 되돌릴 수 없습니다.'
-        )) {
+        const confirmMessage = '⚠️ 모든 사용자의 서버 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.';
+        if (window.confirm(confirmMessage)) {
           const { error } = await supabase
             .from('DAL')
             .delete()
-            .neq('id', 0); // 모든 레코드 삭제
+            .neq('id', 0);
           
           if (error) {
             throw error;
@@ -180,87 +198,61 @@ const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) =
   );
 };
 
-const CalendarPage = ({ currentUser, onLogout }) => {
+// ✅ 기존 구조 유지: App.jsx에서 props로 데이터 받음 (무한동기화 해결)
+const CalendarPage = ({ 
+  schedules, 
+  setSchedules,
+  tags,
+  setTags,
+  tagItems,
+  setTagItems,
+  monthlyGoals,
+  setMonthlyGoals,
+  currentUser, 
+  onLogout, 
+  lastSyncTime 
+}) => {
   const currentDate = new Date();
   const navigate = useNavigate();
 
-  // 서버에서 불러온 데이터 상태
-  const [schedules, setSchedules] = useState([]);
-  const [monthlyGoals, setMonthlyGoals] = useState([]);
-  const [tags, setTags] = useState([]);
-  const [tagItems, setTagItems] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [lastSyncTime, setLastSyncTime] = useState(null);
+  // ✅ 로딩 상태만 로컬에서 관리 (서버 호출 제거)
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // 서버에서 데이터 불러오기
-  const loadDataFromServer = async () => {
-    if (!currentUser) {
-      setIsLoading(false);
-      return;
-    }
-
+  // ✅ 수동 새로고침 함수 (App.jsx의 데이터를 다시 로드)
+  const handleManualRefresh = useCallback(async () => {
+    if (isLoading || isSaving || !currentUser) return;
+    
+    console.log('🔄 수동 새로고침 시작');
+    setIsLoading(true);
+    
     try {
-      setIsLoading(true);
-      console.log('🔄 서버에서 사용자 데이터 불러오기 시작:', currentUser);
-
       const result = await loadUserDataFromDAL(currentUser);
       
       if (result.success && result.data) {
-        setSchedules(result.data.schedules || []);
-        setMonthlyGoals(result.data.monthlyGoals || []);
-        setTags(result.data.tags || []);
-        setTagItems(result.data.tagItems || []);
-        setLastSyncTime(new Date());
+        // App.jsx의 상태 업데이트 함수들 호출
+        if (setSchedules) setSchedules(result.data.schedules || []);
+        if (setTags) setTags(result.data.tags || []);
+        if (setTagItems) setTagItems(result.data.tagItems || []);
+        if (setMonthlyGoals) setMonthlyGoals(result.data.monthlyGoals || []);
         
-        console.log('✅ 서버 데이터 로드 성공:', {
-          schedules: result.data.schedules?.length || 0,
-          monthlyGoals: result.data.monthlyGoals?.length || 0,
-          tags: result.data.tags?.length || 0,
-          tagItems: result.data.tagItems?.length || 0
-        });
+        console.log('✅ 수동 새로고침 완료');
       } else {
-        console.warn('⚠️ 서버 데이터 로드 실패 또는 빈 데이터:', result.error);
-        // 서버에 데이터가 없는 경우 빈 배열로 초기화
-        setSchedules([]);
-        setMonthlyGoals([]);
-        setTags([]);
-        setTagItems([]);
-        setLastSyncTime(new Date());
+        console.warn('⚠️ 새로고침 데이터 없음');
       }
     } catch (error) {
-      console.error('❌ 서버 데이터 로드 중 오류:', error);
-      alert('서버 데이터를 불러오는 중 오류가 발생했습니다: ' + error.message);
+      console.error('❌ 수동 새로고침 실패:', error);
+      alert('새로고침 중 오류가 발생했습니다: ' + error.message);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser, isLoading, isSaving, setSchedules, setTags, setTagItems, setMonthlyGoals]);
 
-  // 컴포넌트 마운트시 데이터 로드
-  useEffect(() => {
-    loadDataFromServer();
-  }, [currentUser]);
-
-  // 페이지 포커스시 데이터 새로고침
-  useEffect(() => {
-    const handleFocus = () => {
-      console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
-      loadDataFromServer();
-    };
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        handleFocus();
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [currentUser]);
+  // ✅ 서버 데이터 리셋 후 콜백
+  const handleDataChanged = useCallback(async () => {
+    console.log('🔄 서버 데이터 변경 후 새로고침');
+    await handleManualRefresh();
+  }, [handleManualRefresh]);
 
   // 현재 월의 날짜들
   const days = eachDayOfInterval({
@@ -269,7 +261,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
   });
   
   // 현재 월의 일정들만 필터링
-  const currentMonthSchedules = schedules.filter(schedule => {
+  const currentMonthSchedules = (schedules || []).filter(schedule => {
     const scheduleDate = new Date(schedule.date);
     const currentMonth = format(currentDate, 'yyyy-MM');
     const scheduleMonth = format(scheduleDate, 'yyyy-MM');
@@ -277,7 +269,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
   });
 
   // 현재 월의 월간 목표 가져오기
-  const currentMonthGoals = monthlyGoals.find(mg => mg.month === format(currentDate, 'yyyy-MM'))?.goals || [];
+  const currentMonthGoals = (monthlyGoals || []).find(mg => mg.month === format(currentDate, 'yyyy-MM'))?.goals || [];
 
   // 태그별 총 시간 계산 (실제 사용 시간)
   const calculateMonthlyTagTotals = () => {
@@ -297,7 +289,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
       totals[tagType] += duration;
     });
     
-    return totals; // 분 단위로 반환
+    return totals;
   };
 
   // 퍼센테이지 계산
@@ -326,7 +318,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
     return `${hours}h${minutes}m`;
   };
 
-  // 태그 색상 가져오기 (기본 색상 사용)
+  // 태그 색상 가져오기
   const getTagColor = (tagType) => {
     const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
     return PASTEL_COLORS[index];
@@ -342,19 +334,6 @@ const CalendarPage = ({ currentUser, onLogout }) => {
   
   // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
   const allTagTypes = [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
-  
-  if (isLoading) {
-    return (
-      <div className="p-6 max-w-6xl mx-auto">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">서버에서 데이터를 불러오는 중...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
   
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -373,13 +352,15 @@ const CalendarPage = ({ currentUser, onLogout }) => {
               >
                 로그아웃
               </button>
+              
+              {/* 수동 새로고침 버튼 */}
               <button
-                onClick={() => loadDataFromServer()}
-                className="bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded text-sm"
-                title="서버에서 새로고침"
-                disabled={isLoading}
+                onClick={handleManualRefresh}
+                disabled={isLoading || isSaving}
+                className="bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded text-sm disabled:opacity-50 transition-colors"
+                title="서버에서 수동 새로고침"
               >
-                {isLoading ? '🔄 로딩...' : '🔄 새로고침'}
+                {isLoading || isSaving ? '🔄 로딩...' : '🔄 새로고침'}
               </button>
               
               {/* 서버 연동 상태 표시 */}
@@ -387,15 +368,16 @@ const CalendarPage = ({ currentUser, onLogout }) => {
                 🌐 서버 연동
               </div>
               
-              {lastSyncTime && (
-                <div className="text-xs text-gray-500">
-                  마지막 동기화: {format(lastSyncTime, 'HH:mm:ss')}
-                </div>
-              )}
+              {/* 동기화 상태 표시 */}
+              <SyncStatus 
+                lastSyncTime={lastSyncTime}
+                isLoading={isLoading}
+                isSaving={isSaving}
+              />
               
               <ServerDataResetButton 
                 currentUser={currentUser} 
-                onDataChanged={loadDataFromServer}
+                onDataChanged={handleDataChanged}
               />
             </div>
           )}
@@ -509,7 +491,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
             const isToday = format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
             const isWeekend = index % 7 === 0 || index % 7 === 6;
             const dateStr = format(day, 'yyyy-MM-dd');
-            const daySchedules = schedules.filter(schedule => schedule.date === dateStr);
+            const daySchedules = (schedules || []).filter(schedule => schedule.date === dateStr);
             const dayTotalHours = getDayTotalHours(day);
             
             return (
@@ -520,7 +502,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
                   ${isToday ? 'bg-blue-50' : ''}
                   ${isWeekend ? 'bg-gray-25' : ''}
                 `}
-                onClick={() => navigate(`/weekly?date=${format(day, 'yyyy-MM-dd')}`)} // ✅ 수정
+                onClick={() => navigate(`/day/${format(day, 'yyyy-MM-dd')}`)}
               >
                 {/* 날짜 표시 행 */}
                 <div className="flex justify-between items-center mb-2">
