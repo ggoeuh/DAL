@@ -1,7 +1,14 @@
 import React from "react";
-import { useSearchParams } from "react-router-dom"; // ← 추가
+import { useSearchParams } from "react-router-dom";
 import { useWeeklyCalendarLogic } from "./WeeklyCalendarLogic";
 import { WeeklyCalendarUI } from "./WeeklyCalendarUI";
+
+// ✅ 날짜 유효성 검증 함수 추가
+const isValidDate = (dateString) => {
+  if (!dateString) return false;
+  const date = new Date(dateString);
+  return date instanceof Date && !isNaN(date) && dateString.match(/^\d{4}-\d{2}-\d{2}$/);
+};
 
 const WeeklyCalendar = ({ 
   // 새로운 props 구조
@@ -20,24 +27,34 @@ const WeeklyCalendar = ({
   saveToServer,
   loadFromServer
 }) => {
-  // URL 파라미터에서 날짜 가져오기
-  const [searchParams] = useSearchParams(); // ← 추가
-  const initialDate = searchParams.get('date'); // ← 추가
+  // ✅ URL 파라미터에서 날짜 가져오기 및 검증
+  const [searchParams] = useSearchParams();
+  const dateParam = searchParams.get('date');
+  
+  // 날짜 검증 및 안전한 처리
+  const initialDate = React.useMemo(() => {
+    if (dateParam && isValidDate(dateParam)) {
+      console.log('✅ 유효한 날짜 파라미터:', dateParam);
+      return dateParam;
+    }
+    if (dateParam) {
+      console.warn('⚠️ 잘못된 날짜 형식:', dateParam, '→ 오늘 날짜 사용');
+    }
+    return null; // 기본값은 오늘
+  }, [dateParam]);
 
   // 새로운 훅 사용 방식
   const calendarLogic = useWeeklyCalendarLogic({
     currentUser,
     isServerBased,
     enableAutoRefresh,
-    initialDate, // ← 추가
+    initialDate, // ✅ 검증된 날짜 전달
     // 서버 기반이 아닐 때만 초기 데이터 전달
     initialSchedules: !isServerBased ? schedules : [],
     initialTags: !isServerBased ? tags : [],
     initialTagItems: !isServerBased ? tagItems : [],
     initialMonthlyGoals: []
   });
-
-  // ... 나머지 코드는 그대로
 
   const {
     // 상태와 데이터
