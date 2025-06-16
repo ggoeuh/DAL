@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
 export const WeeklyCalendarUI = ({ 
@@ -83,21 +83,48 @@ export const WeeklyCalendarUI = ({
     handleResizeEnd
   } = calendarLogic;
 
-  // 이벤트 리스너 등록
+  // ✨ 체크박스 변경 핸들러 - useCallback으로 메모이제이션하여 무한 루프 방지
+  const handleCheckboxChange = useCallback((scheduleId, currentDone) => {
+    if (isAdminView) return;
+    
+    if (calendarLogic.setSchedules && currentUser) {
+      const updated = safeSchedules.map(item =>
+        item.id === scheduleId ? { ...item, done: !currentDone } : item
+      );
+      // 상위 컴포넌트의 setSchedules 호출 (서버 저장 포함)
+      calendarLogic.setSchedules(updated);
+    }
+  }, [isAdminView, calendarLogic.setSchedules, currentUser, safeSchedules]);
+
+  // 이벤트 리스너 등록 - 의존성 배열 최적화
   useEffect(() => {
+    const cleanup = [];
+
     if (resizing) {
       window.addEventListener('mousemove', handleResizeMove);
       window.addEventListener('mouseup', handleResizeEnd);
+      cleanup.push(() => {
+        window.removeEventListener('mousemove', handleResizeMove);
+        window.removeEventListener('mouseup', handleResizeEnd);
+      });
     }
     
     if (copyingSchedule) {
       window.addEventListener('mousemove', handleCopyMove);
       window.addEventListener('mouseup', handleCopyEnd);
+      cleanup.push(() => {
+        window.removeEventListener('mousemove', handleCopyMove);
+        window.removeEventListener('mouseup', handleCopyEnd);
+      });
     }
     
     if (dragging) {
       window.addEventListener('mousemove', handleDragMove);
       window.addEventListener('mouseup', handleDragEnd);
+      cleanup.push(() => {
+        window.removeEventListener('mousemove', handleDragMove);
+        window.removeEventListener('mouseup', handleDragEnd);
+      });
     }
     
     if (contextMenu.visible) {
@@ -105,22 +132,31 @@ export const WeeklyCalendarUI = ({
         setContextMenu({ ...contextMenu, visible: false });
       };
       window.addEventListener('click', handleClickOutside);
-      return () => window.removeEventListener('click', handleClickOutside);
+      cleanup.push(() => {
+        window.removeEventListener('click', handleClickOutside);
+      });
     }
     
     return () => {
-      window.removeEventListener('mousemove', handleResizeMove);
-      window.removeEventListener('mouseup', handleResizeEnd);
-      window.removeEventListener('mousemove', handleCopyMove);
-      window.removeEventListener('mouseup', handleCopyEnd);
-      window.removeEventListener('mousemove', handleDragMove);
-      window.removeEventListener('mouseup', handleDragEnd);
-      
+      cleanup.forEach(fn => fn());
       if (autoScrollTimer) {
         clearTimeout(autoScrollTimer);
       }
     };
-  }, [resizing, copyingSchedule, dragging, contextMenu.visible, autoScrollTimer, dragOffset, focusedDayIndex]);
+  }, [
+    resizing, 
+    copyingSchedule, 
+    dragging, 
+    contextMenu.visible, 
+    autoScrollTimer,
+    handleResizeMove, 
+    handleResizeEnd, 
+    handleCopyMove, 
+    handleCopyEnd, 
+    handleDragMove, 
+    handleDragEnd, 
+    setContextMenu
+  ]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-50">
@@ -404,19 +440,12 @@ export const WeeklyCalendarUI = ({
                                   <div className="flex items-center gap-1 mb-1">
                                     <input
                                       type="checkbox"
-                                      checked={s.done}
+                                      checked={s.done || false}
                                       disabled={isAdminView}
                                       className={`flex-shrink-0 ${isAdminView ? 'cursor-not-allowed opacity-50' : 'pointer-events-auto'}`}
                                       onChange={(e) => {
-                                        if (isAdminView) return;
                                         e.stopPropagation();
-                                        if (calendarLogic.setSchedules && currentUser) {
-                                          const updated = safeSchedules.map(item =>
-                                            item.id === s.id ? { ...item, done: !item.done } : item
-                                          );
-                                          // 상위 컴포넌트의 setSchedules 호출 (서버 저장 포함)
-                                          calendarLogic.setSchedules(updated);
-                                        }
+                                        handleCheckboxChange(s.id, s.done);
                                       }}
                                     />
                                     {s.tag && (
