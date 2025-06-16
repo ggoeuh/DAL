@@ -521,6 +521,7 @@ const MonthlyPlan = ({
                   .reduce((sum, item) => sum + item.estimatedTime, 0);
                 
                 const targetHours = getTargetHoursForTagType(tagType);
+                // 달성률 = (실제 계획 시간 / 목표 시간) * 100
                 const achievementRate = targetHours > 0 ? Math.round((actualPlannedTime / targetHours) * 100) : 0;
 
                 return (
@@ -702,15 +703,8 @@ const MonthlyPlan = ({
                             isSelected ? 'ring-2 ring-blue-400 bg-opacity-90' : ''
                           } ${saving ? 'opacity-50 cursor-not-allowed' : ''}`}
                           onClick={() => !saving && handleSelectTag(item.tagType, item.tagName)}
-                          title={targetHours > 0 ? `목표: ${targetHours}시간` : '목표 미설정'}
                         >
                           <div>{item.tagName}</div>
-                          {/* ✅ 목표 시간 표시 */}
-                          {targetHours > 0 && (
-                            <div className="text-[10px] opacity-70">
-                              목표: {targetHours}h
-                            </div>
-                          )}
                         </div>
                         <button
                           className="bg-red-100 text-red-500 rounded-r-md px-2 py-1 text-xs disabled:opacity-50"
@@ -763,39 +757,6 @@ const MonthlyPlan = ({
               >
                 {saving ? '서버에 저장 중...' : '일정 추가하기'}
               </button>
-
-              {/* ✅ 목표 요약 정보 */}
-              {currentMonthGoals.length > 0 && (
-                <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <h4 className="text-sm font-medium text-blue-800 mb-2">🎯 이번 달 목표</h4>
-                  <div className="space-y-1">
-                    {currentMonthGoals.map((goal, idx) => {
-                      const plannedHours = plans
-                        .filter(plan => plan.tagType === goal.tagType)
-                        .reduce((sum, plan) => sum + plan.estimatedTime, 0);
-                      const targetHours = parseInt(goal.targetHours.split(':')[0]);
-                      const achievementRate = targetHours > 0 ? Math.round((plannedHours / targetHours) * 100) : 0;
-                      
-                      return (
-                        <div key={idx} className="flex justify-between items-center text-xs">
-                          <span className="text-blue-700">{goal.tagType}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-blue-600">
-                              {plannedHours}/{targetHours}시간
-                            </span>
-                            <span className={`font-medium ${
-                              achievementRate >= 100 ? 'text-green-600' : 
-                              achievementRate >= 80 ? 'text-blue-600' : 'text-orange-600'
-                            }`}>
-                              {achievementRate}%
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
