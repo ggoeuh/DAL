@@ -215,7 +215,7 @@ export const WeeklyCalendarUI = ({
         
         {/* 태그별 총 시간 요약 */}
         <div className="flex gap-4 flex-wrap">
-          {Object.entries(tagTotals).map(([tagType, totalTime]) => {
+          {Object.entries(tagTotals || {}).map(([tagType, totalTime]) => {
             const tagColor = getTagColor(tagType);
             return (
               <div 
