@@ -1,29 +1,34 @@
 import React from "react";
 import { useWeeklyCalendarLogic } from "./WeeklyCalendarLogic";
 import { WeeklyCalendarUI } from "./WeeklyCalendarUI";
-import { saveUserDataToDAL } from './utils/supabaseStorage.js';
 
 const WeeklyCalendar = ({ 
+  // 새로운 props 구조
+  currentUser,
+  onLogout,
+  isServerBased = true,
+  enableAutoRefresh = true,
+  
+  // 레거시 props (하위 호환성을 위해 유지, 서버 모드가 아닐 때만 사용)
   schedules = [], 
   setSchedules, 
   tags = [], 
   setTags, 
   tagItems = [], 
-  setTagItems, 
-  currentUser,
-  onLogout,
+  setTagItems,
   saveToServer,
   loadFromServer
 }) => {
-  // 로직 훅 사용
+  // 새로운 훅 사용 방식
   const calendarLogic = useWeeklyCalendarLogic({
-    schedules,
-    setSchedules,
-    tags,
-    setTags,
-    tagItems,
-    setTagItems,
-    currentUser
+    currentUser,
+    isServerBased,
+    enableAutoRefresh,
+    // 서버 기반이 아닐 때만 초기 데이터 전달
+    initialSchedules: !isServerBased ? schedules : [],
+    initialTags: !isServerBased ? tags : [],
+    initialTagItems: !isServerBased ? tagItems : [],
+    initialMonthlyGoals: []
   });
 
   const {
@@ -55,21 +60,57 @@ const WeeklyCalendar = ({
     setActiveTimeSlot,
     setDragging,
     setDragOffset,
+    isLoading,
+    lastSyncTime,
     
     // 상수들
     DAYS_OF_WEEK,
     
-    // 헬퍼 함수들
+    // 헬퍼 함수들 (훅에서 제공)
     assignNewTagColor,
     handleDayFocus,
     checkScheduleOverlap,
     parseTimeToMinutes,
     minutesToTimeString,
     getDayOfWeek,
-    pixelToNearestTimeSlot
+    pixelToNearestTimeSlot,
+    
+    // 서버 관리 함수들 (새로 추가된 것들)
+    loadDataFromServer,
+    saveDataToServer,
+    addSchedule,
+    updateSchedule,
+    deleteSchedule
   } = calendarLogic;
 
-  // 추가 핸들러들 정의
+  // 하위 호환성을 위한 레거시 상태 업데이트 (서버 기반이 아닐 때만)
+  // useRef로 이전 값 추적하여 무한 렌더링 방지
+  const prevSchedulesRef = React.useRef();
+  const prevTagsRef = React.useRef();
+  const prevTagItemsRef = React.useRef();
+
+  React.useEffect(() => {
+    if (!isServerBased && setSchedules && prevSchedulesRef.current !== safeSchedules) {
+      prevSchedulesRef.current = safeSchedules;
+      setSchedules(safeSchedules);
+    }
+  }, [safeSchedules, isServerBased, setSchedules]);
+
+  React.useEffect(() => {
+    if (!isServerBased && setTags && prevTagsRef.current !== safeTags) {
+      prevTagsRef.current = safeTags;
+      setTags(safeTags);
+    }
+  }, [safeTags, isServerBased, setTags]);
+
+  React.useEffect(() => {
+    if (!isServerBased && setTagItems && prevTagItemsRef.current !== safeTagItems) {
+      prevTagItemsRef.current = safeTagItems;
+      setTagItems(safeTagItems);
+    }
+  }, [safeTagItems, isServerBased, setTagItems]);
+
+  // 컨텍스트 메뉴 핸들러들
   const handleContextMenu = (e, scheduleId) => {
     e.preventDefault();
     e.stopPropagation();
@@ -91,21 +132,21 @@ const WeeklyCalendar = ({
     setContextMenu({ ...contextMenu, visible: false });
   };
   
-  const handleDeleteSchedule = () => {
-    if (setSchedules && currentUser) {
-      const scheduleToDelete = safeSchedules.find(s => s.id === contextMenu.scheduleId);
-      const updatedSchedules = safeSchedules.filter(s => s.id !== contextMenu.scheduleId);
+  const handleDeleteSchedule = async () => {
+    const scheduleToDelete = safeSchedules.find(s => s.id === contextMenu.scheduleId);
+    
+    if (scheduleToDelete) {
+      // 새로운 훅의 deleteSchedule 함수 사용
+      const result = await deleteSchedule(contextMenu.scheduleId);
       
-      setSchedules(updatedSchedules);
-      
-      saveUserDataToDAL(currentUser, {
-        schedules: updatedSchedules,
-        tags: safeTags,
-        tagItems: safeTagItems
-      });
-      
-      console.log('일정 삭제됨:', scheduleToDelete?.title);
+      if (result.success) {
+        console.log('일정 삭제됨:', scheduleToDelete.title);
+      } else {
+        console.error('일정 삭제 실패:', result.error);
+        alert('일정 삭제에 실패했습니다: ' + result.error);
+      }
     }
+    
     setContextMenu({ ...contextMenu, visible: false });
   };
 
@@ -125,8 +166,8 @@ const WeeklyCalendar = ({
     }
   };
 
-  const handleCopyEnd = (e) => {
-    if (!copyingSchedule || !setSchedules) return;
+  const handleCopyEnd = async (e) => {
+    if (!copyingSchedule) return;
     
     const containers = document.querySelectorAll('[data-day-index]');
     let targetDayIndex = null;
@@ -163,18 +204,15 @@ const WeeklyCalendar = ({
       };
       
       if (!checkScheduleOverlap(safeSchedules, newSchedule)) {
-        const updatedSchedules = [...safeSchedules, newSchedule];
-        setSchedules(updatedSchedules);
+        // 새로운 훅의 addSchedule 함수 사용
+        const result = await addSchedule(newSchedule);
         
-        if (currentUser) {
-          saveUserDataToDAL(currentUser, {
-            schedules: updatedSchedules,
-            tags: safeTags,
-            tagItems: safeTagItems
-          });
+        if (result.success) {
+          console.log(`일정 붙여넣기 완료: ${copyingSchedule.title} -> ${getDayOfWeek(currentWeek[targetDayIndex])} ${dropTimeSlot}-${newEnd}`);
+        } else {
+          console.error('일정 붙여넣기 실패:', result.error);
+          alert('일정 붙여넣기에 실패했습니다: ' + result.error);
         }
-        
-        console.log(`일정 붙여넣기 완료: ${copyingSchedule.title} -> ${getDayOfWeek(currentWeek[targetDayIndex])} ${dropTimeSlot}-${newEnd}`);
       } else {
         setShowOverlapMessage(true);
         setTimeout(() => setShowOverlapMessage(false), 3000);
@@ -217,8 +255,8 @@ const WeeklyCalendar = ({
     }
   };
 
-  const handleDragEnd = (e) => {
-    if (!calendarLogic.dragging || !setSchedules) {
+  const handleDragEnd = async (e) => {
+    if (!calendarLogic.dragging) {
       setDragging(null);
       return;
     }
@@ -255,28 +293,24 @@ const WeeklyCalendar = ({
       const newEndMinutes = newStartMinutes + duration;
       const newEndTime = minutesToTimeString(newEndMinutes);
       
-      const updatedSchedule = {
-        ...schedule,
+      const updatedData = {
         date: newDate,
         start: newStartTime,
         end: newEndTime
       };
       
+      const updatedSchedule = { ...schedule, ...updatedData };
+      
       if (!checkScheduleOverlap(safeSchedules, updatedSchedule)) {
-        const updatedSchedules = safeSchedules.map(s => 
-          s.id === calendarLogic.dragging ? updatedSchedule : s
-        );
-        setSchedules(updatedSchedules);
+        // 새로운 훅의 updateSchedule 함수 사용
+        const result = await updateSchedule(calendarLogic.dragging, updatedData);
         
-        if (currentUser) {
-          saveUserDataToDAL(currentUser, {
-            schedules: updatedSchedules,
-            tags: safeTags,
-            tagItems: safeTagItems
-          });
+        if (result.success) {
+          console.log(`일정 이동 완료: ${schedule.title}`);
+        } else {
+          console.error('일정 이동 실패:', result.error);
+          alert('일정 이동에 실패했습니다: ' + result.error);
         }
-        
-        console.log(`일정 이동 완료: ${schedule.title}`);
       } else {
         setShowOverlapMessage(true);
         setTimeout(() => setShowOverlapMessage(false), 3000);
@@ -287,7 +321,7 @@ const WeeklyCalendar = ({
   };
 
   // 일정 추가 핸들러
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.title || !startSlot || !form.end) return;
   
     const tagInfo = safeTagItems.find(
@@ -341,56 +375,71 @@ const WeeklyCalendar = ({
       }
     }
   
-    if (setSchedules && currentUser) {
-      const updatedSchedules = [...safeSchedules, ...newSchedules];
-      setSchedules(updatedSchedules);
-      
-      saveUserDataToDAL(currentUser, {
-        schedules: updatedSchedules,
-        tags: safeTags,
-        tagItems: safeTagItems
-      });
+    // 모든 일정을 순차적으로 추가
+    let allSuccess = true;
+    for (const schedule of newSchedules) {
+      const result = await addSchedule(schedule);
+      if (!result.success) {
+        console.error('일정 추가 실패:', result.error);
+        alert('일정 추가에 실패했습니다: ' + result.error);
+        allSuccess = false;
+        break;
+      }
     }
   
-    setStartSlot("07:00");
-    setForm({
-      title: "",
-      end: "07:00",
-      description: "",
-      tag: "",
-      repeatCount: "1",
-      interval: "1",
-      weekdays: [],
-    });
-    setSelectedTagType("");
-    setActiveTimeSlot(null);
+    if (allSuccess) {
+      // 폼 초기화
+      setStartSlot("07:00");
+      setForm({
+        title: "",
+        end: "07:00",
+        description: "",
+        tag: "",
+        repeatCount: "1",
+        interval: "1",
+        weekdays: [],
+      });
+      setSelectedTagType("");
+      setActiveTimeSlot(null);
+    }
   };
   
   // 태그 추가 핸들러
-  const handleAddTag = () => {
+  const handleAddTag = async () => {
     if (!newTagType.trim() || !newTagName.trim()) return;
     
+    // 태그 타입이 없으면 추가
     let updatedTags = [...safeTags];
     if (!safeTags.find(t => t.tagType === newTagType)) {
       const newColor = assignNewTagColor(newTagType);
       updatedTags = [...safeTags, { tagType: newTagType, color: newColor }];
-      if (setTags) {
-        setTags(updatedTags);
-      }
     }
     
+    // 태그 아이템이 없으면 추가
     if (!safeTagItems.find(t => t.tagType === newTagType && t.tagName === newTagName)) {
       const updatedTagItems = [...safeTagItems, { tagType: newTagType, tagName: newTagName }];
-      if (setTagItems) {
-        setTagItems(updatedTagItems);
-      }
       
-      if (currentUser) {
-        saveUserDataToDAL(currentUser, {
+      // 서버에 저장
+      if (isServerBased && currentUser) {
+        const result = await saveDataToServer({
           schedules: safeSchedules,
           tags: updatedTags,
-          tagItems: updatedTagItems
+          tagItems: updatedTagItems,
+          monthlyGoals: calendarLogic.safeMonthlyGoals
         });
+        
+        if (result.success) {
+          // 로컬 상태 업데이트는 훅 내부에서 처리됨
+          console.log('태그 추가 완료:', newTagType, newTagName);
+        } else {
+          console.error('태그 추가 실패:', result.error);
+          alert('태그 추가에 실패했습니다: ' + result.error);
+          return;
+        }
+      } else if (!isServerBased) {
+        // 레거시 모드에서는 직접 상태 업데이트
+        if (setTags) setTags(updatedTags);
+        if (setTagItems) setTagItems(updatedTagItems);
       }
     }
     
@@ -399,16 +448,25 @@ const WeeklyCalendar = ({
   };
   
   // 태그 삭제 핸들러
-  const handleDeleteTagItem = (tagType, tagName) => {
-    if (setTagItems && currentUser) {
-      const updatedTagItems = safeTagItems.filter(item => !(item.tagType === tagType && item.tagName === tagName));
-      setTagItems(updatedTagItems);
-      
-      saveUserDataToDAL(currentUser, {
+  const handleDeleteTagItem = async (tagType, tagName) => {
+    const updatedTagItems = safeTagItems.filter(item => !(item.tagType === tagType && item.tagName === tagName));
+    
+    if (isServerBased && currentUser) {
+      const result = await saveDataToServer({
         schedules: safeSchedules,
         tags: safeTags,
-        tagItems: updatedTagItems
+        tagItems: updatedTagItems,
+        monthlyGoals: calendarLogic.safeMonthlyGoals
       });
+      
+      if (result.success) {
+        console.log('태그 삭제 완료:', tagType, tagName);
+      } else {
+        console.error('태그 삭제 실패:', result.error);
+        alert('태그 삭제에 실패했습니다: ' + result.error);
+      }
+    } else if (!isServerBased && setTagItems) {
+      setTagItems(updatedTagItems);
     }
   };
 
@@ -488,11 +546,28 @@ const WeeklyCalendar = ({
     }
   };
 
+  // 수동 새로고침 핸들러
+  const handleManualRefresh = async () => {
+    if (isServerBased) {
+      const result = await loadDataFromServer();
+      if (result.success) {
+        console.log('수동 새로고침 완료');
+      } else {
+        console.error('수동 새로고침 실패:', result.error);
+        alert('데이터 새로고침에 실패했습니다: ' + result.error);
+      }
+    }
+  };
+
   return (
     <WeeklyCalendarUI
       calendarLogic={calendarLogic}
       currentUser={currentUser}
       onLogout={onLogout}
+      isServerBased={isServerBased}
+      isLoading={isLoading}
+      lastSyncTime={lastSyncTime}
+      onManualRefresh={handleManualRefresh}
       handleContextMenu={handleContextMenu}
       handleCopySchedule={handleCopySchedule}
       handleDeleteSchedule={handleDeleteSchedule}
