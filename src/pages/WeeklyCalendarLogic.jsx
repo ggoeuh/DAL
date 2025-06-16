@@ -227,13 +227,30 @@ export const useWeeklyCalendarLogic = (props = {}) => {
 
     let debounceTimer = null;
 
-    const handleFocus = () => {
-      // 디바운싱으로 너무 자주 호출되는 것 방지
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
-        loadDataFromServer(true); // silent 모드로 새로고침
-      }, 1000); // 1초 디바운싱
+    // handleDayFocus 함수 수정
+    const handleDayFocus = (clickedDate) => {
+      // 클릭한 날짜를 중심으로 연속된 5일 생성
+      const newVisibleDays = [];
+      for (let i = -2; i <= 2; i++) {
+        const date = new Date(clickedDate);
+        date.setDate(clickedDate.getDate() + i);
+        newVisibleDays.push(date);
+      }
+      
+      setVisibleDays(newVisibleDays);
+      setFocusedDayIndex(2); // 중앙이 포커스
+      
+      // currentWeek도 업데이트 (전체 주 정보 유지용)
+      const startOfWeek = new Date(clickedDate);
+      startOfWeek.setDate(clickedDate.getDate() - clickedDate.getDay());
+      
+      const newWeek = [];
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(startOfWeek);
+        date.setDate(startOfWeek.getDate() + i);
+        newWeek.push(date);
+      }
+      setCurrentWeek(newWeek);
     };
 
     const handleVisibilityChange = () => {
@@ -296,15 +313,16 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   );
   const [focusedDayIndex, setFocusedDayIndex] = useState(today.getDay());
   
+  // 초기 visibleDays를 Date 객체 배열로 설정
   const [visibleDays, setVisibleDays] = useState(() => {
-    const focusPosition = 3;
-    const newVisibleDays = [];
-    for (let i = 0; i < 5; i++) {
-      const offset = i - focusPosition;
-      const newIndex = (focusedDayIndex + offset + 7) % 7;
-      newVisibleDays.push(newIndex);
+    const today = new Date();
+    const visibleDates = [];
+    for (let i = -2; i <= 2; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      visibleDates.push(date);
     }
-    return newVisibleDays;
+    return visibleDates;
   });
   
   // 시간 슬롯
