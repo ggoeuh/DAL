@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -7,7 +7,7 @@ import {
   supabase
 } from './utils/supabaseStorage.js';
 
-// 파스텔 색상 팔레트
+// 파스텔 색상 팔레트 (서버에 색상이 없을 때 기본값으로 사용)
 const PASTEL_COLORS = [
   { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-200" },
   { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-200" },
@@ -34,8 +34,8 @@ const minutesToTimeString = (totalMinutes) => {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
-// 동기화 상태 표시 컴포넌트
-const SyncStatus = ({ lastSyncTime, isLoading, isSaving }) => (
+// ✅ 동기화 상태 표시 컴포넌트 - React.memo로 최적화
+const SyncStatus = React.memo(({ lastSyncTime, isLoading, isSaving }) => (
   <div className="flex items-center gap-2 text-xs">
     {isSaving ? (
       <div className="text-orange-600 flex items-center gap-1">
@@ -56,15 +56,15 @@ const SyncStatus = ({ lastSyncTime, isLoading, isSaving }) => (
       </div>
     )}
   </div>
-);
+));
 
-// 서버 데이터 리셋 버튼 컴포넌트
-const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) => {
+// ✅ 서버 데이터 리셋 버튼 컴포넌트 - React.memo로 최적화
+const ServerDataResetButton = React.memo(({ currentUser, onDataChanged, className = "" }) => {
   const [showModal, setShowModal] = useState(false);
   const [resetType, setResetType] = useState('user');
   const [isResetting, setIsResetting] = useState(false);
 
-  const handleReset = async () => {
+  const handleReset = useCallback(async () => {
     if (!supabase || !currentUser) {
       alert('❌ Supabase 연결 또는 사용자 정보가 없습니다.');
       return;
@@ -111,7 +111,7 @@ const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) =
     
     setIsResetting(false);
     setShowModal(false);
-  };
+  }, [currentUser, resetType, onDataChanged]);
 
   return (
     <>
@@ -196,13 +196,12 @@ const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) =
       )}
     </>
   );
-};
+});
 
-// ✅ 기존 구조 유지: App.jsx에서 props로 데이터 받음 (무한동기화 해결)
 const CalendarPage = ({ 
   schedules, 
   setSchedules,
-  tags,
+  tags, // ✅ 서버에서 받아온 태그와 색상 정보
   setTags,
   tagItems,
   setTagItems,
@@ -212,14 +211,32 @@ const CalendarPage = ({
   onLogout, 
   lastSyncTime 
 }) => {
-  const currentDate = new Date();
   const navigate = useNavigate();
 
-  // ✅ 로딩 상태만 로컬에서 관리 (서버 호출 제거)
+  // ✅ 현재 날짜를 useMemo로 최적화
+  const currentDate = useMemo(() => new Date(), []);
+
+  // 로딩 상태만 로컬에서 관리
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // ✅ 수동 새로고침 함수 (App.jsx의 데이터를 다시 로드)
+  // ✅ 서버 태그 색상을 우선 사용하고, 없으면 기본 색상 생성하는 함수
+  const getTagColor = useCallback((tagType) => {
+    // 1. 서버에서 받아온 태그 색상 정보 확인
+    const serverTag = tags?.find(t => t.tagType === tagType);
+    if (serverTag && serverTag.color) {
+      console.log(`🎨 서버에서 받은 색상 사용: ${tagType}`, serverTag.color);
+      return serverTag.color;
+    }
+    
+    // 2. 서버에 색상 정보가 없으면 기본 색상 할당
+    const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+    const defaultColor = PASTEL_COLORS[index];
+    console.log(`🎨 기본 색상 사용: ${tagType}`, defaultColor);
+    return defaultColor;
+  }, [tags]);
+
+  // ✅ 수동 새로고침 함수 - useCallback으로 최적화
   const handleManualRefresh = useCallback(async () => {
     if (isLoading || isSaving || !currentUser) return;
     
@@ -230,6 +247,13 @@ const CalendarPage = ({
       const result = await loadUserDataFromDAL(currentUser);
       
       if (result.success && result.data) {
+        console.log('📥 서버에서 받은 데이터:', {
+          schedules: result.data.schedules?.length || 0,
+          tags: result.data.tags?.length || 0,
+          tagItems: result.data.tagItems?.length || 0,
+          monthlyGoals: result.data.monthlyGoals?.length || 0
+        });
+        
         // App.jsx의 상태 업데이트 함수들 호출
         if (setSchedules) setSchedules(result.data.schedules || []);
         if (setTags) setTags(result.data.tags || []);
@@ -248,31 +272,42 @@ const CalendarPage = ({
     }
   }, [currentUser, isLoading, isSaving, setSchedules, setTags, setTagItems, setMonthlyGoals]);
 
-  // ✅ 서버 데이터 리셋 후 콜백
+  // ✅ 서버 데이터 리셋 후 콜백 - useCallback으로 최적화
   const handleDataChanged = useCallback(async () => {
     console.log('🔄 서버 데이터 변경 후 새로고침');
     await handleManualRefresh();
   }, [handleManualRefresh]);
 
-  // 현재 월의 날짜들
-  const days = eachDayOfInterval({
-    start: startOfMonth(currentDate),
-    end: endOfMonth(currentDate),
-  });
+  // ✅ 현재 월의 날짜들 - useMemo로 최적화
+  const days = useMemo(() => {
+    return eachDayOfInterval({
+      start: startOfMonth(currentDate),
+      end: endOfMonth(currentDate),
+    });
+  }, [currentDate]);
   
-  // 현재 월의 일정들만 필터링
-  const currentMonthSchedules = (schedules || []).filter(schedule => {
-    const scheduleDate = new Date(schedule.date);
+  // ✅ 현재 월의 일정들만 필터링 - useMemo로 최적화
+  const currentMonthSchedules = useMemo(() => {
+    if (!schedules) return [];
+    
     const currentMonth = format(currentDate, 'yyyy-MM');
-    const scheduleMonth = format(scheduleDate, 'yyyy-MM');
-    return scheduleMonth === currentMonth;
-  });
+    return schedules.filter(schedule => {
+      const scheduleDate = new Date(schedule.date);
+      const scheduleMonth = format(scheduleDate, 'yyyy-MM');
+      return scheduleMonth === currentMonth;
+    });
+  }, [schedules, currentDate]);
 
-  // 현재 월의 월간 목표 가져오기
-  const currentMonthGoals = (monthlyGoals || []).find(mg => mg.month === format(currentDate, 'yyyy-MM'))?.goals || [];
+  // ✅ 현재 월의 월간 목표 가져오기 - useMemo로 최적화
+  const currentMonthGoals = useMemo(() => {
+    if (!monthlyGoals) return [];
+    
+    const currentMonth = format(currentDate, 'yyyy-MM');
+    return monthlyGoals.find(mg => mg.month === currentMonth)?.goals || [];
+  }, [monthlyGoals, currentDate]);
 
-  // 태그별 총 시간 계산 (실제 사용 시간)
-  const calculateMonthlyTagTotals = () => {
+  // ✅ 태그별 총 시간 계산 - useMemo로 최적화
+  const monthlyTagTotals = useMemo(() => {
     const totals = {};
     
     currentMonthSchedules.forEach(schedule => {
@@ -290,16 +325,23 @@ const CalendarPage = ({
     });
     
     return totals;
-  };
+  }, [currentMonthSchedules]);
 
-  // 퍼센테이지 계산
-  const calculatePercentage = (actual, goal) => {
+  // ✅ 태그 타입들 - useMemo로 최적화
+  const allTagTypes = useMemo(() => {
+    const goalTagTypes = currentMonthGoals.map(goal => goal.tagType);
+    const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"))];
+    return [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
+  }, [currentMonthGoals, currentMonthSchedules]);
+
+  // 퍼센테이지 계산 함수
+  const calculatePercentage = useCallback((actual, goal) => {
     if (goal === 0) return 0;
     return Math.round((actual / goal) * 100);
-  };
+  }, []);
 
-  // 특정 날짜의 총 시간 계산
-  const getDayTotalHours = (date) => {
+  // ✅ 특정 날짜의 총 시간 계산 - useCallback으로 최적화
+  const getDayTotalHours = useCallback((date) => {
     const dateString = format(date, 'yyyy-MM-dd');
     const daySchedules = currentMonthSchedules.filter(schedule => schedule.date === dateString);
     
@@ -316,24 +358,17 @@ const CalendarPage = ({
     if (minutes === 0) return `${hours}h`;
     if (hours === 0) return `${minutes}m`;
     return `${hours}h${minutes}m`;
-  };
+  }, [currentMonthSchedules]);
 
-  // 태그 색상 가져오기
-  const getTagColor = (tagType) => {
-    const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
-    return PASTEL_COLORS[index];
-  };
-  
-  const monthlyTagTotals = calculateMonthlyTagTotals();
-  
-  // 목표가 있는 태그 타입들
-  const goalTagTypes = currentMonthGoals.map(goal => goal.tagType);
-  
-  // 이번 달에 실제 사용된 태그 타입들
-  const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"))];
-  
-  // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
-  const allTagTypes = [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
+  // ✅ 디버깅 정보 출력
+  React.useEffect(() => {
+    console.log('🏷️ 태그 정보 상태:', {
+      tags: tags?.length || 0,
+      tagItems: tagItems?.length || 0,
+      tagsData: tags,
+      tagItemsData: tagItems
+    });
+  }, [tags, tagItems]);
   
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -397,7 +432,7 @@ const CalendarPage = ({
         {allTagTypes.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {allTagTypes.map((tagType) => {
-              const tagColor = getTagColor(tagType);
+              const tagColor = getTagColor(tagType); // ✅ 서버 색상 우선 사용
               const actualMinutes = monthlyTagTotals[tagType] || 0;
               const actualTime = minutesToTimeString(actualMinutes);
               
@@ -496,7 +531,7 @@ const CalendarPage = ({
             
             return (
               <div
-                key={day}
+                key={day.toISOString()}
                 className={`
                   relative cursor-pointer p-2 min-h-[100px] border-r border-b hover:bg-gray-50 transition-colors
                   ${isToday ? 'bg-blue-50' : ''}
@@ -526,7 +561,7 @@ const CalendarPage = ({
                 <div className="space-y-1">
                   {daySchedules.map((schedule) => {
                     const tagType = schedule.tagType || "기타";
-                    const tagColor = getTagColor(tagType);
+                    const tagColor = getTagColor(tagType); // ✅ 서버 색상 우선 사용
                     return (
                       <div
                         key={schedule.id}
@@ -534,7 +569,10 @@ const CalendarPage = ({
                           ${tagColor.bg} ${tagColor.border} border rounded-md p-2 text-xs
                           hover:shadow-md cursor-pointer transition-all
                         `}
-                        onClick={() => navigate(`/day/${format(day, 'yyyy-MM-dd')}`)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/day/${format(day, 'yyyy-MM-dd')}`);
+                        }}
                         title={`${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}`}
                       >
                         <div className="space-y-1">
@@ -572,7 +610,7 @@ const CalendarPage = ({
           <span className="font-medium">💡 팁:</span> 날짜를 클릭하면 해당 날짜의 상세 일정을 확인할 수 있습니다.
         </p>
         
-        {/* 서버 연동 상태 표시 */}
+        {/* ✅ 서버 연동 상태 표시 - 태그 정보 포함 */}
         <div className="mt-2 text-xs text-blue-600">
           <span className="font-medium">🌐 서버 연동:</span> 
           모든 데이터가 Supabase 서버에 저장됩니다. 
@@ -583,6 +621,15 @@ const CalendarPage = ({
             </span>
           )}
         </div>
+        
+        {/* ✅ 태그 색상 정보 표시 */}
+        {tags && tags.length > 0 && (
+          <div className="mt-2 text-xs text-green-600">
+            <span className="font-medium">🎨 태그 색상:</span> 
+            서버에서 {tags.length}개의 태그 색상 정보를 불러왔습니다.
+            {tags.map(tag => tag.tagType).join(', ')}
+          </div>
+        )}
       </div>
     </div>
   );
