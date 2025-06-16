@@ -288,24 +288,30 @@ export const useWeeklyCalendarLogic = (props = {}) => {
 
   // 날짜 상태 관리 - 수정됨
   const getInitialDate = () => {
-    if (initialDate) { // props.initialDate 대신 initialDate 사용
+    if (initialDate) {
       return new Date(initialDate);
     }
     return new Date();
   };
   
-  const today = getInitialDate();
-  const [currentWeek, setCurrentWeek] = useState(
-    Array(7).fill().map((_, i) => {
+  // useState의 초기값을 함수로 변경
+  const [currentWeek, setCurrentWeek] = useState(() => {
+    const today = getInitialDate(); // ← 함수 안으로 이동
+    return Array(7).fill().map((_, i) => {
       const date = new Date(today);
       date.setDate(today.getDate() - today.getDay() + i);
       return date;
-    })
-  );
-  const [focusedDayIndex, setFocusedDayIndex] = useState(today.getDay());
+    });
+  });
+  
+  const [focusedDayIndex, setFocusedDayIndex] = useState(() => {
+    const today = getInitialDate(); // ← 함수 안으로 이동
+    return today.getDay();
+  });
   
   // visibleDays를 Date 객체 배열로 변경
   const [visibleDays, setVisibleDays] = useState(() => {
+    const today = getInitialDate(); // ← 함수 안으로 이동
     const visibleDates = [];
     for (let i = -2; i <= 2; i++) {
       const date = new Date(today);
