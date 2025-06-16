@@ -113,20 +113,20 @@ function Appcopy() {
     }
   };
 
-  // ✨ 서버에 사용자 데이터 저장 (무한루프 방지)
+  // ✨ 서버에 사용자 데이터 저장
   const saveUserDataToServer = async () => {
     if (!currentUser || isLoading || isSavingRef.current || isAdmin) return;
 
     // 관리자는 데이터 저장 안 함
     if (checkIsAdmin(currentUser)) {
-      // console.log('⚠️ 관리자는 데이터 저장하지 않음'); // 로그 제거
+      console.log('⚠️ 관리자는 데이터 저장하지 않음');
       return;
     }
 
     // 데이터 변경 여부 확인
     const currentDataHash = generateDataHash(schedules, tags, tagItems, monthlyPlans, monthlyGoals);
     if (currentDataHash === lastSaveDataRef.current) {
-      // console.log('⚠️ 데이터 변경 없음 - 서버 저장 스킵'); // 로그 제거
+      console.log('⚠️ 데이터 변경 없음 - 서버 저장 스킵');
       return;
     }
 
@@ -148,7 +148,7 @@ function Appcopy() {
       
       if (result.success) {
         console.log('✅ 서버 저장 완료:', currentUser);
-        // setLastSyncTime(new Date()); // ❌ 이거 제거해서 무한루프 방지
+        setLastSyncTime(new Date());
       } else {
         throw new Error(result.error || '서버 저장 실패');
       }
@@ -407,7 +407,7 @@ function Appcopy() {
     checkLoginStatus();
   }, []);
 
-  // 🔧 일반 사용자만 자동 서버 저장 (3초 디바운싱) - 무한루프 방지
+  // 🔧 일반 사용자만 자동 서버 저장 (3초 디바운싱)
   useEffect(() => {
     if (!currentUser || isLoading || isAdmin || !dataLoaded) return;
 
@@ -416,10 +416,10 @@ function Appcopy() {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    // 3초 디바운싱 (서버 부하 고려) - 하지만 너무 자주 저장하지 않도록 제한
+    // 3초 디바운싱 (서버 부하 고려)
     saveTimeoutRef.current = setTimeout(() => {
       saveUserDataToServer();
-    }, 5000); // 5초로 증가
+    }, 3000);
 
     // 클린업
     return () => {
@@ -427,15 +427,12 @@ function Appcopy() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals]); // currentUser, isLoading, isAdmin, dataLoaded 제거
+  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading, isAdmin, dataLoaded]);
 
   // 🔧 상태 업데이트 함수들 (서버 기반)
   const updateSchedules = (newSchedules) => {
     setSchedules(newSchedules);
-    // 변화가 있을 때만 1초 후 저장
-    if (currentUser && !isAdmin && dataLoaded) {
-      setTimeout(() => saveUserDataToServer(), 1000);
-    }
+    console.log('📅 일정 상태 업데이트:', newSchedules.length, '개');
   };
 
   const updateTags = (newTags) => {
@@ -618,7 +615,7 @@ function Appcopy() {
           }
         />
 
-        {/* ✅ 주간 캘린더 라우트 (자동 새로고침 비활성화) */}
+        {/* ✅ 주간 캘린더 라우트 (기존 DayDetailPagecopy 대체) */}
         <Route
           path="/weekly"
           element={
@@ -627,13 +624,13 @@ function Appcopy() {
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 isServerBased={true}
-                enableAutoRefresh={false}
+                enableAutoRefresh={true}
               />
             </ProtectedRoute>
           }
         />
 
-        {/* ✅ 기존 /day/:date 라우트 (자동 새로고침 비활성화) */}
+        {/* ✅ 기존 /day/:date 라우트를 /weekly로 변경 */}
         <Route
           path="/day/:date"
           element={
@@ -642,7 +639,7 @@ function Appcopy() {
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 isServerBased={true}
-                enableAutoRefresh={false}
+                enableAutoRefresh={true}
               />
             </ProtectedRoute>
           }
