@@ -1,7 +1,4 @@
-const getTagColor = useCallback((tagType) => {
-    const tag = safeTags.find(t => t.tagType === tagType);
-    return tag ? tag.color : { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' };
-  }, [safeTags]);import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
@@ -275,11 +272,10 @@ const MonthlyPlan = ({
     return colorOptions[Math.floor(Math.random() * colorOptions.length)];
   };
 
-  // 퍼센테이지 계산 함수
-  const calculatePercentage = useCallback((actual, target) => {
-    if (target === 0) return 0;
-    return Math.round((actual / target) * 100);
-  }, []);
+  const getTagColor = useCallback((tagType) => {
+    const tag = safeTags.find(t => t.tagType === tagType);
+    return tag ? tag.color : { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' };
+  }, [safeTags]);
 
   // ✅ 목표를 기반으로 한 그룹화 (plans 대신 currentMonthGoals 사용)
   const getGroupedGoals = useMemo(() => {
@@ -519,15 +515,14 @@ const MonthlyPlan = ({
               {Object.entries(getGroupedGoals).map(([tagType, goalItems]) => {
                 const colors = getTagColor(tagType);
                 
-                // 실제 계획된 시간 합계 - plans에서 직접 계산
+                // 실제 계획된 시간 합계 - plans에서 직접 계산 (goalItems 대신)
                 const actualPlannedTime = plans
                   .filter(plan => plan.tagType === tagType)
                   .reduce((sum, plan) => sum + plan.estimatedTime, 0);
                 
                 const targetHours = getTargetHoursForTagType(tagType);
-                
-                // 퍼센테이지 계산
-                const achievementRate = calculatePercentage(actualPlannedTime, targetHours);
+                // 달성률 = (실제 계획 시간 / 목표 시간) * 100
+                const achievementRate = targetHours > 0 ? Math.round((actualPlannedTime / targetHours) * 100) : 0;
 
                 return (
                   <div key={tagType} className="flex items-start space-x-4">
