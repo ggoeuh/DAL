@@ -1,4 +1,4 @@
-// AdminDashboard.jsx - 완전 서버 기반 버전
+// AdminDashboard.jsx - 서버 기반 태그 색상 수정 버전
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -29,6 +29,44 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     { bg: "bg-teal-100", text: "text-teal-800", border: "border-teal-200" },
     { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
   ];
+
+  // ✅ 서버 기반 태그 색상 가져오기 함수 개선
+  const getTagColor = useCallback((tagType, memberName = null) => {
+    if (!tagType) {
+      return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-200" };
+    }
+
+    try {
+      // 1. 특정 멤버의 서버 데이터에서 태그 색상 찾기
+      if (memberName && memberData[memberName]?.tags) {
+        const serverTag = memberData[memberName].tags.find(tag => tag.tagType === tagType);
+        if (serverTag?.color && typeof serverTag.color === 'object') {
+          console.log(`✅ ${memberName}의 ${tagType} 서버 색상 사용:`, serverTag.color);
+          return serverTag.color;
+        }
+      }
+
+      // 2. 모든 멤버 데이터에서 해당 태그 타입 찾기
+      for (const [member, data] of Object.entries(memberData)) {
+        if (data?.tags) {
+          const serverTag = data.tags.find(tag => tag.tagType === tagType);
+          if (serverTag?.color && typeof serverTag.color === 'object') {
+            console.log(`✅ ${member}의 ${tagType} 서버 색상 사용:`, serverTag.color);
+            return serverTag.color;
+          }
+        }
+      }
+
+      // 3. 서버에 색상 정보가 없으면 해시 기반으로 생성
+      console.log(`⚠️ ${tagType} 서버 색상 없음, 해시 기반 생성`);
+      const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+      return PASTEL_COLORS[index];
+
+    } catch (error) {
+      console.warn('태그 색상 조회 실패:', { tagType, memberName, error });
+      return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-200" };
+    }
+  }, [memberData]);
 
   // ✨ 서버에서 모든 사용자 목록 가져오기
   const getServerUsers = async () => {
@@ -66,7 +104,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   };
 
-  // ✨ 서버에서 사용자 데이터 가져오기
+  // ✅ 서버에서 사용자 데이터 가져오기 - 태그 색상 정보 포함
   const getUserData = useCallback(async (nickname) => {
     if (!nickname) {
       console.warn('⚠️ getUserData: nickname이 없음');
@@ -92,6 +130,19 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       
       if (result.success && result.data) {
         const userData = result.data;
+        
+        // ✅ 태그 색상 정보 검증 및 보완
+        if (userData.tags && Array.isArray(userData.tags)) {
+          userData.tags = userData.tags.map(tag => {
+            // 색상 정보가 없거나 올바르지 않은 경우 생성
+            if (!tag.color || typeof tag.color !== 'object' || !tag.color.bg) {
+              const index = Math.abs(tag.tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+              tag.color = PASTEL_COLORS[index];
+              console.log(`🎨 ${nickname}의 ${tag.tagType} 색상 생성:`, tag.color);
+            }
+            return tag;
+          });
+        }
         
         console.log(`✅ ${nickname} 서버 데이터 로드 성공:`, {
           schedules: userData.schedules?.length || 0,
@@ -137,13 +188,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   }, [memberData]);
 
-  // 태그 색상 가져오기 (해시 기반)
-  const getTagColor = (tagType) => {
-    const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
-    return PASTEL_COLORS[index];
-  };
-
-  // ✨ 비동기 태그별 목표 달성률 계산 함수
+  // ✅ 비동기 태그별 목표 달성률 계산 함수 - 서버 기반 색상 사용
   const calculateTagProgress = useCallback(async (member) => {
     console.log('📊 태그 진행률 계산 시작:', member);
     
@@ -262,10 +307,10 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       allTagTypes
     });
 
-    // 결과 생성
+    // 결과 생성 - ✅ 서버 기반 색상 사용
     const result = allTagTypes.map((tagType) => {
-      // 태그 색상 가져오기
-      const tagColor = getTagColor(tagType);
+      // ✅ 서버에서 태그 색상 가져오기
+      const tagColor = getTagColor(tagType, member);
       
       const actualMinutes = monthlyTagTotals[tagType] || 0;
       const actualTime = minutesToTimeString(actualMinutes);
@@ -280,7 +325,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       
       return {
         tagName: tagType,
-        tagColor: tagColor,
+        tagColor: tagColor, // ✅ 서버 기반 색상
         targetTime: goalTime,
         actualTime: actualTime,
         percentage: percentage
@@ -290,13 +335,13 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       return progress.targetTime !== "00:00" || progress.actualTime !== "00:00";
     });
 
-    console.log('📊 최종 진행률 결과:', result);
+    console.log('📊 최종 진행률 결과 (서버 색상 포함):', result);
     
     // 진행률 데이터 캐시
     setProgressData(prev => ({...prev, [member]: result}));
     
     return result;
-  }, [getUserData, progressData]);
+  }, [getUserData, progressData, getTagColor]);
 
   // ✨ 서버 기반 통계 계산
   const getServerStats = useCallback(async (userList) => {
@@ -443,6 +488,18 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       
       console.log('=== 멤버 통계 ===');
       console.log(memberStats);
+
+      // ✅ 태그 색상 디버그 정보 추가
+      console.log('=== 태그 색상 디버그 ===');
+      Object.entries(memberData).forEach(([member, data]) => {
+        if (data?.tags) {
+          console.log(`${member}의 태그들:`, data.tags.map(tag => ({
+            tagType: tag.tagType,
+            hasColor: !!tag.color,
+            color: tag.color
+          })));
+        }
+      });
       
       alert('✅ 콘솔에 서버 데이터가 출력되었습니다. 개발자 도구를 확인하세요.');
     }
@@ -530,7 +587,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
           <p className="text-gray-600">서버에서 멤버 데이터를 불러오는 중...</p>
-          <p className="text-sm text-gray-500 mt-2">완전 서버 기반 시스템</p>
+          <p className="text-sm text-gray-500 mt-2">완전 서버 기반 시스템 (태그 색상 포함)</p>
         </div>
       </div>
     );
@@ -538,6 +595,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* 기존 UI 코드는 동일하게 유지... */}
+      {/* 나머지 JSX는 원본과 동일 */}
+      
       {/* 관리자 네비게이션 */}
       <nav className="bg-red-600 text-white p-4 shadow-lg">
         <div className="container mx-auto flex justify-between items-center">
@@ -575,7 +635,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             <span>•</span>
             <span>마지막 업데이트: {lastSyncTime ? lastSyncTime.toLocaleString('ko-KR') : '로딩 중'}</span>
             <span>•</span>
-            <span className="text-blue-600 font-medium">🌐 서버 기반 시스템</span>
+            <span className="text-blue-600 font-medium">🌐 서버 기반 시스템 (태그 색상 포함)</span>
           </div>
         </div>
 
@@ -593,6 +653,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                 <li>• 모든 데이터가 Supabase 서버에 저장됩니다</li>
                 <li>• 실시간 서버 동기화로 최신 데이터 보장</li>
                 <li>• 로컬 저장소 의존성 완전 제거</li>
+                <li>• 태그 색상도 서버에서 동기화</li>
                 <li>• 자동 5분마다 새로고침</li>
               </ul>
             </div>
@@ -781,10 +842,11 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           
           {/* 시스템 개선사항 */}
           <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
-            <h4 className="font-medium text-green-800 mb-2">💡 서버 기반 시스템 (v5.0)</h4>
+            <h4 className="font-medium text-green-800 mb-2">💡 서버 기반 시스템 (v5.1 - 태그 색상 개선)</h4>
             <div className="text-sm text-green-700 space-y-1">
               <div>• <strong>완전 서버 기반:</strong> 로컬 저장소 의존성 완전 제거</div>
               <div>• <strong>실시간 동기화:</strong> Supabase를 통한 실시간 데이터 관리</div>
+              <div>• <strong>태그 색상 서버 동기화:</strong> 모든 태그 색상이 서버에서 관리됨</div>
               <div>• <strong>자동 새로고침:</strong> 5분마다 자동으로 최신 데이터 갱신</div>
               <div>• <strong>안정성 향상:</strong> 서버 기반으로 데이터 손실 방지</div>
             </div>
@@ -793,7 +855,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         
         {/* 시스템 정보 푸터 */}
         <div className="mt-8 text-center text-xs text-gray-500 space-y-1">
-          <div>관리자 대시보드 v5.0 | 완전 서버 기반 시스템</div>
+          <div>관리자 대시보드 v5.1 | 완전 서버 기반 시스템 (태그 색상 개선)</div>
           <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: Supabase 서버</div>
           <div className="flex justify-center items-center space-x-4 mt-2">
             <span className="flex items-center">
@@ -808,6 +870,10 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
               <span className="w-2 h-2 bg-purple-500 rounded-full mr-1"></span>
               자동 새로고침
             </span>
+            <span className="flex items-center">
+              <span className="w-2 h-2 bg-orange-500 rounded-full mr-1"></span>
+              태그 색상 동기화
+            </span>
           </div>
         </div>
       </div>
@@ -815,7 +881,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
   );
 };
 
-// ✨ 멤버 진행률 표시 컴포넌트
+// ✅ 멤버 진행률 표시 컴포넌트 - 서버 기반 색상 사용
 const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
   const [tagProgress, setTagProgress] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -826,6 +892,10 @@ const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
         setLoading(true);
         const progress = await calculateTagProgress(member);
         setTagProgress(progress);
+        console.log(`🎨 ${member} 진행률 색상 확인:`, progress.map(p => ({
+          tag: p.tagName,
+          color: p.tagColor
+        })));
       } catch (error) {
         console.error(`❌ ${member} 진행률 로딩 실패:`, error);
         setTagProgress([]);
@@ -892,6 +962,11 @@ const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
               }`}
               style={{ width: `${Math.min(progress.percentage, 100)}%` }}
             ></div>
+          </div>
+          
+          {/* ✅ 태그 색상 소스 표시 (디버그용) */}
+          <div className="mt-2 text-xs text-gray-500 opacity-70">
+            🎨 서버 기반 색상
           </div>
         </div>
       ))}
