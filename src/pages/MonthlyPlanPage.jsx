@@ -92,14 +92,43 @@ const MonthlyPlan = ({
         let finalMonthlyPlans = serverData.monthlyPlans || [];
         if (finalMonthlyPlans.length === 0 && serverData.schedules && serverData.schedules.length > 0) {
           console.log('🔄 schedules를 monthlyPlans로 변환 시작');
-          finalMonthlyPlans = serverData.schedules.map(schedule => ({
-            id: schedule.id || Date.now() + Math.random(),
-            tagType: schedule.tagType || schedule.category || '기타',
-            tag: schedule.tagName || schedule.title || '미분류',
-            name: schedule.name || schedule.title || '',
-            description: schedule.description || schedule.memo || '',
-            estimatedTime: schedule.estimatedTime || schedule.duration || 1
-          }));
+          
+          // schedules를 tagType별로 그룹화하여 월간 계획으로 변환
+          const scheduleGroups = {};
+          serverData.schedules.forEach(schedule => {
+            const tagType = schedule.tagType || schedule.category || '기타';
+            const tagName = schedule.tagName || schedule.title || '미분류';
+            
+            if (!scheduleGroups[tagType]) {
+              scheduleGroups[tagType] = {};
+            }
+            if (!scheduleGroups[tagType][tagName]) {
+              scheduleGroups[tagType][tagName] = {
+                schedules: [],
+                totalTime: 0
+              };
+            }
+            
+            scheduleGroups[tagType][tagName].schedules.push(schedule);
+            scheduleGroups[tagType][tagName].totalTime += (schedule.estimatedTime || schedule.duration || 1);
+          });
+          
+          // 그룹화된 데이터를 월간 계획으로 변환
+          finalMonthlyPlans = [];
+          Object.entries(scheduleGroups).forEach(([tagType, tags]) => {
+            Object.entries(tags).forEach(([tagName, data]) => {
+              const descriptions = data.schedules.map(s => s.description || s.memo || s.title).filter(Boolean);
+              finalMonthlyPlans.push({
+                id: Date.now() + Math.random(),
+                tagType,
+                tag: tagName,
+                name: tagName,
+                description: descriptions.join(', ') || '',
+                estimatedTime: data.totalTime
+              });
+            });
+          });
+          
           console.log('✅ 변환된 monthlyPlans:', finalMonthlyPlans);
         }
         
