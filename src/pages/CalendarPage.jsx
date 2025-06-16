@@ -1,7 +1,11 @@
 import React, { useState, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from './utils/supabaseStorage.js';
+import { 
+  saveUserDataToDAL, 
+  loadUserDataFromDAL,
+  supabase
+} from './utils/supabaseStorage.js';
 
 // 파스텔 색상 팔레트
 const PASTEL_COLORS = [
@@ -194,7 +198,7 @@ const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) =
   );
 };
 
-// ✅ CalendarPage는 이제 App.jsx에서 받은 props만 사용 (서버 호출 제거)
+// ✅ 기존 구조 유지: App.jsx에서 props로 데이터 받음 (무한동기화 해결)
 const CalendarPage = ({ 
   schedules, 
   setSchedules,
@@ -206,36 +210,47 @@ const CalendarPage = ({
   setMonthlyGoals,
   currentUser, 
   onLogout, 
-  lastSyncTime,
-  onRefreshData  // ✅ App.jsx에서 새로고침 함수 받기
+  lastSyncTime 
 }) => {
   const currentDate = new Date();
   const navigate = useNavigate();
 
-  // ✅ 로컬 상태만 관리 (서버 호출 제거)
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  // ✅ 로딩 상태만 로컬에서 관리 (서버 호출 제거)
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // ✅ 수동 새로고침은 App.jsx에 위임
+  // ✅ 수동 새로고침 함수 (App.jsx의 데이터를 다시 로드)
   const handleManualRefresh = useCallback(async () => {
-    if (isRefreshing || !onRefreshData) return;
+    if (isLoading || isSaving || !currentUser) return;
     
-    console.log('🔄 App.jsx에 새로고침 요청');
-    setIsRefreshing(true);
+    console.log('🔄 수동 새로고침 시작');
+    setIsLoading(true);
     
     try {
-      await onRefreshData();
-      console.log('✅ 새로고침 완료');
+      const result = await loadUserDataFromDAL(currentUser);
+      
+      if (result.success && result.data) {
+        // App.jsx의 상태 업데이트 함수들 호출
+        if (setSchedules) setSchedules(result.data.schedules || []);
+        if (setTags) setTags(result.data.tags || []);
+        if (setTagItems) setTagItems(result.data.tagItems || []);
+        if (setMonthlyGoals) setMonthlyGoals(result.data.monthlyGoals || []);
+        
+        console.log('✅ 수동 새로고침 완료');
+      } else {
+        console.warn('⚠️ 새로고침 데이터 없음');
+      }
     } catch (error) {
-      console.error('❌ 새로고침 실패:', error);
+      console.error('❌ 수동 새로고침 실패:', error);
       alert('새로고침 중 오류가 발생했습니다: ' + error.message);
     } finally {
-      setIsRefreshing(false);
+      setIsLoading(false);
     }
-  }, [onRefreshData, isRefreshing]);
+  }, [currentUser, isLoading, isSaving, setSchedules, setTags, setTagItems, setMonthlyGoals]);
 
-  // ✅ 서버 데이터 리셋 후 콜백도 App.jsx에 위임
+  // ✅ 서버 데이터 리셋 후 콜백
   const handleDataChanged = useCallback(async () => {
-    console.log('🔄 서버 데이터 변경 후 App.jsx에 새로고침 요청');
+    console.log('🔄 서버 데이터 변경 후 새로고침');
     await handleManualRefresh();
   }, [handleManualRefresh]);
 
@@ -338,14 +353,14 @@ const CalendarPage = ({
                 로그아웃
               </button>
               
-              {/* ✅ App.jsx 기반 새로고침 버튼 */}
+              {/* 수동 새로고침 버튼 */}
               <button
                 onClick={handleManualRefresh}
-                disabled={isRefreshing}
+                disabled={isLoading || isSaving}
                 className="bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded text-sm disabled:opacity-50 transition-colors"
-                title="App.jsx를 통한 서버 새로고침"
+                title="서버에서 수동 새로고침"
               >
-                {isRefreshing ? '🔄 로딩...' : '🔄 새로고침'}
+                {isLoading || isSaving ? '🔄 로딩...' : '🔄 새로고침'}
               </button>
               
               {/* 서버 연동 상태 표시 */}
@@ -356,8 +371,8 @@ const CalendarPage = ({
               {/* 동기화 상태 표시 */}
               <SyncStatus 
                 lastSyncTime={lastSyncTime}
-                isLoading={isRefreshing}
-                isSaving={false}
+                isLoading={isLoading}
+                isSaving={isSaving}
               />
               
               <ServerDataResetButton 
@@ -559,8 +574,9 @@ const CalendarPage = ({
         
         {/* 서버 연동 상태 표시 */}
         <div className="mt-2 text-xs text-blue-600">
-          <span className="font-medium">🌐 App.jsx 관리:</span> 
-          모든 서버 데이터는 App.jsx에서 중앙 관리됩니다.
+          <span className="font-medium">🌐 서버 연동:</span> 
+          모든 데이터가 Supabase 서버에 저장됩니다. 
+          페이지를 새로고침하거나 다시 접속해도 데이터가 유지됩니다.
           {lastSyncTime && (
             <span className="ml-2 text-gray-500">
               (마지막 동기화: {format(lastSyncTime, 'yyyy-MM-dd HH:mm:ss')})
