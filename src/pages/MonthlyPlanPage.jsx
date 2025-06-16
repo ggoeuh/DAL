@@ -533,11 +533,6 @@ const MonthlyPlan = ({
                         <div className="text-sm mt-1 opacity-80">
                           목표: {targetHours}시간
                         </div>
-                        <div className="text-xs mt-1">
-                          <div className={`font-medium ${achievementRate >= 100 ? 'text-green-600' : achievementRate >= 80 ? 'text-blue-600' : 'text-orange-600'}`}>
-                            달성률: {achievementRate}%
-                          </div>
-                        </div>
                       </div>
                     </div>
 
