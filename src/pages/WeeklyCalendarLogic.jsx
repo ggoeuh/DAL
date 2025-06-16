@@ -105,7 +105,8 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     initialTagItems = [],
     initialMonthlyGoals = [],
     isServerBased = true, // 기본값을 서버 기반으로 설정
-    enableAutoRefresh = true // 자동 새로고침 옵션
+    enableAutoRefresh = true, // 자동 새로고침 옵션
+    initialDate = null // ✅ 추가된 prop
   } = props;
   
   const navigate = useNavigate();
@@ -123,6 +124,137 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   const safeTags = Array.isArray(tags) ? tags : [];
   const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
   const safeMonthlyGoals = Array.isArray(monthlyGoals) ? monthlyGoals : [];
+
+  // ✅ 초기 날짜 계산 함수
+  const getInitialDate = useCallback(() => {
+    if (initialDate) {
+      // URL에서 전달된 날짜가 있으면 해당 날짜 사용
+      const targetDate = new Date(initialDate);
+      console.log('✅ URL에서 받은 날짜:', initialDate, '→', targetDate.toISOString().split('T')[0]);
+      return targetDate;
+    }
+    return new Date(); // 기본값은 오늘
+  }, [initialDate]);
+
+  // ✅ 날짜 상태 관리 - 수정됨
+  const [currentWeek, setCurrentWeek] = useState(() => {
+    const today = getInitialDate();
+    return Array(7).fill().map((_, i) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - today.getDay() + i);
+      return date;
+    });
+  });
+
+  // ✅ 초기 포커스 날짜 인덱스도 initialDate에 맞게 설정
+  const [focusedDayIndex, setFocusedDayIndex] = useState(() => {
+    if (initialDate) {
+      const targetDate = new Date(initialDate);
+      return targetDate.getDay(); // 해당 날짜의 요일 인덱스
+    }
+    return new Date().getDay(); // 기본값은 오늘 요일
+  });
+  
+  // ✅ visibleDays를 initialDate 기준으로 설정
+  const [visibleDays, setVisibleDays] = useState(() => {
+    const baseDate = getInitialDate();
+    const visibleDates = [];
+    for (let i = -2; i <= 2; i++) {
+      const date = new Date(baseDate);
+      date.setDate(baseDate.getDate() + i);
+      visibleDates.push(date);
+    }
+    return visibleDates;
+  });
+  
+  // 시간 슬롯
+  const timeSlots = Array.from({ length: 48 }, (_, i) => {
+    const hour = Math.floor(i / 2);
+    const minute = i % 2 === 0 ? "00" : "30";
+    return `${hour.toString().padStart(2, "0")}:${minute}`;
+  });
+
+  // 폼 및 UI 상태들
+  const [form, setForm] = useState({ 
+    title: "", 
+    end: "07:00", 
+    description: "", 
+    tag: "",
+    repeatCount: "1",
+    interval: "1",
+    weekdays: []
+  });
+  const [startSlot, setStartSlot] = useState("07:00");
+  const [activeTimeSlot, setActiveTimeSlot] = useState(null);
+  const [resizing, setResizing] = useState(null);
+  const [resizeType, setResizeType] = useState(null);
+  const containerRef = useRef(null);
+  const [showOverlapMessage, setShowOverlapMessage] = useState(false);
+  const [contextMenu, setContextMenu] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    scheduleId: null
+  });
+  const [copyingSchedule, setCopyingSchedule] = useState(null);
+  const [newTagType, setNewTagType] = useState("");
+  const [newTagName, setNewTagName] = useState("");
+  const [selectedTagType, setSelectedTagType] = useState("");
+  
+  // 드래그 앤 드롭 상태
+  const [dragging, setDragging] = useState(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [autoScrollTimer, setAutoScrollTimer] = useState(null);
+  
+  const repeatOptions = Array.from({ length: 15 }, (_, i) => i + 2);
+  const intervalOptions = [
+    { value: "1", label: "매주" },
+    { value: "2", label: "격주" },
+    { value: "3", label: "3주마다" },
+    { value: "4", label: "4주마다" }
+  ];
+
+  // ✅ initialDate가 변경되면 주간 뷰 업데이트
+  useEffect(() => {
+    if (initialDate) {
+      const targetDate = new Date(initialDate);
+      
+      console.log('🎯 initialDate 변경 감지:', {
+        initialDate,
+        targetDate: targetDate.toISOString().split('T')[0],
+        dayOfWeek: targetDate.getDay()
+      });
+      
+      // currentWeek 업데이트 (해당 날짜가 포함된 주)
+      const startOfWeek = new Date(targetDate);
+      startOfWeek.setDate(targetDate.getDate() - targetDate.getDay());
+      
+      const newWeek = Array(7).fill().map((_, i) => {
+        const date = new Date(startOfWeek);
+        date.setDate(startOfWeek.getDate() + i);
+        return date;
+      });
+      
+      setCurrentWeek(newWeek);
+      setFocusedDayIndex(targetDate.getDay());
+      
+      // visibleDays 업데이트 (클릭한 날짜 중심의 5일)
+      const newVisibleDays = [];
+      for (let i = -2; i <= 2; i++) {
+        const date = new Date(targetDate);
+        date.setDate(targetDate.getDate() + i);
+        newVisibleDays.push(date);
+      }
+      setVisibleDays(newVisibleDays);
+      
+      console.log('✅ initialDate로 주간뷰 설정 완료:', {
+        targetDate: targetDate.toISOString().split('T')[0],
+        focusedDayIndex: targetDate.getDay(),
+        weekRange: `${newWeek[0].toISOString().split('T')[0]} ~ ${newWeek[6].toISOString().split('T')[0]}`,
+        visibleRange: `${newVisibleDays[0].toISOString().split('T')[0]} ~ ${newVisibleDays[4].toISOString().split('T')[0]}`
+      });
+    }
+  }, [initialDate]); // initialDate가 변경될 때마다 실행
 
   // 서버에서 데이터 불러오기 - useCallback으로 메모이제이션
   const loadDataFromServer = useCallback(async (silent = false) => {
@@ -219,7 +351,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       setTagItems(initialTagItems);
       setMonthlyGoals(initialMonthlyGoals);
     }
-  }, [currentUser, isServerBased]);
+  }, [currentUser, isServerBased, loadDataFromServer, initialSchedules, initialTags, initialTagItems, initialMonthlyGoals]);
 
   // 페이지 포커스 시 자동 새로고침 (CalendarPage 패턴 적용) - 디바운싱 추가
   useEffect(() => {
@@ -250,7 +382,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [currentUser, isServerBased, enableAutoRefresh]);
+  }, [currentUser, isServerBased, enableAutoRefresh, loadDataFromServer]);
 
   // props 변경 시 로컬 상태 업데이트 (비서버 모드) - 무한 렌더링 방지
   const prevInitialSchedulesRef = useRef();
@@ -284,75 +416,6 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       }
     }
   }, [initialSchedules, initialTags, initialTagItems, initialMonthlyGoals, isServerBased]);
-
-  // 날짜 상태 관리 - 수정됨
-  const today = new Date();
-  const [currentWeek, setCurrentWeek] = useState(
-    Array(7).fill().map((_, i) => {
-      const date = new Date(today);
-      date.setDate(today.getDate() - today.getDay() + i);
-      return date;
-    })
-  );
-  const [focusedDayIndex, setFocusedDayIndex] = useState(today.getDay());
-  
-  // visibleDays를 Date 객체 배열로 변경
-  const [visibleDays, setVisibleDays] = useState(() => {
-    const visibleDates = [];
-    for (let i = -2; i <= 2; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      visibleDates.push(date);
-    }
-    return visibleDates;
-  });
-  
-  // 시간 슬롯
-  const timeSlots = Array.from({ length: 48 }, (_, i) => {
-    const hour = Math.floor(i / 2);
-    const minute = i % 2 === 0 ? "00" : "30";
-    return `${hour.toString().padStart(2, "0")}:${minute}`;
-  });
-
-  // 폼 및 UI 상태들
-  const [form, setForm] = useState({ 
-    title: "", 
-    end: "07:00", 
-    description: "", 
-    tag: "",
-    repeatCount: "1",
-    interval: "1",
-    weekdays: []
-  });
-  const [startSlot, setStartSlot] = useState("07:00");
-  const [activeTimeSlot, setActiveTimeSlot] = useState(null);
-  const [resizing, setResizing] = useState(null);
-  const [resizeType, setResizeType] = useState(null);
-  const containerRef = useRef(null);
-  const [showOverlapMessage, setShowOverlapMessage] = useState(false);
-  const [contextMenu, setContextMenu] = useState({
-    visible: false,
-    x: 0,
-    y: 0,
-    scheduleId: null
-  });
-  const [copyingSchedule, setCopyingSchedule] = useState(null);
-  const [newTagType, setNewTagType] = useState("");
-  const [newTagName, setNewTagName] = useState("");
-  const [selectedTagType, setSelectedTagType] = useState("");
-  
-  // 드래그 앤 드롭 상태
-  const [dragging, setDragging] = useState(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [autoScrollTimer, setAutoScrollTimer] = useState(null);
-  
-  const repeatOptions = Array.from({ length: 15 }, (_, i) => i + 2);
-  const intervalOptions = [
-    { value: "1", label: "매주" },
-    { value: "2", label: "격주" },
-    { value: "3", label: "3주마다" },
-    { value: "4", label: "4주마다" }
-  ];
 
   // 초기 스크롤 설정
   useEffect(() => {
