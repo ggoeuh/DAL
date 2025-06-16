@@ -518,16 +518,16 @@ const WeeklyCalendar = ({
         return date;
       })
     );
-    setFocusedDayIndex(currentDate.getDay());
+    setFocusedDayIndex(2); // 중앙에 포커스
     
+    // ✅ Date 객체 배열로 수정
     const newVisibleDays = [];
-    const focusPosition = 3;
-    for (let i = 0; i < 5; i++) {
-      const offset = i - focusPosition;
-      const newIndex = (currentDate.getDay() + offset + 7) % 7;
-      newVisibleDays.push(newIndex);
+    for (let i = -2; i <= 2; i++) {
+      const date = new Date(currentDate);
+      date.setDate(currentDate.getDate() + i);
+      newVisibleDays.push(date); // ← Date 객체를 push
     }
-    setVisibleDays(newVisibleDays);
+    setVisibleDays(newVisibleDays); // ← Date 객체 배열!
   };
   
   // 시간 슬롯 클릭 핸들러
