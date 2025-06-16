@@ -34,7 +34,7 @@ const minutesToTimeString = (totalMinutes) => {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
-// ✅ 동기화 상태 표시 컴포넌트
+// 동기화 상태 표시 컴포넌트
 const SyncStatus = ({ lastSyncTime, isLoading, isSaving }) => (
   <div className="flex items-center gap-2 text-xs">
     {isSaving ? (
@@ -74,12 +74,8 @@ const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) =
     
     try {
       if (resetType === 'user') {
-        if (window.confirm(
-          `⚠️ ${currentUser} 사용자의 모든 서버 데이터를 삭제하시겠습니까?\n` +
-          `- 모든 일정\n` +
-          `- 모든 월간 목표\n\n` +
-          `이 작업은 되돌릴 수 없습니다.`
-        )) {
+        const confirmMessage = `⚠️ ${currentUser} 사용자의 모든 서버 데이터를 삭제하시겠습니까?\n- 모든 일정\n- 모든 월간 목표\n\n이 작업은 되돌릴 수 없습니다.`;
+        if (window.confirm(confirmMessage)) {
           const { error } = await supabase
             .from('DAL')
             .delete()
@@ -93,14 +89,12 @@ const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) =
           if (onDataChanged) onDataChanged();
         }
       } else if (resetType === 'all') {
-        if (window.confirm(
-          '⚠️ 모든 사용자의 서버 데이터를 삭제하시겠습니까?\n' +
-          '이 작업은 되돌릴 수 없습니다.'
-        )) {
+        const confirmMessage = '⚠️ 모든 사용자의 서버 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.';
+        if (window.confirm(confirmMessage)) {
           const { error } = await supabase
             .from('DAL')
             .delete()
-            .neq('id', 0); // 모든 레코드 삭제
+            .neq('id', 0);
           
           if (error) {
             throw error;
@@ -217,7 +211,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
-  // ✅ 서버에서 데이터 불러오기 (useCallback으로 최적화)
+  // 서버에서 데이터 불러오기 (useCallback으로 최적화)
   const loadDataFromServer = useCallback(async () => {
     if (!currentUser) {
       setIsLoading(false);
@@ -260,7 +254,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
     }
   }, [currentUser]);
 
-  // ✅ 수동 새로고침 함수
+  // 수동 새로고침 함수
   const handleManualRefresh = useCallback(async () => {
     if (isLoading || isSaving) return;
     
@@ -277,32 +271,10 @@ const CalendarPage = ({ currentUser, onLogout }) => {
     }
   }, [loadDataFromServer, isLoading, isSaving]);
 
-  // ✅ 컴포넌트 마운트시에만 데이터 로드 (포커스 이벤트 제거)
+  // 컴포넌트 마운트시에만 데이터 로드
   useEffect(() => {
     loadDataFromServer();
   }, [loadDataFromServer]);
-
-  // ❌ 무한 동기화 원인이었던 포커스 이벤트 완전 제거
-  // useEffect(() => {
-  //   const handleFocus = () => {
-  //     console.log('🔄 페이지 포커스 - 서버 데이터 새로고침');
-  //     loadDataFromServer();
-  //   };
-  //
-  //   const handleVisibilityChange = () => {
-  //     if (!document.hidden) {
-  //       handleFocus();
-  //     }
-  //   };
-  //
-  //   window.addEventListener('focus', handleFocus);
-  //   document.addEventListener('visibilitychange', handleVisibilityChange);
-  //
-  //   return () => {
-  //     window.removeEventListener('focus', handleFocus);
-  //     document.removeEventListener('visibilitychange', handleVisibilityChange);
-  //   };
-  // }, [currentUser]);
 
   // 현재 월의 날짜들
   const days = eachDayOfInterval({
@@ -339,7 +311,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
       totals[tagType] += duration;
     });
     
-    return totals; // 분 단위로 반환
+    return totals;
   };
 
   // 퍼센테이지 계산
@@ -368,7 +340,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
     return `${hours}h${minutes}m`;
   };
 
-  // 태그 색상 가져오기 (기본 색상 사용)
+  // 태그 색상 가져오기
   const getTagColor = (tagType) => {
     const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
     return PASTEL_COLORS[index];
@@ -416,7 +388,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
                 로그아웃
               </button>
               
-              {/* ✅ 수동 새로고침 버튼 */}
+              {/* 수동 새로고침 버튼 */}
               <button
                 onClick={handleManualRefresh}
                 disabled={isLoading || isSaving}
@@ -427,27 +399,11 @@ const CalendarPage = ({ currentUser, onLogout }) => {
               </button>
               
               {/* 서버 연동 상태 표시 */}
-        <div className="mt-2 text-xs text-blue-600">
-          <span className="font-medium">🌐 서버 연동:</span> 
-          모든 데이터가 Supabase 서버에 저장됩니다. 
-          페이지를 새로고침하거나 다시 접속해도 데이터가 유지됩니다.
-          {lastSyncTime && (
-            <span className="ml-2 text-gray-500">
-              (마지막 동기화: {format(lastSyncTime, 'yyyy-MM-dd HH:mm:ss')})
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default CalendarPage;
               <div className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-sm">
                 🌐 서버 연동
               </div>
               
-              {/* ✅ 동기화 상태 표시 */}
+              {/* 동기화 상태 표시 */}
               <SyncStatus 
                 lastSyncTime={lastSyncTime}
                 isLoading={isLoading}
