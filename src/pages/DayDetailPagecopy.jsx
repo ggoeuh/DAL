@@ -1,9 +1,9 @@
-import React from "react";
+import React, { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useWeeklyCalendarLogic } from "./WeeklyCalendarLogic";
 import { WeeklyCalendarUI } from "./WeeklyCalendarUI";
 
-// ✅ 날짜 유효성 검증 함수 추가
+// 날짜 유효성 검증 함수
 const isValidDate = (dateString) => {
   if (!dateString) return false;
   const date = new Date(dateString);
@@ -15,7 +15,7 @@ const WeeklyCalendar = ({
   currentUser,
   onLogout,
   isServerBased = true,
-  enableAutoRefresh = true,
+  enableAutoRefresh = false, // ✅ 기본값을 false로 변경
   
   // 레거시 props (하위 호환성을 위해 유지, 서버 모드가 아닐 때만 사용)
   schedules = [], 
@@ -27,12 +27,12 @@ const WeeklyCalendar = ({
   saveToServer,
   loadFromServer
 }) => {
-  // ✅ URL 파라미터에서 날짜 가져오기 및 검증
+  // URL 파라미터에서 날짜 가져오기 및 검증
   const [searchParams] = useSearchParams();
   const dateParam = searchParams.get('date');
   
-  // 날짜 검증 및 안전한 처리
-  const initialDate = React.useMemo(() => {
+  // ✅ 날짜 검증 및 안전한 처리 - useMemo로 최적화
+  const initialDate = useMemo(() => {
     if (dateParam && isValidDate(dateParam)) {
       console.log('✅ 유효한 날짜 파라미터:', dateParam);
       return dateParam;
@@ -40,15 +40,15 @@ const WeeklyCalendar = ({
     if (dateParam) {
       console.warn('⚠️ 잘못된 날짜 형식:', dateParam, '→ 오늘 날짜 사용');
     }
-    return null; // 기본값은 오늘
+    return null;
   }, [dateParam]);
 
-  // 새로운 훅 사용 방식
+  // ✅ 캘린더 로직 훅 사용 - 안정적인 props 전달
   const calendarLogic = useWeeklyCalendarLogic({
     currentUser,
     isServerBased,
     enableAutoRefresh,
-    initialDate, // ✅ 검증된 날짜 전달
+    initialDate,
     // 서버 기반이 아닐 때만 초기 데이터 전달
     initialSchedules: !isServerBased ? schedules : [],
     initialTags: !isServerBased ? tags : [],
@@ -86,12 +86,13 @@ const WeeklyCalendar = ({
     setDragging,
     setDragOffset,
     isLoading,
+    isSaving, // ✅ 저장 상태 추가
     lastSyncTime,
     
     // 상수들
     DAYS_OF_WEEK,
     
-    // 헬퍼 함수들 (훅에서 제공)
+    // 헬퍼 함수들
     assignNewTagColor,
     handleDayFocus,
     checkScheduleOverlap,
@@ -100,7 +101,7 @@ const WeeklyCalendar = ({
     getDayOfWeek,
     pixelToNearestTimeSlot,
     
-    // 서버 관리 함수들 (새로 추가된 것들)
+    // 서버 관리 함수들
     loadDataFromServer,
     saveDataToServer,
     addSchedule,
@@ -108,35 +109,40 @@ const WeeklyCalendar = ({
     deleteSchedule
   } = calendarLogic;
 
-  // 하위 호환성을 위한 레거시 상태 업데이트 (서버 기반이 아닐 때만)
-  // useRef로 이전 값 추적하여 무한 렌더링 방지
-  const prevSchedulesRef = React.useRef();
-  const prevTagsRef = React.useRef();
-  const prevTagItemsRef = React.useRef();
+  // ✅ 하위 호환성을 위한 레거시 상태 업데이트 - React.memo와 useCallback으로 최적화
+  const updateLegacySchedules = useCallback((newSchedules) => {
+    if (!isServerBased && setSchedules && newSchedules !== schedules) {
+      setSchedules(newSchedules);
+    }
+  }, [isServerBased, setSchedules, schedules]);
+
+  const updateLegacyTags = useCallback((newTags) => {
+    if (!isServerBased && setTags && newTags !== tags) {
+      setTags(newTags);
+    }
+  }, [isServerBased, setTags, tags]);
+
+  const updateLegacyTagItems = useCallback((newTagItems) => {
+    if (!isServerBased && setTagItems && newTagItems !== tagItems) {
+      setTagItems(newTagItems);
+    }
+  }, [isServerBased, setTagItems, tagItems]);
+
+  // ✅ 레거시 상태 업데이트 - 의존성 최적화
+  React.useEffect(() => {
+    updateLegacySchedules(safeSchedules);
+  }, [safeSchedules, updateLegacySchedules]);
 
   React.useEffect(() => {
-    if (!isServerBased && setSchedules && prevSchedulesRef.current !== safeSchedules) {
-      prevSchedulesRef.current = safeSchedules;
-      setSchedules(safeSchedules);
-    }
-  }, [safeSchedules, isServerBased, setSchedules]);
+    updateLegacyTags(safeTags);
+  }, [safeTags, updateLegacyTags]);
 
   React.useEffect(() => {
-    if (!isServerBased && setTags && prevTagsRef.current !== safeTags) {
-      prevTagsRef.current = safeTags;
-      setTags(safeTags);
-    }
-  }, [safeTags, isServerBased, setTags]);
+    updateLegacyTagItems(safeTagItems);
+  }, [safeTagItems, updateLegacyTagItems]);
 
-  React.useEffect(() => {
-    if (!isServerBased && setTagItems && prevTagItemsRef.current !== safeTagItems) {
-      prevTagItemsRef.current = safeTagItems;
-      setTagItems(safeTagItems);
-    }
-  }, [safeTagItems, isServerBased, setTagItems]);
-
-  // 컨텍스트 메뉴 핸들러들
-  const handleContextMenu = (e, scheduleId) => {
+  // ✅ 컨텍스트 메뉴 핸들러들 - useCallback으로 최적화
+  const handleContextMenu = useCallback((e, scheduleId) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -146,22 +152,21 @@ const WeeklyCalendar = ({
       y: e.clientY,
       scheduleId
     });
-  };
+  }, [setContextMenu]);
   
-  const handleCopySchedule = () => {
+  const handleCopySchedule = useCallback(() => {
     const scheduleToCopy = safeSchedules.find(s => s.id === contextMenu.scheduleId);
     if (scheduleToCopy) {
       setCopyingSchedule(scheduleToCopy);
       console.log('일정 복사됨:', scheduleToCopy.title);
     }
     setContextMenu({ ...contextMenu, visible: false });
-  };
+  }, [safeSchedules, contextMenu, setCopyingSchedule, setContextMenu]);
   
-  const handleDeleteSchedule = async () => {
+  const handleDeleteSchedule = useCallback(async () => {
     const scheduleToDelete = safeSchedules.find(s => s.id === contextMenu.scheduleId);
     
     if (scheduleToDelete) {
-      // 새로운 훅의 deleteSchedule 함수 사용
       const result = await deleteSchedule(contextMenu.scheduleId);
       
       if (result.success) {
@@ -173,10 +178,10 @@ const WeeklyCalendar = ({
     }
     
     setContextMenu({ ...contextMenu, visible: false });
-  };
+  }, [safeSchedules, contextMenu, deleteSchedule, setContextMenu]);
 
-  // 복사 관련 핸들러들 - 수정됨
-  const handleCopyMove = (e) => {
+  // ✅ 복사 관련 핸들러들 - useCallback으로 최적화
+  const handleCopyMove = useCallback((e) => {
     if (!copyingSchedule) return;
     
     const screenWidth = window.innerWidth;
@@ -184,16 +189,16 @@ const WeeklyCalendar = ({
     
     if (e.clientX < edgeThreshold) {
       const newIndex = (focusedDayIndex - 1 + 7) % 7;
-      const targetDate = currentWeek[newIndex]; // ✅ Date 객체 가져오기
-      handleDayFocus(targetDate); // ✅ Date 객체 전달
+      const targetDate = currentWeek[newIndex];
+      handleDayFocus(targetDate);
     } else if (e.clientX > screenWidth - edgeThreshold) {
       const newIndex = (focusedDayIndex + 1) % 7;
-      const targetDate = currentWeek[newIndex]; // ✅ Date 객체 가져오기
-      handleDayFocus(targetDate); // ✅ Date 객체 전달
+      const targetDate = currentWeek[newIndex];
+      handleDayFocus(targetDate);
     }
-  };
+  }, [copyingSchedule, focusedDayIndex, currentWeek, handleDayFocus]);
 
-  const handleCopyEnd = async (e) => {
+  const handleCopyEnd = useCallback(async (e) => {
     if (!copyingSchedule) return;
     
     const containers = document.querySelectorAll('[data-day-index]');
@@ -231,7 +236,6 @@ const WeeklyCalendar = ({
       };
       
       if (!checkScheduleOverlap(safeSchedules, newSchedule)) {
-        // 새로운 훅의 addSchedule 함수 사용
         const result = await addSchedule(newSchedule);
         
         if (result.success) {
@@ -247,10 +251,10 @@ const WeeklyCalendar = ({
     }
     
     setCopyingSchedule(null);
-  };
+  }, [copyingSchedule, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, checkScheduleOverlap, safeSchedules, addSchedule, getDayOfWeek, setShowOverlapMessage, setCopyingSchedule]);
 
-  // 드래그 관련 핸들러들 - 수정됨
-  const handleDragStart = (e, scheduleId) => {
+  // ✅ 드래그 관련 핸들러들 - useCallback으로 최적화
+  const handleDragStart = useCallback((e, scheduleId) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -264,9 +268,9 @@ const WeeklyCalendar = ({
       x: e.clientX - rect.left,
       y: e.clientY - rect.top
     });
-  };
+  }, [safeSchedules, setDragging, setDragOffset]);
 
-  const handleDragMove = (e) => {
+  const handleDragMove = useCallback((e) => {
     if (!calendarLogic.dragging) return;
     e.preventDefault();
     
@@ -275,16 +279,16 @@ const WeeklyCalendar = ({
     
     if (e.clientX < edgeThreshold) {
       const newIndex = (focusedDayIndex - 1 + 7) % 7;
-      const targetDate = currentWeek[newIndex]; // ✅ Date 객체 가져오기
-      handleDayFocus(targetDate); // ✅ Date 객체 전달
+      const targetDate = currentWeek[newIndex];
+      handleDayFocus(targetDate);
     } else if (e.clientX > screenWidth - edgeThreshold) {
       const newIndex = (focusedDayIndex + 1) % 7;
-      const targetDate = currentWeek[newIndex]; // ✅ Date 객체 가져오기
-      handleDayFocus(targetDate); // ✅ Date 객체 전달
+      const targetDate = currentWeek[newIndex];
+      handleDayFocus(targetDate);
     }
-  };
+  }, [calendarLogic.dragging, focusedDayIndex, currentWeek, handleDayFocus]);
 
-  const handleDragEnd = async (e) => {
+  const handleDragEnd = useCallback(async (e) => {
     if (!calendarLogic.dragging) {
       setDragging(null);
       return;
@@ -331,7 +335,6 @@ const WeeklyCalendar = ({
       const updatedSchedule = { ...schedule, ...updatedData };
       
       if (!checkScheduleOverlap(safeSchedules, updatedSchedule)) {
-        // 새로운 훅의 updateSchedule 함수 사용
         const result = await updateSchedule(calendarLogic.dragging, updatedData);
         
         if (result.success) {
@@ -347,10 +350,10 @@ const WeeklyCalendar = ({
     }
     
     setDragging(null);
-  };
+  }, [calendarLogic.dragging, calendarLogic.dragOffset, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, checkScheduleOverlap, updateSchedule, setShowOverlapMessage, setDragging]);
 
-  // 일정 추가 핸들러
-  const handleAdd = async () => {
+  // ✅ 일정 추가 핸들러 - useCallback으로 최적화
+  const handleAdd = useCallback(async () => {
     if (!form.title || !startSlot || !form.end) return;
   
     const tagInfo = safeTagItems.find(
@@ -431,10 +434,10 @@ const WeeklyCalendar = ({
       setSelectedTagType("");
       setActiveTimeSlot(null);
     }
-  };
+  }, [form, startSlot, safeTagItems, selectedTagType, currentWeek, focusedDayIndex, DAYS_OF_WEEK, checkScheduleOverlap, safeSchedules, addSchedule, setShowOverlapMessage, setStartSlot, setForm, setSelectedTagType, setActiveTimeSlot]);
   
-  // 태그 추가 핸들러
-  const handleAddTag = async () => {
+  // ✅ 태그 추가 핸들러 - useCallback으로 최적화
+  const handleAddTag = useCallback(async () => {
     if (!newTagType.trim() || !newTagName.trim()) return;
     
     // 태그 타입이 없으면 추가
@@ -458,7 +461,6 @@ const WeeklyCalendar = ({
         });
         
         if (result.success) {
-          // 로컬 상태 업데이트는 훅 내부에서 처리됨
           console.log('태그 추가 완료:', newTagType, newTagName);
         } else {
           console.error('태그 추가 실패:', result.error);
@@ -467,17 +469,17 @@ const WeeklyCalendar = ({
         }
       } else if (!isServerBased) {
         // 레거시 모드에서는 직접 상태 업데이트
-        if (setTags) setTags(updatedTags);
-        if (setTagItems) setTagItems(updatedTagItems);
+        updateLegacyTags(updatedTags);
+        updateLegacyTagItems(updatedTagItems);
       }
     }
     
     setNewTagType(""); 
     setNewTagName("");
-  };
+  }, [newTagType, newTagName, safeTags, safeTagItems, assignNewTagColor, isServerBased, currentUser, saveDataToServer, safeSchedules, calendarLogic.safeMonthlyGoals, updateLegacyTags, updateLegacyTagItems, setNewTagType, setNewTagName]);
   
-  // 태그 삭제 핸들러
-  const handleDeleteTagItem = async (tagType, tagName) => {
+  // ✅ 태그 삭제 핸들러 - useCallback으로 최적화
+  const handleDeleteTagItem = useCallback(async (tagType, tagName) => {
     const updatedTagItems = safeTagItems.filter(item => !(item.tagType === tagType && item.tagName === tagName));
     
     if (isServerBased && currentUser) {
@@ -494,19 +496,19 @@ const WeeklyCalendar = ({
         console.error('태그 삭제 실패:', result.error);
         alert('태그 삭제에 실패했습니다: ' + result.error);
       }
-    } else if (!isServerBased && setTagItems) {
-      setTagItems(updatedTagItems);
+    } else if (!isServerBased) {
+      updateLegacyTagItems(updatedTagItems);
     }
-  };
+  }, [safeTagItems, isServerBased, currentUser, saveDataToServer, safeSchedules, safeTags, calendarLogic.safeMonthlyGoals, updateLegacyTagItems]);
 
-  // 태그 선택 핸들러
-  const handleSelectTag = (tagType, tagName) => {
+  // ✅ 태그 선택 핸들러 - useCallback으로 최적화
+  const handleSelectTag = useCallback((tagType, tagName) => {
     setSelectedTagType(tagType);
     setForm({ ...form, tag: tagName });
-  };
+  }, [form, setSelectedTagType, setForm]);
 
-  // 주간 네비게이션 핸들러들
-  const goToPreviousWeek = () => {
+  // ✅ 주간 네비게이션 핸들러들 - useCallback으로 최적화
+  const goToPreviousWeek = useCallback(() => {
     setCurrentWeek(prevWeek => {
       return prevWeek.map(date => {
         const newDate = new Date(date);
@@ -514,9 +516,9 @@ const WeeklyCalendar = ({
         return newDate;
       });
     });
-  };
+  }, [setCurrentWeek]);
 
-  const goToNextWeek = () => {
+  const goToNextWeek = useCallback(() => {
     setCurrentWeek(prevWeek => {
       return prevWeek.map(date => {
         const newDate = new Date(date);
@@ -524,9 +526,9 @@ const WeeklyCalendar = ({
         return newDate;
       });
     });
-  };
+  }, [setCurrentWeek]);
 
-  const goToCurrentWeek = () => {
+  const goToCurrentWeek = useCallback(() => {
     const currentDate = new Date();
     setCurrentWeek(
       Array(7).fill().map((_, i) => {
@@ -535,20 +537,19 @@ const WeeklyCalendar = ({
         return date;
       })
     );
-    setFocusedDayIndex(2); // 중앙에 포커스
+    setFocusedDayIndex(2);
     
-    // ✅ Date 객체 배열로 수정
     const newVisibleDays = [];
     for (let i = -2; i <= 2; i++) {
       const date = new Date(currentDate);
       date.setDate(currentDate.getDate() + i);
-      newVisibleDays.push(date); // ← Date 객체를 push
+      newVisibleDays.push(date);
     }
-    setVisibleDays(newVisibleDays); // ← Date 객체 배열!
-  };
+    setVisibleDays(newVisibleDays);
+  }, [setCurrentWeek, setFocusedDayIndex, setVisibleDays]);
   
-  // 시간 슬롯 클릭 핸들러
-  const handleTimeSlotClick = (time) => {
+  // ✅ 시간 슬롯 클릭 핸들러 - useCallback으로 최적화
+  const handleTimeSlotClick = useCallback((time) => {
     setStartSlot(time);
     setActiveTimeSlot(time);
     
@@ -556,10 +557,10 @@ const WeeklyCalendar = ({
     const endMinutes = startMinutes + 60;
     const endTime = minutesToTimeString(endMinutes);
     setForm({ ...form, end: endTime });
-  };
+  }, [form, setStartSlot, setActiveTimeSlot, setForm, parseTimeToMinutes, minutesToTimeString]);
   
-  // 요일 선택 핸들러 - 수정됨
-  const handleWeekdaySelect = (weekday) => {
+  // ✅ 요일 선택 핸들러 - useCallback으로 최적화
+  const handleWeekdaySelect = useCallback((weekday) => {
     const currentWeekdays = [...form.weekdays];
     
     if (currentWeekdays.includes(weekday)) {
@@ -573,12 +574,12 @@ const WeeklyCalendar = ({
         weekdays: [...currentWeekdays, weekday]
       });
     }
-  };
+  }, [form, setForm]);
 
-  // 수동 새로고침 핸들러
-  const handleManualRefresh = async () => {
+  // ✅ 수동 새로고침 핸들러 - useCallback으로 최적화
+  const handleManualRefresh = useCallback(async () => {
     if (isServerBased) {
-      const result = await loadDataFromServer();
+      const result = await loadDataFromServer(true); // 강제 새로고침
       if (result.success) {
         console.log('수동 새로고침 완료');
       } else {
@@ -586,38 +587,69 @@ const WeeklyCalendar = ({
         alert('데이터 새로고침에 실패했습니다: ' + result.error);
       }
     }
-  };
+  }, [isServerBased, loadDataFromServer]);
 
-  return (
-    <WeeklyCalendarUI
-      calendarLogic={calendarLogic}
-      currentUser={currentUser}
-      onLogout={onLogout}
-      isServerBased={isServerBased}
-      isLoading={isLoading}
-      lastSyncTime={lastSyncTime}
-      onManualRefresh={handleManualRefresh}
-      handleContextMenu={handleContextMenu}
-      handleCopySchedule={handleCopySchedule}
-      handleDeleteSchedule={handleDeleteSchedule}
-      handleCopyMove={handleCopyMove}
-      handleCopyEnd={handleCopyEnd}
-      handleDragStart={handleDragStart}
-      handleDragMove={handleDragMove}
-      handleDragEnd={handleDragEnd}
-      handleAdd={handleAdd}
-      handleAddTag={handleAddTag}
-      handleDeleteTagItem={handleDeleteTagItem}
-      handleSelectTag={handleSelectTag}
-      goToPreviousWeek={goToPreviousWeek}
-      goToNextWeek={goToNextWeek}
-      goToCurrentWeek={goToCurrentWeek}
-      handleTimeSlotClick={handleTimeSlotClick}
-      handleWeekdaySelect={handleWeekdaySelect}
-    />
-  );
+  // ✅ UI 컴포넌트에 전달할 props를 useMemo로 최적화
+  const uiProps = useMemo(() => ({
+    calendarLogic,
+    currentUser,
+    onLogout,
+    isServerBased,
+    isLoading,
+    isSaving, // ✅ 저장 상태 추가
+    lastSyncTime,
+    onManualRefresh: handleManualRefresh,
+    handleContextMenu,
+    handleCopySchedule,
+    handleDeleteSchedule,
+    handleCopyMove,
+    handleCopyEnd,
+    handleDragStart,
+    handleDragMove,
+    handleDragEnd,
+    handleAdd,
+    handleAddTag,
+    handleDeleteTagItem,
+    handleSelectTag,
+    goToPreviousWeek,
+    goToNextWeek,
+    goToCurrentWeek,
+    handleTimeSlotClick,
+    handleWeekdaySelect
+  }), [
+    calendarLogic,
+    currentUser,
+    onLogout,
+    isServerBased,
+    isLoading,
+    isSaving,
+    lastSyncTime,
+    handleManualRefresh,
+    handleContextMenu,
+    handleCopySchedule,
+    handleDeleteSchedule,
+    handleCopyMove,
+    handleCopyEnd,
+    handleDragStart,
+    handleDragMove,
+    handleDragEnd,
+    handleAdd,
+    handleAddTag,
+    handleDeleteTagItem,
+    handleSelectTag,
+    goToPreviousWeek,
+    goToNextWeek,
+    goToCurrentWeek,
+    handleTimeSlotClick,
+    handleWeekdaySelect
+  ]);
+
+  return <WeeklyCalendarUI {...uiProps} />;
 };
 
+// ✅ React.memo로 컴포넌트 최적화
+const OptimizedWeeklyCalendar = React.memo(WeeklyCalendar);
+
 export default function SimplifiedWeeklyCalendar(props) {
-  return <WeeklyCalendar {...props} />;
+  return <OptimizedWeeklyCalendar {...props} />;
 }
