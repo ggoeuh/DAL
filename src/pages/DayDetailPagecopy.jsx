@@ -327,8 +327,8 @@ const WeeklyCalendar = ({
     );
   }
 
-  // 로직 훅 사용 - useMemo로 props 메모이제이션하여 무한 루프 방지
-  const calendarLogicProps = React.useMemo(() => ({
+  // 로직 훅 사용 - React.useMemo 대신 일반 객체로 변경하여 안정성 확보
+  const calendarLogicProps = {
     schedules,
     setSchedules: handleSetSchedules,
     tags,
@@ -336,7 +336,7 @@ const WeeklyCalendar = ({
     tagItems,
     setTagItems: handleSetTagItems,
     currentUser
-  }), [schedules, tags, tagItems, currentUser, handleSetSchedules, handleSetTags, handleSetTagItems]);
+  };
 
   const calendarLogic = useWeeklyCalendarLogic(calendarLogicProps);
 
