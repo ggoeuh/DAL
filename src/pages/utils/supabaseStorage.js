@@ -1,4 +1,4 @@
-// utils/supabaseStorage.js - 태그 생성 문제 수정 버전
+// utils/supabaseStorage.js - 월간 계획 지원 버전
 
 import { createClient } from '@supabase/supabase-js'
 
@@ -31,19 +31,19 @@ export const supabase = supabaseClient;
 
 // 파스텔 색상 팔레트 (태그 자동 색상 할당용)
 const PASTEL_COLORS = [
-  { bg: "bg-purple-100", text: "text-purple-800" },
-  { bg: "bg-blue-100", text: "text-blue-800" },
-  { bg: "bg-green-100", text: "text-green-800" },
-  { bg: "bg-yellow-100", text: "text-yellow-800" },
-  { bg: "bg-red-100", text: "text-red-800" },
-  { bg: "bg-pink-100", text: "text-pink-800" },
-  { bg: "bg-indigo-100", text: "text-indigo-800" },
-  { bg: "bg-cyan-100", text: "text-cyan-800" },
-  { bg: "bg-teal-100", text: "text-teal-800" },
-  { bg: "bg-orange-100", text: "text-orange-800" },
+  { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-200" },
+  { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-200" },
+  { bg: "bg-green-100", text: "text-green-800", border: "border-green-200" },
+  { bg: "bg-yellow-100", text: "text-yellow-800", border: "border-yellow-200" },
+  { bg: "bg-red-100", text: "text-red-800", border: "border-red-200" },
+  { bg: "bg-pink-100", text: "text-pink-800", border: "border-pink-200" },
+  { bg: "bg-indigo-100", text: "text-indigo-800", border: "border-indigo-200" },
+  { bg: "bg-cyan-100", text: "text-cyan-800", border: "border-cyan-200" },
+  { bg: "bg-teal-100", text: "text-teal-800", border: "border-teal-200" },
+  { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
 ];
 
-// ✨ 새로운 DAL 스키마에 맞춘 saveUserDataToDAL
+// ✨ 월간 계획 지원을 포함한 saveUserDataToDAL
 export const saveUserDataToDAL = async (nickname, userData) => {
   if (!supabase) {
     console.warn('⚠️ Supabase가 초기화되지 않았습니다');
@@ -56,7 +56,7 @@ export const saveUserDataToDAL = async (nickname, userData) => {
     
     const activities = [];
     
-    // 일정 데이터 변환 - 새로운 스키마에 맞춤
+    // 일정 데이터 변환
     if (userData.schedules && userData.schedules.length > 0) {
       userData.schedules.forEach(schedule => {
         activities.push({
@@ -72,7 +72,23 @@ export const saveUserDataToDAL = async (nickname, userData) => {
       });
     }
     
-    // 🔧 태그 데이터를 DAL에 저장 (새로 추가!)
+    // 🆕 월간 계획 데이터를 DAL에 저장
+    if (userData.monthlyPlans && userData.monthlyPlans.length > 0) {
+      userData.monthlyPlans.forEach(plan => {
+        activities.push({
+          user_name: nickname,
+          tag: 'MONTHLY_PLAN',
+          tag_type: plan.tagType || 'Unknown',
+          title: plan.tag || plan.name || 'Unknown Plan',
+          description: plan.description || '',
+          start_time: '00:00',
+          end_time: `${(plan.estimatedTime || 0).toString().padStart(2, '0')}:00`,
+          date: new Date().toISOString().split('T')[0]
+        });
+      });
+    }
+    
+    // 태그 데이터를 DAL에 저장
     if (userData.tags && userData.tags.length > 0) {
       userData.tags.forEach(tag => {
         activities.push({
@@ -88,7 +104,7 @@ export const saveUserDataToDAL = async (nickname, userData) => {
       });
     }
     
-    // 🔧 태그 아이템 데이터를 DAL에 저장 (새로 추가!)
+    // 태그 아이템 데이터를 DAL에 저장
     if (userData.tagItems && userData.tagItems.length > 0) {
       userData.tagItems.forEach(tagItem => {
         activities.push({
@@ -104,7 +120,7 @@ export const saveUserDataToDAL = async (nickname, userData) => {
       });
     }
     
-    // 월간 목표 데이터 변환 - 새로운 스키마에 맞춤
+    // 월간 목표 데이터 변환
     if (userData.monthlyGoals && userData.monthlyGoals.length > 0) {
       userData.monthlyGoals.forEach(monthGoal => {
         if (monthGoal.goals && monthGoal.goals.length > 0) {
@@ -117,7 +133,7 @@ export const saveUserDataToDAL = async (nickname, userData) => {
               description: `목표 시간: ${goal.targetHours}`,
               start_time: '00:00',
               end_time: goal.targetHours || '00:00',
-              date: `${monthGoal.month}-01` // 월의 첫 번째 날로 설정
+              date: `${monthGoal.month}-01`
             });
           });
         }
@@ -159,7 +175,7 @@ export const saveUserDataToDAL = async (nickname, userData) => {
   }
 };
 
-// ✨ 새로운 DAL 스키마에 맞춘 loadUserDataFromDAL (태그 복원 기능 추가)
+// ✨ 월간 계획 지원을 포함한 loadUserDataFromDAL
 export const loadUserDataFromDAL = async (nickname) => {
   if (!supabase) {
     console.warn('⚠️ Supabase가 초기화되지 않았습니다');
@@ -169,7 +185,6 @@ export const loadUserDataFromDAL = async (nickname) => {
   try {
     console.log('🎯 사용자 데이터를 DAL에서 불러오기 시작:', nickname);
     
-    // 새로운 스키마에 맞춘 SELECT 쿼리
     const { data, error } = await supabase
       .from('DAL')
       .select('*')
@@ -183,15 +198,16 @@ export const loadUserDataFromDAL = async (nickname) => {
     console.log(`✅ 사용자 데이터 DAL 불러오기 성공: ${data?.length || 0}개 활동`);
     console.log('🔍 불러온 원본 데이터:', data);
     
-    // DAL 데이터를 캘린더 형식으로 변환
+    // DAL 데이터를 형식으로 변환
     const schedules = [];
     const monthlyGoals = [];
+    const monthlyPlans = [];
     const tags = [];
     const tagItems = [];
     
-    // 🔧 태그 타입별로 수집하여 자동 생성
+    // 태그 타입별로 수집하여 자동 생성
     const uniqueTagTypes = new Set();
-    const uniqueTagNames = new Map(); // tagType -> Set of tagNames
+    const uniqueTagNames = new Map();
     
     if (data && data.length > 0) {
       data.forEach(activity => {
@@ -199,7 +215,7 @@ export const loadUserDataFromDAL = async (nickname) => {
           // 월간 목표 파싱
           try {
             const dateStr = activity.date;
-            const month = dateStr ? dateStr.substring(0, 7) : new Date().toISOString().slice(0, 7); // YYYY-MM 형식
+            const month = dateStr ? dateStr.substring(0, 7) : new Date().toISOString().slice(0, 7);
             
             let monthGoal = monthlyGoals.find(mg => mg.month === month);
             if (!monthGoal) {
@@ -214,13 +230,33 @@ export const loadUserDataFromDAL = async (nickname) => {
           } catch (parseError) {
             console.warn('월간 목표 파싱 실패:', parseError);
           }
+        } else if (activity.tag === 'MONTHLY_PLAN') {
+          // 🆕 월간 계획 파싱
+          try {
+            const estimatedTime = activity.end_time ? parseInt(activity.end_time.split(':')[0]) : 0;
+            
+            monthlyPlans.push({
+              id: activity.id,
+              tagType: activity.tag_type || 'Unknown',
+              tag: activity.title || 'Unknown Plan',
+              name: activity.title || 'Unknown Plan',
+              description: activity.description || '',
+              estimatedTime: estimatedTime
+            });
+          } catch (parseError) {
+            console.warn('월간 계획 파싱 실패:', parseError);
+          }
         } else if (activity.tag === 'TAG_DEFINITION') {
-          // 🔧 저장된 태그 정의 복원
+          // 저장된 태그 정의 복원
           try {
             const tagType = activity.tag_type || 'Unknown';
             let color;
             try {
               color = JSON.parse(activity.description || '{}');
+              // border 속성이 없으면 추가
+              if (color && !color.border) {
+                color.border = color.bg ? color.bg.replace('bg-', 'border-') : 'border-gray-200';
+              }
             } catch {
               color = PASTEL_COLORS[tags.length % PASTEL_COLORS.length];
             }
@@ -232,7 +268,7 @@ export const loadUserDataFromDAL = async (nickname) => {
             console.warn('태그 정의 파싱 실패:', parseError);
           }
         } else if (activity.tag === 'TAG_ITEM') {
-          // 🔧 저장된 태그 아이템 복원
+          // 저장된 태그 아이템 복원
           try {
             const tagType = activity.tag_type || 'Unknown';
             const tagName = activity.title || 'Unknown';
@@ -258,7 +294,7 @@ export const loadUserDataFromDAL = async (nickname) => {
               done: false
             });
             
-            // 🔧 일정에서 태그 정보 추출
+            // 일정에서 태그 정보 추출
             const tagType = activity.tag_type || activity.tag || 'Unknown';
             const tagName = activity.tag || 'Unknown';
             
@@ -276,7 +312,7 @@ export const loadUserDataFromDAL = async (nickname) => {
       });
     }
     
-    // 🔧 저장된 태그가 없으면 일정에서 자동 생성
+    // 저장된 태그가 없으면 일정에서 자동 생성
     if (tags.length === 0 && uniqueTagTypes.size > 0) {
       console.log('🔧 저장된 태그가 없어서 일정에서 자동 생성');
       let colorIndex = 0;
@@ -289,7 +325,7 @@ export const loadUserDataFromDAL = async (nickname) => {
       });
     }
     
-    // 🔧 저장된 태그 아이템이 없으면 일정에서 자동 생성
+    // 저장된 태그 아이템이 없으면 일정에서 자동 생성
     if (tagItems.length === 0 && uniqueTagNames.size > 0) {
       console.log('🔧 저장된 태그 아이템이 없어서 일정에서 자동 생성');
       uniqueTagNames.forEach((tagNameSet, tagType) => {
@@ -303,6 +339,7 @@ export const loadUserDataFromDAL = async (nickname) => {
     console.log('- schedules:', schedules.length, '개');
     console.log('- tags:', tags.length, '개', tags);
     console.log('- tagItems:', tagItems.length, '개', tagItems);
+    console.log('- monthlyPlans:', monthlyPlans.length, '개', monthlyPlans);
     console.log('- monthlyGoals:', monthlyGoals.length, '개');
     
     return { 
@@ -311,7 +348,7 @@ export const loadUserDataFromDAL = async (nickname) => {
         schedules,
         tags,
         tagItems,
-        monthlyPlans: [],
+        monthlyPlans,
         monthlyGoals
       }
     };
@@ -322,7 +359,7 @@ export const loadUserDataFromDAL = async (nickname) => {
   }
 };
 
-// ✨ 새로운 스키마에 맞춘 개발자 도구 (태그 테스트 추가)
+// ✨ 월간 계획 포함 개발자 도구
 if (typeof window !== 'undefined') {
   window.supabaseUtils = {
     // 연결 테스트
@@ -355,9 +392,9 @@ if (typeof window !== 'undefined') {
       }
     },
     
-    // 🔧 태그 포함 테스트 데이터 생성
+    // 🆕 월간 계획 포함 테스트 데이터 생성
     createSampleUserData: async (nickname = '테스트유저_' + Date.now()) => {
-      console.log('🧪 태그 포함 샘플 데이터 생성:', nickname);
+      console.log('🧪 월간 계획 포함 샘플 데이터 생성:', nickname);
       
       const sampleData = {
         schedules: [
@@ -380,38 +417,48 @@ if (typeof window !== 'undefined') {
             date: new Date().toISOString().split('T')[0],
             start: '18:00',
             end: '19:30'
+          }
+        ],
+        monthlyPlans: [
+          {
+            id: Date.now() + 100,
+            tagType: 'LAB',
+            tag: '웹 구축',
+            name: '웹 구축',
+            description: '프론트엔드 개발, 백엔드 API, 데이터베이스 설계',
+            estimatedTime: 10
           },
           {
-            id: Date.now() + 2,
-            title: '팀 회의',
-            description: '주간 스프린트 리뷰',
-            tag: '회의',
-            tagType: '업무',
-            date: new Date().toISOString().split('T')[0],
-            start: '14:00',
-            end: '15:00'
+            id: Date.now() + 101,
+            tagType: '연구',
+            tag: '논문 작성',
+            name: '논문 작성',
+            description: '데이터 분석, 결과 정리, 초안 작성',
+            estimatedTime: 8
           }
         ],
         tags: [
-          { tagType: "학습", color: { bg: "bg-blue-100", text: "text-blue-800" } },
-          { tagType: "운동", color: { bg: "bg-green-100", text: "text-green-800" } },
-          { tagType: "업무", color: { bg: "bg-red-100", text: "text-red-800" } }
+          { tagType: "학습", color: { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-200" } },
+          { tagType: "운동", color: { bg: "bg-green-100", text: "text-green-800", border: "border-green-200" } },
+          { tagType: "LAB", color: { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-200" } },
+          { tagType: "연구", color: { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" } }
         ],
         tagItems: [
           { tagType: "학습", tagName: "영어공부" },
-          { tagType: "학습", tagName: "코딩" },
           { tagType: "운동", tagName: "헬스" },
-          { tagType: "운동", tagName: "러닝" },
-          { tagType: "업무", tagName: "회의" },
-          { tagType: "업무", tagName: "개발" }
+          { tagType: "LAB", tagName: "웹 구축" },
+          { tagType: "LAB", tagName: "DAL" },
+          { tagType: "연구", tagName: "논문 작성" },
+          { tagType: "연구", tagName: "학위 연구" }
         ],
         monthlyGoals: [
           {
             month: new Date().toISOString().slice(0, 7),
             goals: [
-              { tagType: '학습', targetHours: '02:00' },
-              { tagType: '운동', targetHours: '01:30' },
-              { tagType: '업무', targetHours: '08:00' }
+              { tagType: 'LAB', targetHours: '100:00' },
+              { tagType: '연구', targetHours: '20:00' },
+              { tagType: '학습', targetHours: '15:00' },
+              { tagType: '운동', targetHours: '10:00' }
             ]
           }
         ]
@@ -431,11 +478,11 @@ if (typeof window !== 'undefined') {
           throw new Error('불러오기 실패: ' + loadResult.error);
         }
         
-        console.log('✅ 태그 포함 샘플 데이터 생성 완료');
+        console.log('✅ 월간 계획 포함 샘플 데이터 생성 완료');
         console.log('저장된 데이터:', saveResult.data);
         console.log('불러온 데이터:', loadResult.data);
         
-        alert(`✅ 태그 포함 샘플 데이터 생성 완료!\n사용자: ${nickname}\n일정: ${loadResult.data.schedules?.length || 0}개\n태그: ${loadResult.data.tags?.length || 0}개\n태그아이템: ${loadResult.data.tagItems?.length || 0}개`);
+        alert(`✅ 월간 계획 포함 샘플 데이터 생성 완료!\n사용자: ${nickname}\n일정: ${loadResult.data.schedules?.length || 0}개\n월간계획: ${loadResult.data.monthlyPlans?.length || 0}개\n태그: ${loadResult.data.tags?.length || 0}개`);
         
         return { nickname, saveResult, loadResult };
         
@@ -443,25 +490,6 @@ if (typeof window !== 'undefined') {
         console.error('❌ 샘플 데이터 생성 실패:', error);
         alert('❌ 샘플 데이터 생성 실패: ' + error.message);
         return { success: false, error: error.message };
-      }
-    },
-    
-    // ✨ 새로운 스키마에 맞춘 DAL 테스트
-    testDAL: async () => {
-      console.log('🧪 DAL 테스트 시작 (태그 포함)');
-      
-      if (!supabase) {
-        console.error('❌ Supabase 초기화 실패');
-        alert('❌ Supabase가 초기화되지 않았습니다');
-        return false;
-      }
-      
-      try {
-        return await window.supabaseUtils.createSampleUserData();
-      } catch (error) {
-        console.error('❌ DAL 테스트 실패:', error);
-        alert('❌ DAL 테스트 실패: ' + error.message);
-        return false;
       }
     },
     
@@ -483,7 +511,7 @@ if (typeof window !== 'undefined') {
       return result;
     },
     
-    // ✨ 사용자별 데이터 확인
+    // 사용자별 데이터 확인
     checkUserData: async (nickname) => {
       if (!supabase || !nickname) {
         console.error('❌ Supabase 또는 nickname 없음');
@@ -502,7 +530,8 @@ if (typeof window !== 'undefined') {
         
         const summary = {
           총_레코드: data?.length || 0,
-          일정: data?.filter(d => !['MONTHLY_GOAL', 'TAG_DEFINITION', 'TAG_ITEM'].includes(d.tag)).length || 0,
+          일정: data?.filter(d => !['MONTHLY_GOAL', 'MONTHLY_PLAN', 'TAG_DEFINITION', 'TAG_ITEM'].includes(d.tag)).length || 0,
+          월간계획: data?.filter(d => d.tag === 'MONTHLY_PLAN').length || 0,
           월간목표: data?.filter(d => d.tag === 'MONTHLY_GOAL').length || 0,
           태그정의: data?.filter(d => d.tag === 'TAG_DEFINITION').length || 0,
           태그아이템: data?.filter(d => d.tag === 'TAG_ITEM').length || 0
@@ -522,13 +551,12 @@ if (typeof window !== 'undefined') {
   };
   
   if (supabase) {
-    console.log('🚀 태그 기능이 포함된 Supabase 유틸리티가 준비되었습니다!');
+    console.log('🚀 월간 계획 기능이 포함된 Supabase 유틸리티가 준비되었습니다!');
     console.log('사용법:');
     console.log('  supabaseUtils.checkEnv() - 환경변수 확인');
     console.log('  supabaseUtils.testConnection() - 연결 테스트');
-    console.log('  supabaseUtils.createSampleUserData() - 태그 포함 샘플 데이터 생성');
+    console.log('  supabaseUtils.createSampleUserData() - 월간 계획 포함 샘플 데이터 생성');
     console.log('  supabaseUtils.checkUserData("사용자명") - 특정 사용자 데이터 확인');
-    console.log('  supabaseUtils.testDAL() - 전체 테스트');
   } else {
     console.warn('⚠️ Supabase 초기화 실패 - 환경변수를 확인하세요');
   }
