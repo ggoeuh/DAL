@@ -1,4 +1,5 @@
 import React from "react";
+import { useSearchParams } from "react-router-dom"; // ← 추가
 import { useWeeklyCalendarLogic } from "./WeeklyCalendarLogic";
 import { WeeklyCalendarUI } from "./WeeklyCalendarUI";
 
@@ -19,17 +20,24 @@ const WeeklyCalendar = ({
   saveToServer,
   loadFromServer
 }) => {
+  // URL 파라미터에서 날짜 가져오기
+  const [searchParams] = useSearchParams(); // ← 추가
+  const initialDate = searchParams.get('date'); // ← 추가
+
   // 새로운 훅 사용 방식
   const calendarLogic = useWeeklyCalendarLogic({
     currentUser,
     isServerBased,
     enableAutoRefresh,
+    initialDate, // ← 추가
     // 서버 기반이 아닐 때만 초기 데이터 전달
     initialSchedules: !isServerBased ? schedules : [],
     initialTags: !isServerBased ? tags : [],
     initialTagItems: !isServerBased ? tagItems : [],
     initialMonthlyGoals: []
   });
+
+  // ... 나머지 코드는 그대로
 
   const {
     // 상태와 데이터
