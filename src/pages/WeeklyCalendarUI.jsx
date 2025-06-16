@@ -83,8 +83,8 @@ export const WeeklyCalendarUI = ({
     handleResizeEnd
   } = calendarLogic;
 
-  // ✨ 체크박스 변경 핸들러 - 무한 루프 방지
-  const handleCheckboxChange = useCallback((scheduleId, currentDone) => {
+  // ✨ 체크박스 변경 핸들러 - useCallback 완전 제거하여 무한 루프 방지
+  const handleCheckboxChange = (scheduleId, currentDone) => {
     if (isAdminView) return;
     
     // setSchedules 함수를 직접 참조하지 않고 콜백으로 처리
@@ -97,7 +97,7 @@ export const WeeklyCalendarUI = ({
       );
       updateSchedule(updated);
     }
-  }, [isAdminView, currentUser]); // 🚨 중요: safeSchedules와 setSchedules를 의존성에서 제거
+  };
 
   // 이벤트 리스너 등록 - 의존성 배열 최적화
   useEffect(() => {
