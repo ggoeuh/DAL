@@ -1,5 +1,5 @@
-// Appcopy.jsx - 완전 서버 기반 버전 + 무한동기화 해결 (기존 구조 유지)
-import React, { useState, useEffect, useRef, useCallback } from "react";
+// Appcopy.jsx - 완전 서버 기반 버전
+import React, { useState, useEffect, useRef } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
 import CalendarPage from './pages/CalendarPage';
@@ -47,14 +47,13 @@ function Appcopy() {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
-  // 🔧 서버 저장 상태 관리 (무한동기화 방지 강화)
+  // 🔧 서버 저장 상태 관리
   const isSavingRef = useRef(false);
   const saveTimeoutRef = useRef(null);
   const lastSaveDataRef = useRef('');
-  const prevDataRef = useRef({}); // ✅ 이전 데이터 상태 저장
 
   // ✨ 수정된 관리자 여부 확인 함수 (세션 기반)
-  const checkIsAdmin = useCallback((nickname) => {
+  const checkIsAdmin = (nickname) => {
     const userType = sessionStorage.getItem('userType');
     
     const isAdminByType = userType === 'admin';
@@ -70,29 +69,22 @@ function Appcopy() {
     });
     
     return isAdminByType || isAdminByName;
-  }, []);
+  };
 
-  // ✅ 데이터 깊은 비교 함수
-  const deepCompare = useCallback((obj1, obj2) => {
-    return JSON.stringify(obj1) === JSON.stringify(obj2);
-  }, []);
-
-  // 🔧 데이터 해시 생성 (변경 감지용) - 개선
-  const generateDataHash = useCallback((schedules, tags, tagItems, monthlyPlans, monthlyGoals) => {
+  // 🔧 데이터 해시 생성 (변경 감지용)
+  const generateDataHash = (schedules, tags, tagItems, monthlyPlans, monthlyGoals) => {
     return JSON.stringify({
-      s: schedules?.length || 0,
-      t: tags?.length || 0, 
-      ti: tagItems?.length || 0,
-      mp: monthlyPlans?.length || 0,
-      mg: monthlyGoals?.length || 0,
-      // 최근 데이터 샘플링으로 변경 감지 정확도 향상
-      sData: schedules?.slice(-3) || [], // 최근 3개
-      timestamp: Math.floor(Date.now() / 10000) // 10초 단위로 타임스탬프
+      s: schedules.length,
+      t: tags.length, 
+      ti: tagItems.length,
+      mp: monthlyPlans.length,
+      mg: monthlyGoals.length,
+      timestamp: Date.now()
     });
-  }, []);
+  };
 
   // ✨ 서버에서 사용자 데이터 로드
-  const loadUserDataFromServer = useCallback(async (nickname) => {
+  const loadUserDataFromServer = async (nickname) => {
     if (!nickname || !supabase) return null;
 
     try {
@@ -118,21 +110,15 @@ function Appcopy() {
       console.error('❌ 서버 데이터 로드 실패:', error);
       return null;
     }
-  }, []);
+  };
 
-  // ✨ 개선된 서버에 사용자 데이터 저장 (무한동기화 방지 강화)
-  const saveUserDataToServer = useCallback(async () => {
-    if (!currentUser || isLoading || isAdmin) return;
+  // ✨ 서버에 사용자 데이터 저장
+  const saveUserDataToServer = async () => {
+    if (!currentUser || isLoading || isSavingRef.current || isAdmin) return;
 
     // 관리자는 데이터 저장 안 함
     if (checkIsAdmin(currentUser)) {
       console.log('⚠️ 관리자는 데이터 저장하지 않음');
-      return;
-    }
-
-    // ✅ 현재 저장 중인지 확인 (강화)
-    if (isSavingRef.current) {
-      console.log('⚠️ 이미 저장 중 - 스킵');
       return;
     }
 
@@ -144,18 +130,17 @@ function Appcopy() {
     }
 
     isSavingRef.current = true;
-    const previousHash = lastSaveDataRef.current;
     lastSaveDataRef.current = currentDataHash;
 
     try {
       console.log('🌐 서버 저장 시작:', currentUser);
       
       const dataToSave = {
-        schedules: schedules || [],
-        tags: tags || [],
-        tagItems: tagItems || [],
-        monthlyPlans: monthlyPlans || [],
-        monthlyGoals: monthlyGoals || []
+        schedules,
+        tags,
+        tagItems,
+        monthlyPlans,
+        monthlyGoals
       };
 
       const result = await saveUserDataToDAL(currentUser, dataToSave);
@@ -168,18 +153,13 @@ function Appcopy() {
       }
     } catch (error) {
       console.warn('⚠️ 서버 저장 실패:', error);
-      // 저장 실패 시 해시 되돌리기
-      lastSaveDataRef.current = previousHash;
     } finally {
-      // ✅ 일정 시간 후 저장 플래그 해제 (네트워크 지연 고려)
-      setTimeout(() => {
-        isSavingRef.current = false;
-      }, 2000); // 2초로 증가
+      isSavingRef.current = false;
     }
-  }, [currentUser, isLoading, isAdmin, schedules, tags, tagItems, monthlyPlans, monthlyGoals, checkIsAdmin, generateDataHash]);
+  };
 
   // ✨ 서버에서 모든 사용자 목록 가져오기
-  const getAllUsersFromServer = useCallback(async () => {
+  const getAllUsersFromServer = async () => {
     if (!supabase) {
       console.error('❌ Supabase 클라이언트가 초기화되지 않았습니다');
       return [];
@@ -212,10 +192,10 @@ function Appcopy() {
       console.error('❌ 서버 사용자 검색 실패:', error);
       return [];
     }
-  }, []);
+  };
 
   // ✨ 서버 기반 사용자 데이터 조회
-  const getUserData = useCallback(async (nickname) => {
+  const getUserData = async (nickname) => {
     if (!nickname) {
       console.warn('⚠️ getUserData: nickname이 없음');
       return {
@@ -243,10 +223,10 @@ function Appcopy() {
         monthlyGoals: []
       };
     }
-  }, [loadUserDataFromServer]);
+  };
 
   // ✨ 서버 기반 사용자 통계
-  const getUserStats = useCallback(async () => {
+  const getUserStats = async () => {
     console.log('📊 서버 기반 getUserStats 실행 시작');
     
     try {
@@ -283,10 +263,10 @@ function Appcopy() {
       console.error('❌ 서버 기반 getUserStats 실패:', error);
       return {};
     }
-  }, [getAllUsersFromServer, getUserData]);
+  };
 
   // ✨ 개선된 사용자 데이터 로드 함수 (서버 기반)
-  const loadCurrentUserData = useCallback(async (nickname) => {
+  const loadCurrentUserData = async (nickname) => {
     if (!nickname) return;
     
     console.log('📦 서버 기반 데이터 로딩 시작:', nickname);
@@ -318,15 +298,6 @@ function Appcopy() {
         setTagItems(userData.tagItems || []);
         setMonthlyPlans(userData.monthlyPlans || []);
         setMonthlyGoals(userData.monthlyGoals || []);
-        
-        // ✅ 초기 데이터 해시 설정
-        prevDataRef.current = {
-          schedules: userData.schedules || [],
-          tags: userData.tags || [],
-          tagItems: userData.tagItems || [],
-          monthlyPlans: userData.monthlyPlans || [],
-          monthlyGoals: userData.monthlyGoals || []
-        };
         
         console.log('✅ 서버 데이터 로딩 완료:', {
           nickname,
@@ -366,15 +337,6 @@ function Appcopy() {
         setMonthlyPlans([]);
         setMonthlyGoals([]);
         
-        // ✅ 초기 데이터 해시 설정
-        prevDataRef.current = {
-          schedules: [],
-          tags: defaultTags,
-          tagItems: defaultTagItems,
-          monthlyPlans: [],
-          monthlyGoals: []
-        };
-        
         // 기본 데이터를 서버에 저장
         const initialData = {
           schedules: [],
@@ -410,18 +372,10 @@ function Appcopy() {
       setTagItems([]);
       setMonthlyPlans([]);
       setMonthlyGoals([]);
-      
-      prevDataRef.current = {
-        schedules: [],
-        tags: [],
-        tagItems: [],
-        monthlyPlans: [],
-        monthlyGoals: []
-      };
     }
     
     setDataLoaded(true);
-  }, [checkIsAdmin, loadUserDataFromServer, generateDataHash]);
+  };
 
   // ✨ 개선된 로그인 상태 확인 (세션 기반)
   useEffect(() => {
@@ -450,36 +404,21 @@ function Appcopy() {
     };
     
     checkLoginStatus();
-  }, [loadCurrentUserData]);
+  }, []);
 
-  // ✅ 개선된 자동 저장 로직 (무한 루프 방지 강화)
+  // 🔧 일반 사용자만 자동 서버 저장 (3초 디바운싱)
   useEffect(() => {
     if (!currentUser || isLoading || isAdmin || !dataLoaded) return;
 
-    const currentData = {
-      schedules: schedules || [],
-      tags: tags || [],
-      tagItems: tagItems || [],
-      monthlyPlans: monthlyPlans || [],
-      monthlyGoals: monthlyGoals || []
-    };
-
-    // ✅ 이전 데이터와 깊은 비교하여 실제 변경이 있을 때만 저장
-    if (!deepCompare(currentData, prevDataRef.current)) {
-      console.log('📝 데이터 변경 감지 - 저장 예약');
-      
-      // 기존 타이머 취소
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-
-      // ✅ 5초 디바운싱 (더 긴 간격으로 조정)
-      saveTimeoutRef.current = setTimeout(() => {
-        saveUserDataToServer();
-        // 저장 후 이전 데이터 업데이트
-        prevDataRef.current = { ...currentData };
-      }, 5000);
+    // 기존 타이머 취소
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
+
+    // 3초 디바운싱 (서버 부하 고려)
+    saveTimeoutRef.current = setTimeout(() => {
+      saveUserDataToServer();
+    }, 3000);
 
     // 클린업
     return () => {
@@ -487,36 +426,36 @@ function Appcopy() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading, isAdmin, dataLoaded, deepCompare, saveUserDataToServer]);
+  }, [schedules, tags, tagItems, monthlyPlans, monthlyGoals, currentUser, isLoading, isAdmin, dataLoaded]);
 
-  // ✅ 상태 업데이트 함수들을 useCallback으로 최적화
-  const updateSchedules = useCallback((newSchedules) => {
+  // 🔧 상태 업데이트 함수들 (서버 기반)
+  const updateSchedules = (newSchedules) => {
     setSchedules(newSchedules);
-    console.log('📅 일정 상태 업데이트:', newSchedules?.length || 0, '개');
-  }, []);
+    console.log('📅 일정 상태 업데이트:', newSchedules.length, '개');
+  };
 
-  const updateTags = useCallback((newTags) => {
+  const updateTags = (newTags) => {
     setTags(newTags);
-    console.log('🏷️ 태그 상태 업데이트:', newTags?.length || 0, '개');
-  }, []);
+    console.log('🏷️ 태그 상태 업데이트:', newTags.length, '개');
+  };
 
-  const updateTagItems = useCallback((newTagItems) => {
+  const updateTagItems = (newTagItems) => {
     setTagItems(newTagItems);
-    console.log('📋 태그아이템 상태 업데이트:', newTagItems?.length || 0, '개');
-  }, []);
+    console.log('📋 태그아이템 상태 업데이트:', newTagItems.length, '개');
+  };
 
-  const updateMonthlyPlans = useCallback((newPlans) => {
+  const updateMonthlyPlans = (newPlans) => {
     setMonthlyPlans(newPlans);
-    console.log('📊 월간계획 상태 업데이트:', newPlans?.length || 0, '개');
-  }, []);
+    console.log('📊 월간계획 상태 업데이트:', newPlans.length, '개');
+  };
 
-  const updateMonthlyGoals = useCallback((newGoals) => {
+  const updateMonthlyGoals = (newGoals) => {
     setMonthlyGoals(newGoals);
-    console.log('🎯 월간목표 상태 업데이트:', newGoals?.length || 0, '개');
-  }, []);
+    console.log('🎯 월간목표 상태 업데이트:', newGoals.length, '개');
+  };
 
   // ✨ 수정된 로그아웃 함수 (세션 기반)
-  const handleLogout = useCallback(() => {
+  const handleLogout = () => {
     console.log('🚪 로그아웃 시작 (세션 기반)');
     
     // 타이머 정리
@@ -543,18 +482,17 @@ function Appcopy() {
     // 플래그 초기화
     isSavingRef.current = false;
     lastSaveDataRef.current = '';
-    prevDataRef.current = {};
     
     console.log('🚪 로그아웃 완료 - 로그인 페이지로 이동');
     
     // 강제 페이지 이동
     window.location.href = '#/login';
-  }, []);
+  };
 
-  const handleAdminLogout = useCallback(() => {
+  const handleAdminLogout = () => {
     console.log('👑 관리자 로그아웃 (세션 기반)');
     handleLogout();
-  }, [handleLogout]);
+  };
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
@@ -656,7 +594,6 @@ function Appcopy() {
           }
         />
 
-        {/* ✅ 기존 구조 유지: App.jsx에서 props로 데이터 전달 */}
         <Route
           path="/calendar"
           element={
@@ -668,8 +605,6 @@ function Appcopy() {
                 setTags={updateTags}
                 tagItems={tagItems}
                 setTagItems={updateTagItems}
-                monthlyGoals={monthlyGoals}
-                setMonthlyGoals={updateMonthlyGoals}
                 currentUser={currentUser}
                 onLogout={handleLogout}
                 lastSyncTime={lastSyncTime}
@@ -728,3 +663,189 @@ function Appcopy() {
 }
 
 export default Appcopy;
+
+
+
+이거랑 아래 코드 조합일때는 무한 로딩 없었어.
+
+import React, { useState, useEffect } from 'react';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
+import { 
+  saveUserDataToDAL, 
+  loadUserDataFromDAL,
+  supabase
+} from './utils/supabaseStorage.js';
+
+// 파스텔 색상 팔레트
+const PASTEL_COLORS = [
+  { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-200" },
+  { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-200" },
+  { bg: "bg-green-100", text: "text-green-800", border: "border-green-200" },
+  { bg: "bg-yellow-100", text: "text-yellow-800", border: "border-yellow-200" },
+  { bg: "bg-red-100", text: "text-red-800", border: "border-red-200" },
+  { bg: "bg-pink-100", text: "text-pink-800", border: "border-pink-200" },
+  { bg: "bg-indigo-100", text: "text-indigo-800", border: "border-indigo-200" },
+  { bg: "bg-cyan-100", text: "text-cyan-800", border: "border-cyan-200" },
+  { bg: "bg-teal-100", text: "text-teal-800", border: "border-teal-200" },
+  { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
+];
+
+// 시간을 분으로 변환하는 함수
+const parseTimeToMinutes = (time) => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+
+// 분을 시간 형식으로 변환하는 함수
+const minutesToTimeString = (totalMinutes) => {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return ${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")};
+};
+
+// 서버 데이터 리셋 버튼 컴포넌트
+const ServerDataResetButton = ({ currentUser, onDataChanged, className = "" }) => {
+  const [showModal, setShowModal] = useState(false);
+  const [resetType, setResetType] = useState('user');
+  const [isResetting, setIsResetting] = useState(false);
+
+  const handleReset = async () => {
+    if (!supabase || !currentUser) {
+      alert('❌ Supabase 연결 또는 사용자 정보가 없습니다.');
+      return;
+    }
+
+    setIsResetting(true);
+    
+    try {
+      if (resetType === 'user') {
+        if (window.confirm(
+          ⚠️ ${currentUser} 사용자의 모든 서버 데이터를 삭제하시겠습니까?\n +
+          - 모든 일정\n +
+          - 모든 월간 목표\n\n +
+          이 작업은 되돌릴 수 없습니다.
+        )) {
+          const { error } = await supabase
+            .from('DAL')
+            .delete()
+            .eq('user_name', currentUser);
+          
+          if (error) {
+            throw error;
+          }
+          
+          alert(✅ ${currentUser} 사용자의 모든 서버 데이터가 삭제되었습니다.);
+          if (onDataChanged) onDataChanged();
+        }
+      } else if (resetType === 'all') {
+        if (window.confirm(
+          '⚠️ 모든 사용자의 서버 데이터를 삭제하시겠습니까?\n' +
+          '이 작업은 되돌릴 수 없습니다.'
+        )) {
+          const { error } = await supabase
+            .from('DAL')
+            .delete()
+            .neq('id', 0); // 모든 레코드 삭제
+          
+          if (error) {
+            throw error;
+          }
+          
+          alert('✅ 모든 서버 데이터가 삭제되었습니다.');
+          if (onDataChanged) onDataChanged();
+        }
+      }
+    } catch (error) {
+      console.error('서버 데이터 삭제 실패:', error);
+      alert('❌ 서버 데이터 삭제 실패: ' + error.message);
+    }
+    
+    setIsResetting(false);
+    setShowModal(false);
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setShowModal(true)}
+        className={bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded-lg text-sm font-medium transition-colors ${className}}
+        title="서버 데이터 삭제"
+      >
+        🗑️ 서버 삭제
+      </button>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-bold mb-4 text-red-600">⚠️ 서버 데이터 삭제</h3>
+            
+            <div className="mb-4">
+              <p className="text-gray-600 mb-3">삭제할 범위를 선택해주세요:</p>
+              
+              <div className="space-y-3">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="resetType"
+                    value="user"
+                    checked={resetType === 'user'}
+                    onChange={(e) => setResetType(e.target.value)}
+                    className="mr-2"
+                  />
+                  <div>
+                    <div className="font-medium">내 모든 서버 데이터 삭제</div>
+                    <div className="text-sm text-gray-500">
+                      {currentUser} 사용자의 모든 일정과 월간목표 삭제
+                    </div>
+                  </div>
+                </label>
+                
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="resetType"
+                    value="all"
+                    checked={resetType === 'all'}
+                    onChange={(e) => setResetType(e.target.value)}
+                    className="mr-2"
+                  />
+                  <div>
+                    <div className="font-medium text-red-600">모든 서버 데이터 삭제</div>
+                    <div className="text-sm text-red-500">
+                      모든 사용자의 서버 데이터 삭제 (복구 불가능)
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+            
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+              <p className="text-yellow-800 text-sm">
+                <strong>주의:</strong> 서버 데이터는 한번 삭제되면 복구할 수 없습니다.
+                신중하게 선택하세요.
+              </p>
+            </div>
+            
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowModal(false)}
+                disabled={isResetting}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={isResetting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {isResetting ? '삭제 중...' : '삭제 실행'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
