@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { saveUserDataToDAL, loadUserDataFromDAL } from './utils/supabaseStorage.js';
+import { saveUserDataToDAL } from './utils/supabaseStorage.js';
 
 const SLOT_HEIGHT = 24;
 const DAYS_OF_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 파스텔 색상 팔레트
 const PASTEL_COLORS = [
   { bg: "bg-purple-100", text: "text-purple-800" },
   { bg: "bg-blue-100", text: "text-blue-800" },
@@ -17,8 +18,9 @@ const PASTEL_COLORS = [
   { bg: "bg-orange-100", text: "text-orange-800" },
 ];
 
+// 유틸리티 함수들
 const parseTimeToMinutes = (time) => {
-  const [h, m] = time.split(":" ).map(Number);
+  const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
 };
 
@@ -34,40 +36,56 @@ const pixelToNearestTimeSlot = (pixelPosition) => {
   return minutesToTimeString(totalMinutes);
 };
 
-const formatDate = (date) => date.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
+const formatDate = (date) => {
+  return date.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
+};
 
-const getDayOfWeek = (date) => DAYS_OF_WEEK[date.getDay()];
+const getDayOfWeek = (date) => {
+  return DAYS_OF_WEEK[date.getDay()];
+};
 
 const filterSchedulesByDate = (schedules, date) => {
   const dateString = date.toISOString().split("T")[0];
-  return (schedules || []).filter(schedule => schedule.date === dateString);
+  return schedules.filter(schedule => schedule.date === dateString);
 };
 
 const calculateTagTotals = (schedules) => {
-  if (!Array.isArray(schedules)) return {};
   const totals = {};
+  
   schedules.forEach(schedule => {
     const tagType = schedule.tagType || "기타";
-    if (!totals[tagType]) totals[tagType] = 0;
+    if (!totals[tagType]) {
+      totals[tagType] = 0;
+    }
+    
     const startMinutes = parseTimeToMinutes(schedule.start);
     const endMinutes = parseTimeToMinutes(schedule.end);
-    totals[tagType] += endMinutes - startMinutes;
+    const duration = endMinutes - startMinutes;
+    
+    totals[tagType] += duration;
   });
+  
   Object.keys(totals).forEach(key => {
     const hours = Math.floor(totals[key] / 60);
     const minutes = totals[key] % 60;
     totals[key] = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
   });
+  
   return totals;
 };
 
 const checkScheduleOverlap = (schedules, newSchedule) => {
-  const filtered = (schedules || []).filter(s => s.date === newSchedule.date && s.id !== newSchedule.id);
+  const filtered = schedules.filter(s => 
+    s.date === newSchedule.date && s.id !== newSchedule.id
+  );
+  
   const newStart = parseTimeToMinutes(newSchedule.start);
   const newEnd = parseTimeToMinutes(newSchedule.end);
+  
   return filtered.some(s => {
     const existingStart = parseTimeToMinutes(s.start);
     const existingEnd = parseTimeToMinutes(s.end);
+    
     return (
       (newStart >= existingStart && newStart < existingEnd) ||
       (newEnd > existingStart && newEnd <= existingEnd) ||
@@ -76,18 +94,55 @@ const checkScheduleOverlap = (schedules, newSchedule) => {
   });
 };
 
-export const useWeeklyCalendarLogic = ({ currentUser }) => {
-  const [schedules, setSchedules] = useState([]);
-  const [monthlyGoals, setMonthlyGoals] = useState([]);
-  const [tags, setTags] = useState([]);
-  const [tagItems, setTagItems] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [lastSyncTime, setLastSyncTime] = useState(null);
+// 커스텀 훅: 캘린더 로직
+export const useWeeklyCalendarLogic = ({ 
+  schedules = [], 
+  setSchedules, 
+  tags = [], 
+  setTags, 
+  tagItems = [], 
+  setTagItems, 
+  currentUser 
+}) => {
+  // 안전한 배열 보장
+  const safeSchedules = Array.isArray(schedules) ? schedules : [];
+  const safeTags = Array.isArray(tags) ? tags : [];
+  const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
 
-  const [form, setForm] = useState({
-    title: "",
-    end: "07:00",
-    description: "",
+  // 날짜 상태 관리
+  const today = new Date();
+  const [currentWeek, setCurrentWeek] = useState(
+    Array(7).fill().map((_, i) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - today.getDay() + i);
+      return date;
+    })
+  );
+  const [focusedDayIndex, setFocusedDayIndex] = useState(today.getDay());
+  
+  const [visibleDays, setVisibleDays] = useState(() => {
+    const focusPosition = 3;
+    const newVisibleDays = [];
+    for (let i = 0; i < 5; i++) {
+      const offset = i - focusPosition;
+      const newIndex = (focusedDayIndex + offset + 7) % 7;
+      newVisibleDays.push(newIndex);
+    }
+    return newVisibleDays;
+  });
+  
+  // 시간 슬롯
+  const timeSlots = Array.from({ length: 48 }, (_, i) => {
+    const hour = Math.floor(i / 2);
+    const minute = i % 2 === 0 ? "00" : "30";
+    return `${hour.toString().padStart(2, "0")}:${minute}`;
+  });
+
+  // 폼 및 UI 상태들
+  const [form, setForm] = useState({ 
+    title: "", 
+    end: "07:00", 
+    description: "", 
     tag: "",
     repeatCount: "1",
     interval: "1",
@@ -99,80 +154,186 @@ export const useWeeklyCalendarLogic = ({ currentUser }) => {
   const [resizeType, setResizeType] = useState(null);
   const containerRef = useRef(null);
   const [showOverlapMessage, setShowOverlapMessage] = useState(false);
-  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, scheduleId: null });
+  const [contextMenu, setContextMenu] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    scheduleId: null
+  });
   const [copyingSchedule, setCopyingSchedule] = useState(null);
   const [newTagType, setNewTagType] = useState("");
   const [newTagName, setNewTagName] = useState("");
   const [selectedTagType, setSelectedTagType] = useState("");
+  
+  // 드래그 앤 드롭 상태
   const [dragging, setDragging] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [autoScrollTimer, setAutoScrollTimer] = useState(null);
+  
+  const repeatOptions = Array.from({ length: 15 }, (_, i) => i + 2);
+  const intervalOptions = [
+    { value: "1", label: "매주" },
+    { value: "2", label: "격주" },
+    { value: "3", label: "3주마다" },
+    { value: "4", label: "4주마다" }
+  ];
 
+  // 초기 스크롤 설정
   useEffect(() => {
-    const loadDataFromServer = async () => {
-      if (!currentUser) {
-        setIsLoading(false);
-        return;
-      }
-      try {
-        setIsLoading(true);
-        const result = await loadUserDataFromDAL(currentUser);
-        if (result.success && result.data) {
-          setSchedules(result.data.schedules || []);
-          setMonthlyGoals(result.data.monthlyGoals || []);
-          setTags(result.data.tags || []);
-          setTagItems(result.data.tagItems || []);
-          setLastSyncTime(new Date());
-        } else {
-          setSchedules([]);
-          setMonthlyGoals([]);
-          setTags([]);
-          setTagItems([]);
-          setLastSyncTime(new Date());
-        }
-      } catch (e) {
-        console.error("서버 로드 오류:", e);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadDataFromServer();
-  }, [currentUser]);
+    if (containerRef.current) {
+      containerRef.current.scrollTop = 12 * SLOT_HEIGHT;
+    }
+  }, []);
 
-  const today = new Date();
-  const [currentWeek, setCurrentWeek] = useState(Array(7).fill().map((_, i) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() - today.getDay() + i);
-    return date;
-  }));
-  const [focusedDayIndex, setFocusedDayIndex] = useState(today.getDay());
-  const [visibleDays, setVisibleDays] = useState(() => {
-    const focusPosition = 3;
+  // 현재 시간 표시 라인 위치 계산
+  const getCurrentTimeLine = () => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const totalMinutes = hours * 60 + minutes;
+    const slotPosition = (totalMinutes / 30) * SLOT_HEIGHT;
+    return slotPosition;
+  };
+
+  // 새 태그 타입에 색상 할당
+  const assignNewTagColor = (tagType) => {
+    const existingTag = safeTags.find(t => t.tagType === tagType);
+    if (existingTag) {
+      return existingTag.color;
+    }
+    
+    const usedColors = safeTags.map(t => t.color);
+    const availableColors = PASTEL_COLORS.filter(
+      color => !usedColors.some(used => used.bg === color.bg)
+    );
+    
+    return availableColors.length > 0 
+      ? availableColors[0] 
+      : PASTEL_COLORS[safeTags.length % PASTEL_COLORS.length];
+  };
+
+  // 포커스 날짜 변경 핸들러
+  const handleDayFocus = (dayIndex) => {
+    if (dayIndex === focusedDayIndex) return;
+    
+    setFocusedDayIndex(dayIndex);
+    
     const newVisibleDays = [];
+    const focusPosition = 3;
+    
     for (let i = 0; i < 5; i++) {
       const offset = i - focusPosition;
-      const newIndex = (focusedDayIndex + offset + 7) % 7;
+      const newIndex = (dayIndex + offset + 7) % 7;
       newVisibleDays.push(newIndex);
     }
-    return newVisibleDays;
-  });
-  const timeSlots = Array.from({ length: 48 }, (_, i) => {
-    const hour = Math.floor(i / 2);
-    const minute = i % 2 === 0 ? "00" : "30";
-    return `${hour.toString().padStart(2, "0")}:${minute}`;
-  });
+    
+    setVisibleDays(newVisibleDays);
+  };
+
+  // 시간 슬롯 계산 헬퍼 함수
+  const calculateSlotPosition = (time) => {
+    const minutes = parseTimeToMinutes(time);
+    const slotIndex = minutes / 30;
+    return slotIndex * SLOT_HEIGHT;
+  };
+
+  // 리사이즈 핸들러들
+  const handleResizeStart = (e, scheduleId, type) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizing(scheduleId);
+    setResizeType(type);
+  };
+
+  const handleResizeMove = (e) => {
+    if (!resizing || !containerRef.current || !setSchedules) return;
+    
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const relativeY = e.clientY - containerRect.top + containerRef.current.scrollTop;
+    
+    const scheduleIndex = safeSchedules.findIndex(s => s.id === resizing);
+    if (scheduleIndex === -1) return;
+    
+    const schedule = safeSchedules[scheduleIndex];
+    const updatedSchedules = [...safeSchedules];
+    
+    if (resizeType === 'top') {
+      const newStart = pixelToNearestTimeSlot(relativeY);
+      const endMinutes = parseTimeToMinutes(schedule.end);
+      const newStartMinutes = parseTimeToMinutes(newStart);
+      
+      if (newStartMinutes < endMinutes) {
+        const updatedSchedule = {
+          ...schedule,
+          start: newStart
+        };
+        
+        if (!checkScheduleOverlap(safeSchedules, updatedSchedule)) {
+          updatedSchedules[scheduleIndex] = updatedSchedule;
+          setSchedules(updatedSchedules);
+          
+          if (currentUser) {
+            saveUserDataToDAL(currentUser, {
+              schedules: updatedSchedules,
+              tags: safeTags,
+              tagItems: safeTagItems
+            });
+          }
+        } else {
+          setShowOverlapMessage(true);
+          setTimeout(() => setShowOverlapMessage(false), 3000);
+        }
+      }
+    } else if (resizeType === 'bottom') {
+      const newEnd = pixelToNearestTimeSlot(relativeY);
+      const startMinutes = parseTimeToMinutes(schedule.start);
+      const newEndMinutes = parseTimeToMinutes(newEnd);
+      
+      if (newEndMinutes > startMinutes) {
+        const updatedSchedule = {
+          ...schedule,
+          end: newEnd
+        };
+        
+        if (!checkScheduleOverlap(safeSchedules, updatedSchedule)) {
+          updatedSchedules[scheduleIndex] = updatedSchedule;
+          setSchedules(updatedSchedules);
+          
+          if (currentUser) {
+            saveUserDataToDAL(currentUser, {
+              schedules: updatedSchedules,
+              tags: safeTags,
+              tagItems: safeTagItems
+            });
+          }
+        } else {
+          setShowOverlapMessage(true);
+          setTimeout(() => setShowOverlapMessage(false), 3000);
+        }
+      }
+    }
+  };
+  
+  const handleResizeEnd = () => {
+    setResizing(null);
+    setResizeType(null);
+  };
+
+  // 태그 색상 가져오기
+  const getTagColor = (tagType) => {
+    const tag = safeTags.find(t => t.tagType === tagType);
+    return tag ? tag.color : { bg: "bg-gray-100", text: "text-gray-800" };
+  };
 
   return {
-    schedules,
-    setSchedules,
-    monthlyGoals,
-    setMonthlyGoals,
-    tags,
-    setTags,
-    tagItems,
-    setTagItems,
-    isLoading,
-    lastSyncTime,
+    // 상태들
+    currentWeek,
+    setCurrentWeek,
+    focusedDayIndex,
+    setFocusedDayIndex,
+    visibleDays,
+    setVisibleDays,
+    timeSlots,
     form,
     setForm,
     startSlot,
@@ -180,9 +341,7 @@ export const useWeeklyCalendarLogic = ({ currentUser }) => {
     activeTimeSlot,
     setActiveTimeSlot,
     resizing,
-    setResizing,
     resizeType,
-    setResizeType,
     containerRef,
     showOverlapMessage,
     setShowOverlapMessage,
@@ -202,16 +361,21 @@ export const useWeeklyCalendarLogic = ({ currentUser }) => {
     setDragOffset,
     autoScrollTimer,
     setAutoScrollTimer,
-    currentWeek,
-    setCurrentWeek,
-    focusedDayIndex,
-    setFocusedDayIndex,
-    visibleDays,
-    setVisibleDays,
-    timeSlots,
+    
+    // 계산된 값들
+    safeSchedules,
+    safeTags,
+    safeTagItems,
+    tagTotals: calculateTagTotals(safeSchedules),
+    repeatOptions,
+    intervalOptions,
+    
+    // 상수들
     SLOT_HEIGHT,
     DAYS_OF_WEEK,
     PASTEL_COLORS,
+    
+    // 유틸리티 함수들
     parseTimeToMinutes,
     minutesToTimeString,
     pixelToNearestTimeSlot,
@@ -219,6 +383,16 @@ export const useWeeklyCalendarLogic = ({ currentUser }) => {
     getDayOfWeek,
     filterSchedulesByDate,
     calculateTagTotals,
-    checkScheduleOverlap
+    checkScheduleOverlap,
+    getCurrentTimeLine,
+    assignNewTagColor,
+    handleDayFocus,
+    calculateSlotPosition,
+    getTagColor,
+    
+    // 이벤트 핸들러들
+    handleResizeStart,
+    handleResizeMove,
+    handleResizeEnd
   };
 };
