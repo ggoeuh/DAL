@@ -83,47 +83,59 @@ export const WeeklyCalendarUI = ({
     handleResizeEnd
   } = calendarLogic;
 
-  // ✨ 체크박스 변경 핸들러 - useCallback으로 메모이제이션하여 무한 루프 방지
+  // ✨ 체크박스 변경 핸들러 - 무한 루프 방지
   const handleCheckboxChange = useCallback((scheduleId, currentDone) => {
     if (isAdminView) return;
     
-    if (calendarLogic.setSchedules && currentUser) {
-      const updated = safeSchedules.map(item =>
+    // setSchedules 함수를 직접 참조하지 않고 콜백으로 처리
+    const updateSchedule = calendarLogic.setSchedules;
+    if (updateSchedule && currentUser) {
+      // 현재 schedules를 직접 가져와서 업데이트
+      const currentSchedules = calendarLogic.safeSchedules;
+      const updated = currentSchedules.map(item =>
         item.id === scheduleId ? { ...item, done: !currentDone } : item
       );
-      // 상위 컴포넌트의 setSchedules 호출 (서버 저장 포함)
-      calendarLogic.setSchedules(updated);
+      updateSchedule(updated);
     }
-  }, [isAdminView, calendarLogic.setSchedules, currentUser, safeSchedules]);
+  }, [isAdminView, currentUser]); // 🚨 중요: safeSchedules와 setSchedules를 의존성에서 제거
 
   // 이벤트 리스너 등록 - 의존성 배열 최적화
   useEffect(() => {
     const cleanup = [];
 
     if (resizing) {
-      window.addEventListener('mousemove', handleResizeMove);
-      window.addEventListener('mouseup', handleResizeEnd);
+      const moveHandler = (e) => handleResizeMove(e);
+      const endHandler = (e) => handleResizeEnd(e);
+      
+      window.addEventListener('mousemove', moveHandler);
+      window.addEventListener('mouseup', endHandler);
       cleanup.push(() => {
-        window.removeEventListener('mousemove', handleResizeMove);
-        window.removeEventListener('mouseup', handleResizeEnd);
+        window.removeEventListener('mousemove', moveHandler);
+        window.removeEventListener('mouseup', endHandler);
       });
     }
     
     if (copyingSchedule) {
-      window.addEventListener('mousemove', handleCopyMove);
-      window.addEventListener('mouseup', handleCopyEnd);
+      const moveHandler = (e) => handleCopyMove(e);
+      const endHandler = (e) => handleCopyEnd(e);
+      
+      window.addEventListener('mousemove', moveHandler);
+      window.addEventListener('mouseup', endHandler);
       cleanup.push(() => {
-        window.removeEventListener('mousemove', handleCopyMove);
-        window.removeEventListener('mouseup', handleCopyEnd);
+        window.removeEventListener('mousemove', moveHandler);
+        window.removeEventListener('mouseup', endHandler);
       });
     }
     
     if (dragging) {
-      window.addEventListener('mousemove', handleDragMove);
-      window.addEventListener('mouseup', handleDragEnd);
+      const moveHandler = (e) => handleDragMove(e);
+      const endHandler = (e) => handleDragEnd(e);
+      
+      window.addEventListener('mousemove', moveHandler);
+      window.addEventListener('mouseup', endHandler);
       cleanup.push(() => {
-        window.removeEventListener('mousemove', handleDragMove);
-        window.removeEventListener('mouseup', handleDragEnd);
+        window.removeEventListener('mousemove', moveHandler);
+        window.removeEventListener('mouseup', endHandler);
       });
     }
     
@@ -148,14 +160,8 @@ export const WeeklyCalendarUI = ({
     copyingSchedule, 
     dragging, 
     contextMenu.visible, 
-    autoScrollTimer,
-    handleResizeMove, 
-    handleResizeEnd, 
-    handleCopyMove, 
-    handleCopyEnd, 
-    handleDragMove, 
-    handleDragEnd, 
-    setContextMenu
+    autoScrollTimer
+    // 🚨 핸들러 함수들을 의존성에서 제거하여 무한 루프 방지
   ]);
 
   return (
