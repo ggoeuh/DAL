@@ -192,6 +192,22 @@ const CalendarPage = ({ currentUser, onLogout }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
+  // ✅ 수정된 태그 색상 가져오기 함수 - tags 배열을 우선 사용
+  const getTagColor = (tagType) => {
+    // 1. 먼저 서버에서 로드된 tags 배열에서 검색
+    const savedTag = tags.find(t => t.tagType === tagType);
+    if (savedTag && savedTag.color) {
+      console.log(`🎨 서버 저장된 색상 사용: ${tagType}`, savedTag.color);
+      return savedTag.color;
+    }
+    
+    // 2. tags에서 찾지 못한 경우 기본 색상 로직 사용
+    const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+    const defaultColor = PASTEL_COLORS[index];
+    console.log(`🎨 기본 색상 사용: ${tagType}`, defaultColor);
+    return defaultColor;
+  };
+
   // 서버에서 데이터 불러오기
   const loadDataFromServer = async () => {
     if (!currentUser) {
@@ -218,6 +234,11 @@ const CalendarPage = ({ currentUser, onLogout }) => {
           tags: result.data.tags?.length || 0,
           tagItems: result.data.tagItems?.length || 0
         });
+        
+        // ✅ 로드된 tags 데이터 확인 로그
+        if (result.data.tags && result.data.tags.length > 0) {
+          console.log('🎨 로드된 태그 색상 정보:', result.data.tags);
+        }
       } else {
         console.warn('⚠️ 서버 데이터 로드 실패 또는 빈 데이터:', result.error);
         // 서버에 데이터가 없는 경우 빈 배열로 초기화
@@ -324,12 +345,6 @@ const CalendarPage = ({ currentUser, onLogout }) => {
     if (minutes === 0) return `${hours}h`;
     if (hours === 0) return `${minutes}m`;
     return `${hours}h${minutes}m`;
-  };
-
-  // 태그 색상 가져오기 (기본 색상 사용)
-  const getTagColor = (tagType) => {
-    const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
-    return PASTEL_COLORS[index];
   };
   
   const monthlyTagTotals = calculateMonthlyTagTotals();
@@ -520,7 +535,7 @@ const CalendarPage = ({ currentUser, onLogout }) => {
                   ${isToday ? 'bg-blue-50' : ''}
                   ${isWeekend ? 'bg-gray-25' : ''}
                 `}
-                onClick={() => navigate(`/weekly?date=${format(day, 'yyyy-MM-dd')}`)} // ✅ 수정
+                onClick={() => navigate(`/weekly?date=${format(day, 'yyyy-MM-dd')}`)}
               >
                 {/* 날짜 표시 행 */}
                 <div className="flex justify-between items-center mb-2">
@@ -552,7 +567,10 @@ const CalendarPage = ({ currentUser, onLogout }) => {
                           ${tagColor.bg} ${tagColor.border} border rounded-md p-2 text-xs
                           hover:shadow-md cursor-pointer transition-all
                         `}
-                        onClick={() => navigate(`/day/${format(day, 'yyyy-MM-dd')}`)}
+                        onClick={(e) => {
+                          e.stopPropagation(); // 부모 클릭 이벤트 방지
+                          navigate(`/weekly?date=${format(day, 'yyyy-MM-dd')}`);
+                        }}
                         title={`${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}`}
                       >
                         <div className="space-y-1">
@@ -601,6 +619,14 @@ const CalendarPage = ({ currentUser, onLogout }) => {
             </span>
           )}
         </div>
+        
+        {/* ✅ 태그 색상 디버그 정보 (개발용) */}
+        {tags.length > 0 && (
+          <div className="mt-2 text-xs text-gray-500">
+            <span className="font-medium">🎨 로드된 태그:</span> 
+            {tags.map(tag => tag.tagType).join(', ')}
+          </div>
+        )}
       </div>
     </div>
   );
