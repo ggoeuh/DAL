@@ -956,10 +956,6 @@ const DetailedCalendar = ({
                                 {schedule.description}
                               </div>
                             )}
-                            {/* ✅ 서버 색상 표시 */}
-                            <div className="text-[8px] text-gray-400 opacity-60">
-                              🌐 서버 색상
-                            </div>
                           </div>
                         </div>
                       );
