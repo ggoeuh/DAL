@@ -76,17 +76,24 @@ const calculateTagTotals = (schedules) => {
 };
 
 const checkScheduleOverlap = (schedules, newSchedule) => {
-  const filtered = schedules.filter(s => 
-    s.date === newSchedule.date && s.id !== newSchedule.id
+  const normalizeDate = (date) =>
+    typeof date === "string"
+      ? date.slice(0, 10)
+      : new Date(date).toISOString().split("T")[0];
+
+  const targetDate = normalizeDate(newSchedule.date);
+
+  const filtered = schedules.filter((s) =>
+    normalizeDate(s.date) === targetDate && s.id !== newSchedule.id
   );
-  
+
   const newStart = parseTimeToMinutes(newSchedule.start);
   const newEnd = parseTimeToMinutes(newSchedule.end);
-  
-  return filtered.some(s => {
+
+  return filtered.some((s) => {
     const existingStart = parseTimeToMinutes(s.start);
     const existingEnd = parseTimeToMinutes(s.end);
-    
+
     return (
       (newStart >= existingStart && newStart < existingEnd) ||
       (newEnd > existingStart && newEnd <= existingEnd) ||
