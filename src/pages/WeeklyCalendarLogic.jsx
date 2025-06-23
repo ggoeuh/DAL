@@ -75,32 +75,39 @@ const calculateTagTotals = (schedules) => {
   return totals;
 };
 
-const checkScheduleOverlap = (schedules, newSchedule) => {
+function checkScheduleOverlap(schedules, newSchedule) {
   const normalizeDate = (date) =>
     typeof date === "string"
-      ? date.slice(0, 10)
-      : new Date(date).toISOString().split("T")[0];
+      ? date
+      : new Date(date).toLocaleDateString("sv-SE"); // ✅ 로컬 기준 안전 변환
 
-  const targetDate = normalizeDate(newSchedule.date);
+  const newDate = normalizeDate(newSchedule.date);
 
-  const filtered = schedules.filter((s) =>
-    normalizeDate(s.date) === targetDate && s.id !== newSchedule.id
-  );
+  return schedules.some((s) => {
+    const sDate = normalizeDate(s.date);
 
-  const newStart = parseTimeToMinutes(newSchedule.start);
-  const newEnd = parseTimeToMinutes(newSchedule.end);
+    if (sDate !== newDate) return false;
 
-  return filtered.some((s) => {
-    const existingStart = parseTimeToMinutes(s.start);
-    const existingEnd = parseTimeToMinutes(s.end);
+    const startA = parseTimeToMinutes(s.start);
+    const endA = parseTimeToMinutes(s.end);
+    const startB = parseTimeToMinutes(newSchedule.start);
+    const endB = parseTimeToMinutes(newSchedule.end);
 
-    return (
-      (newStart >= existingStart && newStart < existingEnd) ||
-      (newEnd > existingStart && newEnd <= existingEnd) ||
-      (newStart <= existingStart && newEnd >= existingEnd)
-    );
+    // 시간 겹치는지 확인
+    const overlap =
+      (startA < endB && endA > startB) ||
+      (startB < endA && endB > startA);
+
+    if (overlap) {
+      console.log("⛔️ 중복 인식됨:");
+      console.log("기존 일정:", s);
+      console.log("추가 일정:", newSchedule);
+    }
+
+    return overlap;
   });
-};
+}
+
 
 // 커스텀 훅: 캘린더 로직 (최적화됨)
 export const useWeeklyCalendarLogic = (props = {}) => {
