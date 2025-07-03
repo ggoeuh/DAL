@@ -1,6 +1,7 @@
-// AdminDashboard.jsx - 서버 기반 태그 색상 수정 버전
+// AdminDashboard.jsx - 월간 네비게이션 추가 버전
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { format, addMonths, subMonths, isSameMonth } from 'date-fns'; // ✅ date-fns 함수 추가
 import { 
   saveUserDataToDAL, 
   loadUserDataFromDAL,
@@ -14,6 +15,10 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [progressData, setProgressData] = useState({}); // 진행률 데이터 캐시
   const [lastSyncTime, setLastSyncTime] = useState(null);
+  
+  // ✅ 현재 대시보드 월 상태 추가
+  const [currentDashboardMonth, setCurrentDashboardMonth] = useState(new Date());
+  
   const navigate = useNavigate();
 
   // 파스텔 색상 팔레트
@@ -29,6 +34,31 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     { bg: "bg-teal-100", text: "text-teal-800", border: "border-teal-200" },
     { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
   ];
+
+  // ✅ 월간 네비게이션 함수들
+  const goToPreviousMonth = useCallback(() => {
+    setCurrentDashboardMonth(prevMonth => subMonths(prevMonth, 1));
+    // 진행률 데이터 캐시 초기화 (새로운 월의 데이터 로드)
+    setProgressData({});
+  }, []);
+
+  const goToNextMonth = useCallback(() => {
+    setCurrentDashboardMonth(prevMonth => addMonths(prevMonth, 1));
+    // 진행률 데이터 캐시 초기화 (새로운 월의 데이터 로드)
+    setProgressData({});
+  }, []);
+
+  const goToCurrentMonth = useCallback(() => {
+    setCurrentDashboardMonth(new Date());
+    // 진행률 데이터 캐시 초기화
+    setProgressData({});
+  }, []);
+
+  // ✅ 현재 월인지 확인하는 함수
+  const isCurrentMonth = useCallback(() => {
+    const today = new Date();
+    return isSameMonth(currentDashboardMonth, today);
+  }, [currentDashboardMonth]);
 
   // ✅ 서버 기반 태그 색상 가져오기 함수 개선
   const getTagColor = useCallback((tagType, memberName = null) => {
@@ -188,14 +218,15 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   }, [memberData]);
 
-  // ✅ 비동기 태그별 목표 달성률 계산 함수 - 서버 기반 색상 사용
+  // ✅ 비동기 태그별 목표 달성률 계산 함수 - 선택된 월 기준으로 수정
   const calculateTagProgress = useCallback(async (member) => {
-    console.log('📊 태그 진행률 계산 시작:', member);
+    console.log('📊 태그 진행률 계산 시작:', member, '대상 월:', format(currentDashboardMonth, 'yyyy-MM'));
     
-    // 캐시된 진행률 데이터 확인
-    if (progressData[member]) {
-      console.log(`📊 ${member} 캐시된 진행률 사용`);
-      return progressData[member];
+    // 캐시 키에 월 정보 포함
+    const cacheKey = `${member}-${format(currentDashboardMonth, 'yyyy-MM')}`;
+    if (progressData[cacheKey]) {
+      console.log(`📊 ${member} (${format(currentDashboardMonth, 'yyyy-MM')}) 캐시된 진행률 사용`);
+      return progressData[cacheKey];
     }
     
     const userData = await getUserData(member);
@@ -213,8 +244,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     });
 
     const { schedules = [], monthlyGoals = [] } = userData;
-    const currentDate = new Date();
-    const currentMonth = currentDate.toISOString().slice(0, 7); // YYYY-MM 형식
+    
+    // ✅ 선택된 월 기준으로 수정
+    const targetMonth = format(currentDashboardMonth, 'yyyy-MM'); // YYYY-MM 형식
     
     // 시간을 분으로 변환하는 함수
     const parseTimeToMinutes = (time) => {
@@ -235,23 +267,23 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       return Math.round((actual / goal) * 100);
     };
 
-    // 현재 월의 일정들만 필터링
-    const currentMonthSchedules = schedules.filter(schedule => {
+    // ✅ 선택된 월의 일정들만 필터링
+    const targetMonthSchedules = schedules.filter(schedule => {
       const scheduleDate = new Date(schedule.date);
       const scheduleMonth = scheduleDate.toISOString().slice(0, 7);
-      return scheduleMonth === currentMonth;
+      return scheduleMonth === targetMonth;
     });
 
-    console.log('📊 현재 월 일정:', {
-      currentMonth,
+    console.log('📊 대상 월 일정:', {
+      targetMonth,
       totalSchedules: schedules.length,
-      currentMonthSchedules: currentMonthSchedules.length
+      targetMonthSchedules: targetMonthSchedules.length
     });
 
     // 태그별 총 시간 계산 (실제 사용 시간)
     const monthlyTagTotals = {};
     
-    currentMonthSchedules.forEach(schedule => {
+    targetMonthSchedules.forEach(schedule => {
       const tagType = schedule.tagType || "기타";
       
       if (!monthlyTagTotals[tagType]) {
@@ -267,11 +299,10 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
     console.log('📊 월간 태그 총계:', monthlyTagTotals);
 
-    // 월간 목표 불러오기
+    // ✅ 선택된 월의 월간 목표 불러오기
     const loadMonthlyGoals = () => {
       try {
-        const currentMonthKey = currentMonth;
-        console.log('🎯 목표 검색:', { currentMonthKey, monthlyGoals });
+        console.log('🎯 목표 검색:', { targetMonth, monthlyGoals });
         
         if (!monthlyGoals || monthlyGoals.length === 0) {
           console.log('❌ 월간 목표 배열이 비어있음');
@@ -279,8 +310,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
         }
         
         const found = monthlyGoals.find(goal => {
-          console.log('🔍 목표 월 비교:', { goalMonth: goal.month, currentMonth: currentMonthKey, match: goal.month === currentMonthKey });
-          return goal.month === currentMonthKey;
+          console.log('🔍 목표 월 비교:', { goalMonth: goal.month, targetMonth, match: goal.month === targetMonth });
+          return goal.month === targetMonth;
         });
         
         const result = found?.goals || [];
@@ -292,18 +323,18 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       }
     };
 
-    const currentMonthGoalsData = loadMonthlyGoals();
-    console.log('📊 현재 월 목표:', currentMonthGoalsData);
+    const targetMonthGoalsData = loadMonthlyGoals();
+    console.log('📊 대상 월 목표:', targetMonthGoalsData);
     
     // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
-    const goalTagTypes = currentMonthGoalsData.map(goal => goal.tagType);
-    const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"))];
+    const goalTagTypes = targetMonthGoalsData.map(goal => goal.tagType);
+    const targetMonthUsedTagTypes = [...new Set(targetMonthSchedules.map(schedule => schedule.tagType || "기타"))];
     
-    const allTagTypes = [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
+    const allTagTypes = [...new Set([...goalTagTypes, ...targetMonthUsedTagTypes])];
 
     console.log('📊 처리할 태그 타입들:', {
       goalTagTypes,
-      currentMonthUsedTagTypes,
+      targetMonthUsedTagTypes,
       allTagTypes
     });
 
@@ -316,7 +347,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       const actualTime = minutesToTimeString(actualMinutes);
       
       // 목표 시간 찾기
-      const goal = currentMonthGoalsData.find(g => g.tagType === tagType);
+      const goal = targetMonthGoalsData.find(g => g.tagType === tagType);
       const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
       const goalTime = goal ? goal.targetHours : "00:00";
       
@@ -337,11 +368,11 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
     console.log('📊 최종 진행률 결과 (서버 색상 포함):', result);
     
-    // 진행률 데이터 캐시
-    setProgressData(prev => ({...prev, [member]: result}));
+    // ✅ 월별 진행률 데이터 캐시
+    setProgressData(prev => ({...prev, [cacheKey]: result}));
     
     return result;
-  }, [getUserData, progressData, getTagColor]);
+  }, [getUserData, progressData, getTagColor, currentDashboardMonth]);
 
   // ✨ 서버 기반 통계 계산
   const getServerStats = useCallback(async (userList) => {
@@ -595,9 +626,6 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* 기존 UI 코드는 동일하게 유지... */}
-      {/* 나머지 JSX는 원본과 동일 */}
-      
       {/* 관리자 네비게이션 */}
       <nav className="bg-red-600 text-white p-4 shadow-lg">
         <div className="container mx-auto flex justify-between items-center">
@@ -627,15 +655,65 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       
       {/* 메인 컨텐츠 */}
       <div className="container mx-auto p-8">
-        {/* 헤더 섹션 */}
+        {/* ✅ 헤더 섹션 - 월간 네비게이션 추가 */}
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">멤버 관리</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-3xl font-bold text-gray-800">멤버 관리</h2>
+            
+            {/* ✅ 월간 네비게이션 버튼들 */}
+            <div className="flex items-center gap-4">
+              {/* 이전 달 버튼 */}
+              <button
+                onClick={goToPreviousMonth}
+                className="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-600 hover:text-gray-800 transition-colors"
+                title="이전 달"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              
+              {/* 현재 월 표시 및 현재 달로 가기 버튼 */}
+              <button
+                onClick={goToCurrentMonth}
+                className="px-4 py-2 text-lg font-semibold text-gray-700 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors min-w-[120px]"
+                title="현재 달로 가기"
+              >
+                {format(currentDashboardMonth, 'yyyy년 M월')}
+              </button>
+              
+              {/* 다음 달 버튼 - 현재 달이면 비활성화 */}
+              <button
+                onClick={goToNextMonth}
+                disabled={isCurrentMonth()}
+                className={`flex items-center justify-center w-10 h-10 rounded-lg transition-colors ${
+                  isCurrentMonth() 
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-600 hover:text-gray-800'
+                }`}
+                title={isCurrentMonth() ? "현재 달 이후로는 이동할 수 없습니다" : "다음 달"}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          
           <div className="flex items-center space-x-4 text-sm text-gray-600">
             <span>총 {members.length}명의 멤버</span>
+            <span>•</span>
+            <span>대상 월: {format(currentDashboardMonth, 'yyyy년 M월')}</span>
             <span>•</span>
             <span>마지막 업데이트: {lastSyncTime ? lastSyncTime.toLocaleString('ko-KR') : '로딩 중'}</span>
             <span>•</span>
             <span className="text-blue-600 font-medium">🌐 서버 기반 시스템 (태그 색상 포함)</span>
+            {!isCurrentMonth() && (
+              <>
+                <span>•</span>
+                <span className="text-orange-600 font-medium">📅 과거 월 조회 모드</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -655,6 +733,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                 <li>• 로컬 저장소 의존성 완전 제거</li>
                 <li>• 태그 색상도 서버에서 동기화</li>
                 <li>• 자동 5분마다 새로고침</li>
+                <li>• 월별 목표 달성률 히스토리 조회</li>
               </ul>
             </div>
           </div>
@@ -685,6 +764,11 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                           <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded-full border border-blue-200">
                             서버 기반
                           </span>
+                          {!isCurrentMonth() && (
+                            <span className="bg-orange-100 text-orange-800 text-xs font-medium px-2 py-1 rounded-full border border-orange-200">
+                              {format(currentDashboardMonth, 'M월')}
+                            </span>
+                          )}
                         </div>
                         <p className="text-gray-500 text-sm flex items-center">
                           <span className="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
@@ -715,8 +799,14 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                       </div>
                     ) : (
                       <>
-                        <h4 className="font-semibold text-gray-700 mb-3">🎯 이번 달 목표 달성률</h4>
-                        <MemberProgressDisplay member={member} calculateTagProgress={calculateTagProgress} />
+                        <h4 className="font-semibold text-gray-700 mb-3">
+                          🎯 {format(currentDashboardMonth, 'M월')} 목표 달성률
+                        </h4>
+                        <MemberProgressDisplay 
+                          member={member} 
+                          calculateTagProgress={calculateTagProgress}
+                          targetMonth={format(currentDashboardMonth, 'yyyy-MM')}
+                        />
                       </>
                     )}
                   </div>
@@ -740,31 +830,25 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                         <button
                           onClick={async () => {
                             const tagProgress = await calculateTagProgress(member);
+                            const monthText = format(currentDashboardMonth, 'yyyy년 M월');
+                            
                             if (tagProgress.length === 0) {
-                              alert(`📊 ${member}님 상세 정보\n\n• 설정된 월간 목표가 없습니다\n• 목표를 설정하면 달성률을 확인할 수 있습니다`);
+                              alert(`📊 ${member}님 ${monthText} 상세 정보\n\n• 설정된 월간 목표가 없습니다\n• 목표를 설정하면 달성률을 확인할 수 있습니다`);
                             } else {
                               const avgProgress = Math.round(tagProgress.reduce((sum, p) => sum + p.percentage, 0) / tagProgress.length);
                               const progressDetails = tagProgress.map(p => 
                                 `• ${p.tagName}: ${p.actualTime}/${p.targetTime} (${p.percentage}%)`
                               ).join('\n');
                               
-                              alert(`📊 ${member}님 목표 달성 현황 (서버 기반)\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
+                              alert(`📊 ${member}님 ${monthText} 목표 달성 현황 (서버 기반)\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
                             }
                           }}
                           className="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
                         >
                           <span className="mr-2">📈</span>
-                          상세 달성률 보기
+                          {format(currentDashboardMonth, 'M월')} 상세 달성률 보기
                         </button>
                       )}
-                      
-                      <button
-                        onClick={() => handleUserDataReset(member)}
-                        className="w-full bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
-                      >
-                        <span className="mr-2">🗑️</span>
-                        서버 데이터 삭제
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -772,91 +856,12 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             })}
           </div>
         )}
-
-        {/* 관리자 도구 */}
-        <div className="mt-12 bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-            <span className="mr-2">🔧</span>
-            관리자 도구
-            <span className="ml-2 bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded">서버 기반</span>
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <button
-              onClick={() => {
-                const memberCount = members.length;
-                const totalData = Object.values(memberStats).reduce((sum, stats) => 
-                  sum + stats.schedules + stats.tags + stats.tagItems + stats.monthlyPlans + stats.monthlyGoals, 0
-                );
-                alert(`📊 시스템 현황 (서버 기반)\n\n• 등록된 멤버: ${memberCount}명\n• 총 서버 데이터: ${totalData}개\n• 캐시된 데이터: ${Object.keys(memberData).length}명\n• 데이터 소스: Supabase 서버\n• 상태: 정상 운영중\n• 마지막 업데이트: ${lastSyncTime ? lastSyncTime.toLocaleString('ko-KR') : '로딩 중'}`);
-              }}
-              className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
-            >
-              📊 시스템 현황
-            </button>
-            
-            <button
-              onClick={handleDataDebug}
-              className="bg-blue-100 hover:bg-blue-200 text-blue-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
-            >
-              🔍 서버 데이터 디버그
-            </button>
-            
-            <button
-              onClick={refreshMemberData}
-              disabled={loading}
-              className="bg-green-100 hover:bg-green-200 text-green-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium disabled:opacity-50"
-            >
-              {loading ? '🔄 로딩...' : '🔄 서버 새로고침'}
-            </button>
-            
-            <button
-              onClick={handleAllServerDataReset}
-              className="bg-red-100 hover:bg-red-200 text-red-700 py-3 px-4 rounded-lg transition duration-200 text-sm font-medium"
-            >
-              🗑️ 전체 서버 삭제
-            </button>
-          </div>
-          
-          {/* 서버 기반 시스템 상태 표시 */}
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-medium text-blue-800 mb-2">🌐 서버 기반 시스템 상태</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                <span>Supabase: 활성</span>
-              </div>
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                <span>서버 동기화: 활성</span>
-              </div>
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-purple-500 rounded-full mr-2"></span>
-                <span>실시간 업데이트: 활성</span>
-              </div>
-              <div className="flex items-center">
-                <span className="w-2 h-2 bg-yellow-500 rounded-full mr-2"></span>
-                <span>자동 새로고침: 5분</span>
-              </div>
-            </div>
-          </div>
-          
-          {/* 시스템 개선사항 */}
-          <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
-            <h4 className="font-medium text-green-800 mb-2">💡 서버 기반 시스템 (v5.1 - 태그 색상 개선)</h4>
-            <div className="text-sm text-green-700 space-y-1">
-              <div>• <strong>완전 서버 기반:</strong> 로컬 저장소 의존성 완전 제거</div>
-              <div>• <strong>실시간 동기화:</strong> Supabase를 통한 실시간 데이터 관리</div>
-              <div>• <strong>태그 색상 서버 동기화:</strong> 모든 태그 색상이 서버에서 관리됨</div>
-              <div>• <strong>자동 새로고침:</strong> 5분마다 자동으로 최신 데이터 갱신</div>
-              <div>• <strong>안정성 향상:</strong> 서버 기반으로 데이터 손실 방지</div>
-            </div>
-          </div>
-        </div>
         
-        {/* 시스템 정보 푸터 */}
+        {/* ✅ 시스템 정보 푸터 - 월간 네비게이션 정보 추가 */}
         <div className="mt-8 text-center text-xs text-gray-500 space-y-1">
-          <div>관리자 대시보드 v5.1 | 완전 서버 기반 시스템 (태그 색상 개선)</div>
+          <div>관리자 대시보드 v6.0 | 완전 서버 기반 시스템 + 월간 네비게이션</div>
           <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: Supabase 서버</div>
+          <div>조회 대상 월: {format(currentDashboardMonth, 'yyyy년 M월')} {isCurrentMonth() ? '(현재 월)' : '(과거 월)'}</div>
           <div className="flex justify-center items-center space-x-4 mt-2">
             <span className="flex items-center">
               <span className="w-2 h-2 bg-blue-500 rounded-full mr-1"></span>
@@ -872,7 +877,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             </span>
             <span className="flex items-center">
               <span className="w-2 h-2 bg-orange-500 rounded-full mr-1"></span>
-              태그 색상 동기화
+              월간 히스토리
             </span>
           </div>
         </div>
@@ -881,8 +886,8 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
   );
 };
 
-// ✅ 멤버 진행률 표시 컴포넌트 - 서버 기반 색상 사용
-const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
+// ✅ 멤버 진행률 표시 컴포넌트 - 월별 대상 추가
+const MemberProgressDisplay = ({ member, calculateTagProgress, targetMonth }) => {
   const [tagProgress, setTagProgress] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -892,12 +897,12 @@ const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
         setLoading(true);
         const progress = await calculateTagProgress(member);
         setTagProgress(progress);
-        console.log(`🎨 ${member} 진행률 색상 확인:`, progress.map(p => ({
+        console.log(`🎨 ${member} (${targetMonth}) 진행률 색상 확인:`, progress.map(p => ({
           tag: p.tagName,
           color: p.tagColor
         })));
       } catch (error) {
-        console.error(`❌ ${member} 진행률 로딩 실패:`, error);
+        console.error(`❌ ${member} (${targetMonth}) 진행률 로딩 실패:`, error);
         setTagProgress([]);
       } finally {
         setLoading(false);
@@ -905,7 +910,7 @@ const MemberProgressDisplay = ({ member, calculateTagProgress }) => {
     };
 
     loadProgress();
-  }, [member, calculateTagProgress]);
+  }, [member, calculateTagProgress, targetMonth]);
 
   if (loading) {
     return (
