@@ -502,36 +502,36 @@ const WeeklyCalendar = ({
   }, [safeTagItems, isServerBased, currentUser, saveDataToServer, safeSchedules, safeTags, calendarLogic.safeMonthlyGoals, updateLegacyTagItems]);
 
   // ✅ 태그 선택 핸들러 - useCallback으로 최적화
-  const handleSelectTag = (tagType, tagName) => {
-  setSelectedTagType(tagType);
-  setForm({ ...form, tag: tagName });
-};
+  const handleSelectTag = useCallback((tagType, tagName) => {
+    setSelectedTagType(tagType);
+    setForm({ ...form, tag: tagName });
+  }, [form, setSelectedTagType, setForm]);
 
-// ✅ 수정된 goToPreviousWeek
-const goToPreviousWeek = () => {
-  setCurrentWeek(prevWeek => {
-    const newWeek = prevWeek.map(date => {
-      const newDate = new Date(date);
-      newDate.setDate(date.getDate() - 7);
-      return newDate;
-    });
-    
-    // ✅ visibleDays도 함께 업데이트 (실제 Date 객체로)
-    const newVisibleDays = [];
-      const centerIndex = focusedDayIndex; // 현재 포커스된 요일을 중심으로
+  // ✅ 수정된 goToPreviousWeek
+  const goToPreviousWeek = useCallback(() => {
+    setCurrentWeek(prevWeek => {
+      const newWeek = prevWeek.map(date => {
+        const newDate = new Date(date);
+        newDate.setDate(date.getDate() - 7);
+        return newDate;
+      });
+      
+      // ✅ 수정: visibleDays를 focusedDayIndex에 해당하는 실제 날짜를 중심으로 계산
+      const newVisibleDays = [];
+      const centerDate = newWeek[focusedDayIndex]; // 포커스된 요일의 실제 날짜
       for (let i = -2; i <= 2; i++) {
-        const date = new Date(newWeek[centerIndex]);
-        date.setDate(newWeek[centerIndex].getDate() + i);
+        const date = new Date(centerDate);
+        date.setDate(centerDate.getDate() + i); // 실제 날짜 기준으로 계산
         newVisibleDays.push(date);
       }
       setVisibleDays(newVisibleDays);
       
       return newWeek;
     });
-  };
+  }, [focusedDayIndex, setCurrentWeek, setVisibleDays]);
   
   // ✅ 수정된 goToNextWeek
-  const goToNextWeek = () => {
+  const goToNextWeek = useCallback(() => {
     setCurrentWeek(prevWeek => {
       const newWeek = prevWeek.map(date => {
         const newDate = new Date(date);
@@ -539,22 +539,22 @@ const goToPreviousWeek = () => {
         return newDate;
       });
       
-      // ✅ visibleDays도 함께 업데이트 (실제 Date 객체로)
+      // ✅ 수정: visibleDays를 focusedDayIndex에 해당하는 실제 날짜를 중심으로 계산
       const newVisibleDays = [];
-      const centerIndex = focusedDayIndex; // 현재 포커스된 요일을 중심으로
+      const centerDate = newWeek[focusedDayIndex]; // 포커스된 요일의 실제 날짜
       for (let i = -2; i <= 2; i++) {
-        const date = new Date(newWeek[centerIndex]);
-        date.setDate(newWeek[centerIndex].getDate() + i);
+        const date = new Date(centerDate);
+        date.setDate(centerDate.getDate() + i); // 실제 날짜 기준으로 계산
         newVisibleDays.push(date);
       }
       setVisibleDays(newVisibleDays);
       
       return newWeek;
     });
-  };
+  }, [focusedDayIndex, setCurrentWeek, setVisibleDays]);
   
   // ✅ 수정된 goToCurrentWeek
-  const goToCurrentWeek = () => {
+  const goToCurrentWeek = useCallback(() => {
     const currentDate = new Date();
     
     // currentWeek 설정 (일요일부터 토요일까지)
@@ -568,15 +568,15 @@ const goToPreviousWeek = () => {
     // focusedDayIndex 설정 (오늘 요일)
     setFocusedDayIndex(currentDate.getDay());
     
-    // ✅ visibleDays를 실제 Date 객체로 설정 (오늘을 중심으로 5일)
+    // ✅ 수정: visibleDays를 오늘 날짜를 중심으로 정확히 계산
     const newVisibleDays = [];
     for (let i = -2; i <= 2; i++) {
       const date = new Date(currentDate);
-      date.setDate(currentDate.getDate() + i);
+      date.setDate(currentDate.getDate() + i); // 오늘 날짜 기준으로 계산
       newVisibleDays.push(date);
     }
     setVisibleDays(newVisibleDays);
-  };
+  }, [setCurrentWeek, setFocusedDayIndex, setVisibleDays]);
   
   // ✅ 시간 슬롯 클릭 핸들러 - useCallback으로 최적화
   const handleTimeSlotClick = useCallback((time) => {
