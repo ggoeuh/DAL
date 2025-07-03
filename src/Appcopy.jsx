@@ -14,17 +14,23 @@ import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './pages/utils/
 // ✨ 관리자 목록 상수 (LogInPage와 동일하게 유지)
 const ADMIN_USERS = ['교수님', 'admin', '관리자'];
 
-// 🔧 개선된 보호된 라우트 컴포넌트 (데이터 로딩 상태 체크 + 강화된 디버깅)
+// 🔧 더욱 개선된 보호된 라우트 컴포넌트 (실시간 세션 체크)
 const ProtectedRoute = ({ children, dataLoaded }) => {
   const currentUser = sessionStorage.getItem('currentUser');
   const userType = sessionStorage.getItem('userType');
   const isAdmin = userType === 'admin' || ADMIN_USERS.includes(currentUser);
+  
+  // 🔧 관리자이거나 로그인되지 않은 경우 dataLoaded 무시
+  const shouldIgnoreDataLoaded = !currentUser || isAdmin;
+  const canProceed = shouldIgnoreDataLoaded || dataLoaded;
   
   console.log('🛡️ ProtectedRoute 체크:', { 
     currentUser, 
     dataLoaded, 
     isAdmin,
     userType,
+    shouldIgnoreDataLoaded,
+    canProceed,
     timestamp: new Date().toISOString()
   });
   
@@ -40,8 +46,8 @@ const ProtectedRoute = ({ children, dataLoaded }) => {
     return children;
   }
   
-  // 일반 사용자인 경우 데이터 로딩 완료까지 대기
-  if (!dataLoaded) {
+  // 🔧 일반 사용자인 경우에만 데이터 로딩 완료까지 대기
+  if (!canProceed) {
     console.log('⏳ ProtectedRoute: 데이터 로딩 미완료 - 로딩 화면 표시');
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -56,20 +62,28 @@ const ProtectedRoute = ({ children, dataLoaded }) => {
               <div>📅 일정 정보 불러오기...</div>
               <div>🏷️ 태그 설정 확인...</div>
               <div>📊 월간 계획 동기화...</div>
+              <div className="text-blue-600 mt-2">
+                디버그: dataLoaded = {dataLoaded.toString()}
+              </div>
             </div>
             
-            {/* 🔧 여기서도 강제 진행 버튼 */}
-            <div className="mt-4">
+            {/* 🔧 강제 진행 버튼 - 더 빠른 타임아웃 */}
+            <div className="mt-4 space-y-2">
               <button
                 onClick={() => {
                   console.log('🚀 ProtectedRoute에서 강제 진행 요청');
-                  // 부모 컴포넌트의 상태를 직접 변경할 수 없으므로 새로고침으로 해결
+                  // sessionStorage에 강제 완료 플래그 설정
+                  sessionStorage.setItem('forceDataLoaded', 'true');
                   window.location.reload();
                 }}
                 className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
               >
-                데이터 로딩이 완료되었는데 안 넘어가면 클릭하세요
+                데이터 로딩 완료 - 강제 진행
               </button>
+              
+              <div className="text-xs text-gray-600">
+                로그에서 "데이터 로딩 완료"가 보이면 위 버튼을 클릭하세요
+              </div>
             </div>
           </div>
         </div>
@@ -105,7 +119,26 @@ function Appcopy() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
-  const [dataLoaded, setDataLoaded] = useState(false);
+  
+  // 🔧 dataLoaded 초기값을 sessionStorage 기반으로 설정
+  const [dataLoaded, setDataLoaded] = useState(() => {
+    const currentUser = sessionStorage.getItem('currentUser');
+    const userType = sessionStorage.getItem('userType');
+    const isAdmin = userType === 'admin' || ADMIN_USERS.includes(currentUser);
+    
+    // 관리자이거나 로그인되지 않은 경우 즉시 완료로 처리
+    const initialDataLoaded = !currentUser || isAdmin;
+    
+    console.log('🚀 dataLoaded 초기값 설정:', {
+      currentUser,
+      userType,
+      isAdmin,
+      initialDataLoaded
+    });
+    
+    return initialDataLoaded;
+  });
+  
   const [lastSyncTime, setLastSyncTime] = useState(null);
   
   // 🔧 새로 추가: 초기 로딩 상태 분리
@@ -531,6 +564,19 @@ function Appcopy() {
     }
   }, [checkIsAdmin, loadUserDataFromServer, generateDataHash]);
 
+  // ✨ 🔧 강제 완료 플래그 확인 및 적용
+  useEffect(() => {
+    const forceFlag = sessionStorage.getItem('forceDataLoaded');
+    if (forceFlag === 'true') {
+      console.log('🚀 강제 완료 플래그 감지 - 즉시 완료 처리');
+      setDataLoaded(true);
+      setIsLoading(false);
+      setIsInitializing(false);
+      // 플래그 제거
+      sessionStorage.removeItem('forceDataLoaded');
+    }
+  }, []);
+
   // ✨ 🔧 디버깅 강화된 로그인 상태 확인 (세션 기반 + 완료 보장 + 타임아웃)
   useEffect(() => {
     let debugStep = 0;
@@ -559,12 +605,19 @@ function Appcopy() {
           setIsLoggedIn(true);
           setCurrentUser(currentUser);
           
-          console.log(`📦 [STEP ${++debugStep}] 데이터 로딩 시작...`);
-          
-          // 🔧 임시: loadCurrentUserData 호출 전후 로그
-          console.log(`🚀 [STEP ${++debugStep}] loadCurrentUserData 호출 직전`);
-          await loadCurrentUserData(currentUser);
-          console.log(`✅ [STEP ${++debugStep}] loadCurrentUserData 호출 완료`);
+          // 🔧 관리자인 경우 데이터 로딩 스킵
+          const isUserAdmin = userType === 'admin' || ADMIN_USERS.includes(currentUser);
+          if (isUserAdmin) {
+            console.log(`👑 [STEP ${++debugStep}] 관리자 확인 - 데이터 로딩 스킵`);
+            setIsAdmin(true);
+            setDataLoaded(true);
+          } else {
+            console.log(`📦 [STEP ${++debugStep}] 일반 사용자 - 데이터 로딩 시작...`);
+            
+            console.log(`🚀 [STEP ${++debugStep}] loadCurrentUserData 호출 직전`);
+            await loadCurrentUserData(currentUser);
+            console.log(`✅ [STEP ${++debugStep}] loadCurrentUserData 호출 완료`);
+          }
           
           console.log(`✅ [STEP ${++debugStep}] 서버 기반 모든 초기화 완료`);
         } else {
