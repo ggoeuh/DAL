@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useParams, useLocation } from "react-router-dom"; // ✅ useParams, useLocation 추가
 import { useWeeklyCalendarLogic } from "./WeeklyCalendarLogic";
 import { WeeklyCalendarUI } from "./WeeklyCalendarUI";
 
@@ -27,21 +27,60 @@ const WeeklyCalendar = ({
   saveToServer,
   loadFromServer
 }) => {
-  // URL 파라미터에서 날짜 가져오기 및 검증
+  // ✅ URL 파라미터에서 날짜 가져오기 - Query Parameter와 Path Parameter 모두 지원
   const [searchParams] = useSearchParams();
-  const dateParam = searchParams.get('date');
+  const params = useParams(); // ✅ 추가
+  const location = useLocation(); // ✅ 디버깅용 추가
   
-  // ✅ 날짜 검증 및 안전한 처리 - useMemo로 최적화
+  // ✅ 디버깅 로그 추가
+  console.log('🔍 DayDetailPagecopy URL 정보:', {
+    'location.pathname': location.pathname,
+    'location.search': location.search,
+    'searchParams date': searchParams.get('date'),
+    'params date': params.date,
+    'params 전체': params
+  });
+  
+  // ✅ 날짜 검증 및 안전한 처리 - Query Parameter와 Path Parameter 모두 확인
   const initialDate = useMemo(() => {
-    if (dateParam && isValidDate(dateParam)) {
-      console.log('✅ 유효한 날짜 파라미터:', dateParam);
-      return dateParam;
+    // 1. Query Parameter 확인 (?date=2025-07-03)
+    const queryDate = searchParams.get('date');
+    if (queryDate && isValidDate(queryDate)) {
+      console.log('✅ Query Parameter에서 유효한 날짜:', queryDate);
+      return queryDate;
     }
-    if (dateParam) {
-      console.warn('⚠️ 잘못된 날짜 형식:', dateParam, '→ 오늘 날짜 사용');
+    
+    // 2. Path Parameter 확인 (/day/2025-07-03)
+    const pathDate = params.date;
+    if (pathDate && isValidDate(pathDate)) {
+      console.log('✅ Path Parameter에서 유효한 날짜:', pathDate);
+      return pathDate;
+    }
+    
+    // 3. URL pathname에서 직접 추출 시도 (만약 라우터 설정이 다르다면)
+    const pathMatch = location.pathname.match(/\/day\/(\d{4}-\d{2}-\d{2})/);
+    if (pathMatch && pathMatch[1] && isValidDate(pathMatch[1])) {
+      console.log('✅ URL pathname에서 유효한 날짜 추출:', pathMatch[1]);
+      return pathMatch[1];
+    }
+    
+    // 4. 디버깅 정보 출력
+    console.log('⚠️ 날짜 파라미터를 찾을 수 없음:', {
+      queryDate,
+      pathDate,
+      pathname: location.pathname,
+      'pathMatch': pathMatch
+    });
+    
+    if (queryDate || pathDate) {
+      console.warn('⚠️ 잘못된 날짜 형식:', queryDate || pathDate, '→ 오늘 날짜 사용');
+    } else {
+      console.log('📅 날짜 파라미터 없음 → 오늘 날짜 사용');
     }
     return null;
-  }, [dateParam]);
+  }, [searchParams, params, location]);
+
+  console.log('📤 최종 initialDate:', initialDate);
 
   // ✅ 캘린더 로직 훅 사용 - 안정적인 props 전달
   const calendarLogic = useWeeklyCalendarLogic({
