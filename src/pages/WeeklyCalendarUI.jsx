@@ -1,7 +1,8 @@
+// WeeklyCalendarUI.jsx - 기존 구조 유지하면서 필요한 기능만 추가
 import React, { useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
-// ✅ 개별 컴포넌트들을 React.memo로 최적화
+// ✅ 기존 컴포넌트들 유지
 const SyncStatusDisplay = React.memo(({ isLoading, isSaving, lastSyncTime }) => {
   if (isSaving) {
     return (
@@ -44,6 +45,7 @@ const CopyModeMessage = React.memo(({ copyingSchedule }) => {
   );
 });
 
+// 🔧 개선된 컨텍스트 메뉴 (복사 기능 강화)
 const ContextMenu = React.memo(({ contextMenu, handleCopySchedule, handleDeleteSchedule }) => {
   if (!contextMenu.visible) return null;
   
@@ -97,6 +99,106 @@ const TagSummary = React.memo(({ tagTotals, getTagColor }) => {
   );
 });
 
+// 🔧 요일 선택 컴포넌트 추가
+const WeekdaySelector = React.memo(({ form, setForm, handleWeekdaySelect, DAYS_OF_WEEK }) => {
+  const WEEKDAY_NAMES = {
+    'Sunday': '일',
+    'Monday': '월', 
+    'Tuesday': '화',
+    'Wednesday': '수',
+    'Thursday': '목',
+    'Friday': '금',
+    'Saturday': '토'
+  };
+
+  return (
+    <div className="mb-3">
+      <h3 className="font-medium mb-2">반복 요일 선택</h3>
+      <div className="grid grid-cols-7 gap-1 mb-2">
+        {DAYS_OF_WEEK.map(weekday => (
+          <button
+            key={weekday}
+            onClick={() => handleWeekdaySelect(weekday)}
+            className={`w-8 h-8 text-xs font-medium rounded-full transition-colors ${
+              form.weekdays?.includes(weekday)
+                ? 'bg-blue-500 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {WEEKDAY_NAMES[weekday]}
+          </button>
+        ))}
+      </div>
+      <div className="text-xs text-gray-500">
+        {form.weekdays?.length > 0 
+          ? `선택된 요일: ${form.weekdays.map(day => WEEKDAY_NAMES[day]).join(', ')}`
+          : '선택된 요일이 없으면 현재 요일에만 추가됩니다'
+        }
+      </div>
+    </div>
+  );
+});
+
+// 🔧 반복 설정 컴포넌트 추가
+const RepeatSettings = React.memo(({ form, setForm, handleIntervalChange, handleRepeatCountChange }) => {
+  const INTERVAL_OPTIONS = [
+    { value: 1, label: '매주' },
+    { value: 2, label: '2주마다' },
+    { value: 3, label: '3주마다' },
+    { value: 4, label: '4주마다' }
+  ];
+
+  const REPEAT_COUNT_OPTIONS = [
+    { value: 1, label: '1회' },
+    { value: 2, label: '2회' },
+    { value: 3, label: '3회' },
+    { value: 4, label: '4회' },
+    { value: 5, label: '5회' },
+    { value: 8, label: '8회' },
+    { value: 10, label: '10회' },
+    { value: 12, label: '12회' },
+    { value: 16, label: '16회' }
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2 mb-3">
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          반복 간격
+        </label>
+        <select
+          value={form.interval || "1"}
+          onChange={(e) => handleIntervalChange(parseInt(e.target.value))}
+          className="w-full text-xs bg-white border rounded-md px-2 py-1 focus:outline-none focus:border-blue-400"
+        >
+          {INTERVAL_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          반복 횟수
+        </label>
+        <select
+          value={form.repeatCount || "1"}
+          onChange={(e) => handleRepeatCountChange(parseInt(e.target.value))}
+          className="w-full text-xs bg-white border rounded-md px-2 py-1 focus:outline-none focus:border-blue-400"
+        >
+          {REPEAT_COUNT_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+});
+
+// 기존 컴포넌트들 유지 (TimeSlotGrid, DayColumn, ScheduleItem)
 const TimeSlotGrid = React.memo(({ 
   timeSlots, 
   SLOT_HEIGHT, 
@@ -199,10 +301,9 @@ const DayColumn = React.memo(({
     handleDayFocus(date);
   }, [date, handleDayFocus]);
 
-  // ✅ 시간 슬롯 클릭 핸들러를 useCallback으로 최적화
   const handleTimeClick = useCallback((time) => {
     if (isFocusDay && handleTimeSlotClick) {
-      console.log('🕐 시간 슬롯 클릭:', time); // 디버깅용
+      console.log('🕐 시간 슬롯 클릭:', time);
       handleTimeSlotClick(time);
     }
   }, [isFocusDay, handleTimeSlotClick]);
@@ -221,7 +322,7 @@ const DayColumn = React.memo(({
         } ${isToday ? 'bg-blue-50 bg-opacity-20' : ''}`}
         style={{ height: `${SLOT_HEIGHT * 48}px` }}
       >
-        {/* ✅ 시간 슬롯 - 클릭 이벤트 수정 */}
+        {/* 시간 슬롯 */}
         {timeSlots.map((time, timeIndex) => (
           <div
             key={time}
@@ -393,13 +494,14 @@ const ScheduleItem = React.memo(({
   );
 });
 
+// 🔧 메인 컴포넌트
 export const WeeklyCalendarUI = ({ 
   calendarLogic,
   currentUser,
   onLogout,
   isServerBased = true,
   isLoading = false,
-  isSaving = false, // ✅ 저장 상태 추가
+  isSaving = false,
   lastSyncTime = null,
   onManualRefresh,
   handleContextMenu,
@@ -418,12 +520,13 @@ export const WeeklyCalendarUI = ({
   goToNextWeek,
   goToCurrentWeek,
   handleTimeSlotClick,
-  handleWeekdaySelect
+  handleWeekdaySelect,
+  handleIntervalChange,
+  handleRepeatCountChange
 }) => {
   const navigate = useNavigate();
   
   const {
-    // 상태들
     currentWeek,
     focusedDayIndex,
     visibleDays,
@@ -446,20 +549,12 @@ export const WeeklyCalendarUI = ({
     dragging,
     dragOffset,
     autoScrollTimer,
-    
-    // 계산된 값들
     safeSchedules,
     safeTags,
     safeTagItems,
     tagTotals,
-    repeatOptions,
-    intervalOptions,
-    
-    // 상수들
     SLOT_HEIGHT,
     DAYS_OF_WEEK,
-    
-    // 헬퍼 함수들
     parseTimeToMinutes,
     getCurrentTimeLine,
     handleDayFocus,
@@ -468,17 +563,12 @@ export const WeeklyCalendarUI = ({
     filterSchedulesByDate,
     formatDate,
     getDayOfWeek,
-    
-    // 이벤트 핸들러들
     handleResizeStart,
     handleResizeMove,
     handleResizeEnd,
-    
-    // 서버 관련 함수들
     saveDataToServer
   } = calendarLogic;
 
-  // ✅ 체크박스 변경 핸들러 - 최적화된 버전
   const handleCheckboxChange = useCallback(async (scheduleId, currentDone) => {
     const updatedSchedules = safeSchedules.map(item =>
       item.id === scheduleId ? { ...item, done: !currentDone } : item
@@ -488,14 +578,13 @@ export const WeeklyCalendarUI = ({
       calendarLogic.setSchedules(updatedSchedules);
     }
     
-    // ✅ 서버 기반 모드에서는 즉시 저장
     if (isServerBased && currentUser && saveDataToServer) {
       const result = await saveDataToServer({
         schedules: updatedSchedules,
         tags: safeTags,
         tagItems: safeTagItems,
         monthlyGoals: calendarLogic.safeMonthlyGoals
-      }, { silent: true, debounceMs: 0 }); // 즉시 저장
+      }, { silent: true, debounceMs: 0 });
       
       if (!result.success) {
         console.error('체크박스 상태 저장 실패:', result.error);
@@ -503,7 +592,6 @@ export const WeeklyCalendarUI = ({
     }
   }, [safeSchedules, safeTags, safeTagItems, calendarLogic, isServerBased, currentUser, saveDataToServer]);
 
-  // ✅ 이벤트 리스너 등록 - 최적화된 버전
   const handleClickOutside = useCallback(() => {
     setContextMenu({ ...contextMenu, visible: false });
   }, [contextMenu, setContextMenu]);
@@ -556,7 +644,6 @@ export const WeeklyCalendarUI = ({
     handleDragMove, handleDragEnd, handleClickOutside
   ]);
 
-  // ✅ 네비게이션 핸들러들을 useMemo로 최적화
   const navigationHandlers = useMemo(() => ({
     goToCalendar: () => navigate("/calendar"),
     goToPreviousWeek,
@@ -564,7 +651,6 @@ export const WeeklyCalendarUI = ({
     goToCurrentWeek
   }), [navigate, goToPreviousWeek, goToNextWeek, goToCurrentWeek]);
 
-  // ✅ 폼 핸들러들을 useMemo로 최적화
   const formHandlers = useMemo(() => ({
     setTitle: (title) => setForm({ ...form, title }),
     setEnd: (end) => setForm({ ...form, end }),
@@ -572,14 +658,13 @@ export const WeeklyCalendarUI = ({
     setStartSlot: calendarLogic.setStartSlot
   }), [form, setForm, calendarLogic.setStartSlot]);
 
-  // ✅ 헤더 날짜 범위를 useMemo로 최적화
   const dateRange = useMemo(() => {
     return `${formatDate(currentWeek[0])} - ${formatDate(currentWeek[6])}`;
   }, [currentWeek, formatDate]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-gray-50">
-      {/* ✅ 상태 메시지들 - 최적화된 컴포넌트들 */}
+      {/* 상태 메시지들 */}
       <OverlapMessage showOverlapMessage={showOverlapMessage} />
       <CopyModeMessage copyingSchedule={copyingSchedule} />
       <SyncStatusDisplay isLoading={isLoading} isSaving={isSaving} lastSyncTime={lastSyncTime} />
@@ -592,7 +677,6 @@ export const WeeklyCalendarUI = ({
       {/* 헤더 및 상단 요약바 */}
       <div className="bg-white shadow-sm p-4 flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          {/* 왼쪽: Back 버튼 */}
           <button 
             className="text-blue-600 flex items-center font-medium hover:text-blue-800 transition-colors"
             onClick={navigationHandlers.goToCalendar}
@@ -605,7 +689,6 @@ export const WeeklyCalendarUI = ({
             Back
           </button>
           
-          {/* 가운데: This Week 버튼 */}
           <div className="flex gap-2">
             <button 
               className="bg-gray-100 hover:bg-gray-200 rounded-lg px-3 py-1 text-sm transition-colors"
@@ -627,20 +710,14 @@ export const WeeklyCalendarUI = ({
             </button>
           </div>
           
-          {/* 오른쪽: 날짜 + 사용자 정보 */}
           <div className="flex items-center gap-4">
-            <div className="text-gray-800 font-semibold">
-              {dateRange}
-            </div>
+            <div className="text-gray-800 font-semibold">{dateRange}</div>
             {currentUser && (
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <span>🧑‍💻 {currentUser}</span>
-                {/* 서버 연동 상태 및 새로고침 버튼 */}
                 {isServerBased && (
                   <>
-                    <div className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
-                      🌐 서버 연동
-                    </div>
+                    <div className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">🌐 서버 연동</div>
                     {onManualRefresh && (
                       <button
                         onClick={onManualRefresh}
@@ -658,10 +735,7 @@ export const WeeklyCalendarUI = ({
                     )}
                   </>
                 )}
-                <button
-                  onClick={onLogout}
-                  className="text-red-500 hover:text-red-700 underline"
-                >
+                <button onClick={onLogout} className="text-red-500 hover:text-red-700 underline">
                   로그아웃
                 </button>
               </div>
@@ -669,7 +743,6 @@ export const WeeklyCalendarUI = ({
           </div>
         </div>
         
-        {/* ✅ 태그별 총 시간 요약 - 최적화된 컴포넌트 */}
         <TagSummary tagTotals={tagTotals} getTagColor={getTagColor} />
       </div>
 
@@ -706,7 +779,7 @@ export const WeeklyCalendarUI = ({
                 })}
               </div>
 
-              {/* ✅ 시간 슬롯 그리드 - 최적화된 컴포넌트 */}
+              {/* 시간 슬롯 그리드 */}
               <TimeSlotGrid
                 timeSlots={timeSlots}
                 SLOT_HEIGHT={SLOT_HEIGHT}
@@ -732,7 +805,7 @@ export const WeeklyCalendarUI = ({
           </div>
         </div>
         
-        {/* 오른쪽: 입력 폼 */}
+        {/* 🔧 오른쪽: 개선된 입력 폼 (새 기능들 추가) */}
         <div className="w-80 border-l border-gray-200 bg-white overflow-hidden p-4">
           <div className="h-full flex flex-col">
             <div className="flex items-center justify-between mb-4">
@@ -805,10 +878,26 @@ export const WeeklyCalendarUI = ({
                   onChange={(e) => formHandlers.setDescription(e.target.value)}
                 ></textarea>
                 
+                {/* 🔧 새로 추가: 요일 선택 */}
+                <WeekdaySelector 
+                  form={form}
+                  setForm={setForm}
+                  handleWeekdaySelect={handleWeekdaySelect}
+                  DAYS_OF_WEEK={DAYS_OF_WEEK}
+                />
+                
+                {/* 🔧 새로 추가: 반복 설정 */}
+                <RepeatSettings 
+                  form={form}
+                  setForm={setForm}
+                  handleIntervalChange={handleIntervalChange}
+                  handleRepeatCountChange={handleRepeatCountChange}
+                />
+                
                 {/* 태그 선택 영역 */}
                 <div className="mb-3">
                   <h3 className="font-medium mb-2">태그 선택</h3>
-                  <div className="h-48 overflow-y-auto pr-1 border rounded-md p-3 bg-white">
+                  <div className="h-32 overflow-y-auto pr-1 border rounded-md p-3 bg-white">
                     {safeTagItems.map((item, idx) => {
                       const tagGroup = safeTags.find(t => t.tagType === item.tagType);
                       const tagColor = tagGroup ? tagGroup.color : { bg: "bg-gray-100", text: "text-gray-800" };
@@ -849,6 +938,7 @@ export const WeeklyCalendarUI = ({
                   </div>
                 </div>
                 
+                {/* 🔧 개선된 새 태그 추가 - 즉시 반영 */}
                 <div className="mb-3">
                   <h3 className="font-medium mb-2">새 태그 추가</h3>
                   <div className="flex items-center gap-1">
@@ -874,10 +964,10 @@ export const WeeklyCalendarUI = ({
                     <button 
                       className="bg-blue-500 hover:bg-blue-600 text-white w-8 h-6 rounded-r-md flex items-center justify-center text-sm font-bold transition-colors disabled:opacity-50"
                       onClick={handleAddTag}
-                      disabled={!newTagType.trim() || !newTagName.trim()}
+                      disabled={!newTagType.trim() || !newTagName.trim() || isSaving}
                       title="태그 추가"
                     >
-                      +
+                      {isSaving ? '...' : '+'}
                     </button>
                   </div>
                   {newTagType.trim() && newTagName.trim() && (
@@ -888,6 +978,7 @@ export const WeeklyCalendarUI = ({
                 </div>
               </div>
 
+              {/* 🔧 개선된 일정 추가 버튼 */}
               <button
                 className="w-full bg-green-500 hover:bg-green-600 text-white text-center py-3 rounded-lg text-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={handleAdd}
@@ -899,11 +990,18 @@ export const WeeklyCalendarUI = ({
                     {isSaving ? '저장 중...' : '로딩 중...'}
                   </div>
                 ) : (
-                  '일정 추가하기'
+                  <>
+                    일정 추가하기
+                    {form.weekdays?.length > 0 && form.repeatCount && parseInt(form.repeatCount) > 1 && (
+                      <div className="text-sm mt-1 opacity-90">
+                        {form.weekdays.length}개 요일 × {form.repeatCount}회 = {form.weekdays.length * parseInt(form.repeatCount)}개 일정
+                      </div>
+                    )}
+                  </>
                 )}
               </button>
 
-              {/* ✅ 서버 연동 상태 정보 - 개선된 버전 */}
+              {/* 서버 연동 상태 정보 */}
               {isServerBased && (
                 <div className="mt-3 p-2 bg-blue-50 rounded-lg text-xs text-blue-700">
                   <div className="flex items-center justify-between">
@@ -934,5 +1032,4 @@ export const WeeklyCalendarUI = ({
   );
 };
 
-// ✅ default export만 사용 (중복 export 제거)
 export default WeeklyCalendarUI;
