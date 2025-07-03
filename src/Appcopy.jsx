@@ -325,9 +325,13 @@ function Appcopy() {
     }
   }, [getAllUsersFromServer, getUserData]);
 
-  // ✨ 🔧 개선된 사용자 데이터 로드 함수 (서버 기반 + 완료 보장)
+  // ✨ 🔧 개선된 사용자 데이터 로드 함수 (서버 기반 + 완료 보장 + 강화된 에러 처리)
   const loadCurrentUserData = useCallback(async (nickname) => {
-    if (!nickname) return;
+    if (!nickname) {
+      console.warn('⚠️ nickname 없음 - 데이터 로딩 스킵');
+      setDataLoaded(true);
+      return;
+    }
     
     console.log('📦 서버 기반 데이터 로딩 시작:', nickname);
     
@@ -340,8 +344,7 @@ function Appcopy() {
       if (isUserAdmin) {
         console.log('👑 관리자 로그인 - 데이터 로딩 스킵');
         setIsAdmin(true);
-        setDataLoaded(true);
-        return;
+        return; // 함수 종료 - finally에서 setDataLoaded(true) 실행됨
       }
       
       // 일반 사용자 데이터 로딩
@@ -436,22 +439,29 @@ function Appcopy() {
           []
         );
         
-        // 기본 데이터를 서버에 저장
-        const initialData = {
-          schedules: [],
-          tags: defaultTags,
-          tagItems: defaultTagItems,
-          monthlyPlans: [],
-          monthlyGoals: []
-        };
-        
-        const saveResult = await saveUserDataToDAL(nickname, initialData);
-        if (saveResult.success) {
-          console.log('💾 신규 사용자 기본 데이터 서버 저장 완료');
+        // 기본 데이터를 서버에 저장 (비동기, 실패해도 진행)
+        try {
+          const initialData = {
+            schedules: [],
+            tags: defaultTags,
+            tagItems: defaultTagItems,
+            monthlyPlans: [],
+            monthlyGoals: []
+          };
+          
+          const saveResult = await saveUserDataToDAL(nickname, initialData);
+          if (saveResult.success) {
+            console.log('💾 신규 사용자 기본 데이터 서버 저장 완료');
+          } else {
+            console.warn('⚠️ 기본 데이터 저장 실패 (진행 계속):', saveResult.error);
+          }
+        } catch (saveError) {
+          console.warn('⚠️ 기본 데이터 저장 중 오류 (진행 계속):', saveError);
         }
       }
       
       setLastSyncTime(new Date());
+      console.log('✅ loadCurrentUserData 성공 완료');
       
     } catch (error) {
       console.error('❌ 서버 데이터 로딩 실패:', error);
@@ -472,15 +482,23 @@ function Appcopy() {
       };
     } finally {
       // 🔧 중요: 무조건 데이터 로딩 완료 표시
-      console.log('🎯 데이터 로딩 완료 플래그 설정');
+      console.log('🎯 loadCurrentUserData 최종 단계 - 데이터 로딩 완료 플래그 설정');
       setDataLoaded(true);
     }
   }, [checkIsAdmin, loadUserDataFromServer, generateDataHash]);
 
-  // ✨ 🔧 개선된 로그인 상태 확인 (세션 기반 + 완료 보장)
+  // ✨ 🔧 개선된 로그인 상태 확인 (세션 기반 + 완료 보장 + 타임아웃)
   useEffect(() => {
     const checkLoginStatus = async () => {
       console.log('🔐 로그인 상태 확인 시작 (세션 기반)');
+      
+      // 🔧 안전장치: 10초 후 강제 완료
+      const safetyTimeout = setTimeout(() => {
+        console.warn('⚠️ 로딩 타임아웃 - 강제 완료');
+        setDataLoaded(true);
+        setIsLoading(false);
+        setIsInitializing(false);
+      }, 10000);
       
       try {
         const currentUser = sessionStorage.getItem('currentUser');
@@ -492,6 +510,8 @@ function Appcopy() {
           // 로그인 상태 먼저 설정
           setIsLoggedIn(true);
           setCurrentUser(currentUser);
+          
+          console.log('📦 데이터 로딩 시작...');
           
           // 데이터 로딩 (완료까지 기다림)
           await loadCurrentUserData(currentUser);
@@ -505,7 +525,11 @@ function Appcopy() {
         console.error('❌ 초기화 중 오류:', error);
         setDataLoaded(true); // 오류 발생 시에도 완료로 처리
       } finally {
+        // 타임아웃 해제
+        clearTimeout(safetyTimeout);
+        
         // 🔧 중요: 무조건 로딩 완료 처리
+        console.log('🎯 초기화 최종 단계 - 로딩 상태 해제');
         setIsLoading(false);
         setIsInitializing(false);
       }
