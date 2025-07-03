@@ -484,7 +484,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       : PASTEL_COLORS[safeTags.length % PASTEL_COLORS.length];
   }, [safeTags]);
 
-  // 포커스 날짜 변경 핸들러
+  // ✅ 수정된 포커스 날짜 변경 핸들러
   const handleDayFocus = useCallback((clickedDate) => {
     const newVisibleDays = [];
     for (let i = -2; i <= 2; i++) {
@@ -494,8 +494,12 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     }
     
     setVisibleDays(newVisibleDays);
-    setFocusedDayIndex(2);
     
+    // ✅ 수정: 클릭한 날짜의 실제 요일을 계산하여 설정
+    const clickedDayOfWeek = clickedDate.getDay();
+    setFocusedDayIndex(clickedDayOfWeek);
+    
+    // currentWeek 업데이트 (일요일부터 토요일까지의 주)
     const startOfWeek = new Date(clickedDate);
     startOfWeek.setDate(clickedDate.getDate() - clickedDate.getDay());
     
@@ -506,6 +510,12 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       newWeek.push(date);
     }
     setCurrentWeek(newWeek);
+    
+    console.log('✅ handleDayFocus 완료:', {
+      clickedDate: clickedDate.toISOString().split('T')[0],
+      dayOfWeek: clickedDayOfWeek,
+      focusedDayIndex: clickedDayOfWeek
+    });
   }, []);
 
   // 시간 슬롯 계산 헬퍼 함수
