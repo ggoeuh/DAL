@@ -50,54 +50,6 @@ const filterSchedulesByDate = (schedules, date) => {
   return schedules.filter(schedule => schedule.date === dateString);
 };
 
-// ✅ 새로 추가: 주간 범위 내 일정만 필터링하는 함수
-const filterSchedulesByWeek = (schedules, currentWeek) => {
-  if (!currentWeek || currentWeek.length === 0) return [];
-  
-  const startOfWeek = currentWeek[0].toISOString().split("T")[0];
-  const endOfWeek = currentWeek[6].toISOString().split("T")[0];
-  
-  return schedules.filter(schedule => {
-    return schedule.date >= startOfWeek && schedule.date <= endOfWeek;
-  });
-};
-
-// ✅ 수정: 특정 주의 일정만으로 태그 합계 계산
-const calculateTagTotalsForWeek = (schedules, currentWeek) => {
-  // 현재 주의 일정만 필터링
-  const weekSchedules = filterSchedulesByWeek(schedules, currentWeek);
-  
-  console.log('📊 주간 태그 계산:', {
-    allSchedules: schedules.length,
-    weekSchedules: weekSchedules.length,
-    weekRange: currentWeek?.map(d => d.toISOString().split('T')[0])
-  });
-  
-  const totals = {};
-  
-  weekSchedules.forEach(schedule => {
-    const tagType = schedule.tagType || "기타";
-    if (!totals[tagType]) {
-      totals[tagType] = 0;
-    }
-    
-    const startMinutes = parseTimeToMinutes(schedule.start);
-    const endMinutes = parseTimeToMinutes(schedule.end);
-    const duration = endMinutes - startMinutes;
-    
-    totals[tagType] += duration;
-  });
-  
-  Object.keys(totals).forEach(key => {
-    const hours = Math.floor(totals[key] / 60);
-    const minutes = totals[key] % 60;
-    totals[key] = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
-  });
-  
-  return totals;
-};
-
-// ✅ 기존 함수 유지 (전체 일정 기준)
 const calculateTagTotals = (schedules) => {
   const totals = {};
   
@@ -143,6 +95,7 @@ const checkScheduleOverlap = (schedules, newSchedule) => {
   });
 };
 
+
 // 커스텀 훅: 캘린더 로직 (최적화됨)
 export const useWeeklyCalendarLogic = (props = {}) => {
   // props에서 필요한 값들 추출
@@ -153,7 +106,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     initialTagItems = [],
     initialMonthlyGoals = [],
     isServerBased = true,
-    enableAutoRefresh = false,
+    enableAutoRefresh = false, // ✅ 기본값을 false로 변경 (필요시에만 활성화)
     initialDate = null
   } = props;
   
@@ -165,7 +118,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   const [tags, setTags] = useState(initialTags);
   const [tagItems, setTagItems] = useState(initialTagItems);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // ✅ 저장 상태 추가
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
   // ✅ 데이터 로딩 완료 상태 추가
@@ -336,7 +289,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         setTags(serverData.tags || []);
         setTagItems(serverData.tagItems || []);
         setLastSyncTime(new Date());
-        setIsInitialLoadComplete(true);
+        setIsInitialLoadComplete(true); // ✅ 초기 로드 완료 표시
         
         console.log('✅ 서버 데이터 로드 성공:', {
           schedules: serverData.schedules?.length || 0,
@@ -353,7 +306,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         setTags([]);
         setTagItems([]);
         setLastSyncTime(new Date());
-        setIsInitialLoadComplete(true);
+        setIsInitialLoadComplete(true); // ✅ 빈 데이터라도 초기 로드 완료 표시
         
         return { success: true, data: null };
       }
@@ -428,7 +381,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       setMonthlyGoals(initialMonthlyGoals);
       setIsInitialLoadComplete(true);
     }
-  }, [currentUser, isServerBased, isInitialLoadComplete]);
+  }, [currentUser, isServerBased, isInitialLoadComplete]); // ✅ 불필요한 의존성 제거
 
   // ✅ 페이지 포커스 시 자동 새로고침 - 선택적 활성화
   useEffect(() => {
@@ -606,6 +559,8 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         if (!checkScheduleOverlap(safeSchedules, updatedSchedule)) {
           updatedSchedules[scheduleIndex] = updatedSchedule;
           setSchedules(updatedSchedules);
+          
+          // ✅ 리사이즈 중에는 저장하지 않음 (handleResizeEnd에서 처리)
         } else {
           setShowOverlapMessage(true);
           setTimeout(() => setShowOverlapMessage(false), 3000);
@@ -625,6 +580,8 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         if (!checkScheduleOverlap(safeSchedules, updatedSchedule)) {
           updatedSchedules[scheduleIndex] = updatedSchedule;
           setSchedules(updatedSchedules);
+          
+          // ✅ 리사이즈 중에는 저장하지 않음
         } else {
           setShowOverlapMessage(true);
           setTimeout(() => setShowOverlapMessage(false), 3000);
@@ -704,17 +661,8 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     return { success: true };
   }, [safeSchedules, safeMonthlyGoals, safeTags, safeTagItems, isServerBased, currentUser, saveDataToServer]);
 
-  // ✅ 수정: 주간별 태그 합계 계산 - useMemo로 최적화
-  const tagTotals = useMemo(() => 
-    calculateTagTotalsForWeek(safeSchedules, currentWeek), 
-    [safeSchedules, currentWeek]
-  );
-
-  // ✅ 추가: 현재 주의 일정만 반환하는 계산된 값
-  const currentWeekSchedules = useMemo(() => 
-    filterSchedulesByWeek(safeSchedules, currentWeek),
-    [safeSchedules, currentWeek]
-  );
+  // ✅ 태그 관련 데이터 계산 - useMemo로 최적화
+  const tagTotals = useMemo(() => calculateTagTotals(safeSchedules), [safeSchedules]);
 
   return {
     // 상태들
@@ -753,9 +701,9 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     autoScrollTimer,
     setAutoScrollTimer,
     isLoading,
-    isSaving,
+    isSaving, // ✅ 저장 상태 추가
     lastSyncTime,
-    isInitialLoadComplete,
+    isInitialLoadComplete, // ✅ 초기 로드 완료 상태 추가
     
     // 상태 설정 함수들
     setSchedules,
@@ -763,13 +711,12 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     setTagItems,
     setMonthlyGoals,
     
-    // ✅ 수정: 주간별 계산된 값들
+    // 계산된 값들
     safeSchedules,
     safeTags,
     safeTagItems,
     safeMonthlyGoals,
-    tagTotals, // 현재 주의 태그 합계
-    currentWeekSchedules, // 현재 주의 일정들
+    tagTotals,
     repeatOptions,
     intervalOptions,
     
@@ -787,16 +734,14 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     DAYS_OF_WEEK,
     PASTEL_COLORS,
     
-    // ✅ 수정 및 추가: 유틸리티 함수들
+    // 유틸리티 함수들
     parseTimeToMinutes,
     minutesToTimeString,
     pixelToNearestTimeSlot,
     formatDate,
     getDayOfWeek,
     filterSchedulesByDate,
-    filterSchedulesByWeek, // ✅ 새로 추가
-    calculateTagTotals, // 기존 함수 (전체 일정 기준)
-    calculateTagTotalsForWeek, // ✅ 새로 추가 (주간별)
+    calculateTagTotals,
     checkScheduleOverlap,
     getCurrentTimeLine,
     assignNewTagColor,
