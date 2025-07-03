@@ -169,9 +169,6 @@ const WeeklyCalendar = ({
       currentWeek: currentWeek.map(d => d.toISOString().split('T')[0]),
       focusedDayIndex
     });
-    
-    // 주별 변경 시 필요한 추가 로직이 있다면 여기에 추가
-    // 예: 특정 주의 일정들만 필터링하여 시간 태그 업데이트
   }, [currentWeek, focusedDayIndex]);
 
   // ✅ 🔧 개선된 컨텍스트 메뉴 핸들러들
@@ -216,7 +213,9 @@ const WeeklyCalendar = ({
       document.body.appendChild(message);
       
       setTimeout(() => {
-        document.body.removeChild(message);
+        if (document.body.contains(message)) {
+          document.body.removeChild(message);
+        }
       }, 3000);
     }
     setContextMenu({ ...contextMenu, visible: false });
@@ -326,7 +325,9 @@ const WeeklyCalendar = ({
           document.body.appendChild(message);
           
           setTimeout(() => {
-            document.body.removeChild(message);
+            if (document.body.contains(message)) {
+              document.body.removeChild(message);
+            }
           }, 2000);
         } else {
           console.error('❌ 일정 붙여넣기 실패:', result.error);
@@ -442,8 +443,7 @@ const WeeklyCalendar = ({
     setDragging(null);
   }, [calendarLogic.dragging, calendarLogic.dragOffset, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, checkScheduleOverlap, updateSchedule, setShowOverlapMessage, setDragging]);
 
-  // ✅ 🔧 개선된 일정 추가 핸들러 (반복 설정 포함)
-  // handleAdd 함수 수정 버전
+  // ✅ 🔧 개선된 일정 추가 핸들러 (수정된 버전)
   const handleAdd = useCallback(async () => {
     if (!form.title || !startSlot || !form.end) {
       alert('제목, 시작 시간, 종료 시간을 모두 입력해주세요.');
@@ -481,12 +481,12 @@ const WeeklyCalendar = ({
       'Friday': 5,    // 금
       'Saturday': 6   // 토
     };
-  
+
     // ✅ 수정: 선택된 요일들을 숫자 인덱스로 변환
     const selectedWeekdayIndices = form.weekdays && form.weekdays.length > 0
       ? form.weekdays.map(weekday => WEEKDAY_MAPPING[weekday]).filter(index => index !== undefined)
       : [focusedDayIndex]; // 선택된 요일이 없으면 현재 요일 사용
-  
+
     console.log('🔍 선택된 요일들:', {
       formWeekdays: form.weekdays,
       selectedWeekdayIndices,
@@ -516,9 +516,9 @@ const WeeklyCalendar = ({
         newSchedules.push(schedule);
       }
     }
-  
+
     console.log(`📅 총 ${newSchedules.length}개의 일정을 추가합니다:`, newSchedules);
-  
+
     // 모든 일정을 순차적으로 추가
     let addedCount = 0;
     for (const schedule of newSchedules) {
@@ -532,10 +532,10 @@ const WeeklyCalendar = ({
         return;
       }
     }
-  
+
     // 성공 메시지
     alert(`${addedCount}개의 일정이 성공적으로 추가되었습니다!`);
-  
+
     // 폼 초기화
     setStartSlot("07:00");
     setForm({
@@ -550,7 +550,7 @@ const WeeklyCalendar = ({
     setSelectedTagType("");
     setActiveTimeSlot(null);
   }, [form, startSlot, safeTagItems, selectedTagType, currentWeek, focusedDayIndex, DAYS_OF_WEEK, checkScheduleOverlap, safeSchedules, addSchedule, setStartSlot, setForm, setSelectedTagType, setActiveTimeSlot]);
-    
+  
   // ✅ 🔧 개선된 태그 추가 핸들러 (즉시 반영)
   const handleAddTag = useCallback(async () => {
     if (!newTagType.trim() || !newTagName.trim()) {
@@ -612,7 +612,9 @@ const WeeklyCalendar = ({
           document.body.appendChild(message);
           
           setTimeout(() => {
-            document.body.removeChild(message);
+            if (document.body.contains(message)) {
+              document.body.removeChild(message);
+            }
           }, 2000);
         } else {
           console.error('❌ 태그 추가 실패:', result.error);
@@ -817,7 +819,9 @@ const WeeklyCalendar = ({
         document.body.appendChild(message);
         
         setTimeout(() => {
-          document.body.removeChild(message);
+          if (document.body.contains(message)) {
+            document.body.removeChild(message);
+          }
         }, 2000);
       } else {
         console.error('❌ 수동 새로고침 실패:', result.error);
