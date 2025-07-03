@@ -517,9 +517,6 @@ const WeeklyCalendar = ({
       }
     }
   
-    // 성공 메시지
-    alert(`${addedCount}개의 일정이 성공적으로 추가되었습니다!`);
-  
     // 폼 초기화
     setStartSlot("07:00");
     setForm({
