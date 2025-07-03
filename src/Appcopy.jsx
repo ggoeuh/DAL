@@ -325,46 +325,60 @@ function Appcopy() {
     }
   }, [getAllUsersFromServer, getUserData]);
 
-  // ✨ 🔧 개선된 사용자 데이터 로드 함수 (서버 기반 + 완료 보장 + 강화된 에러 처리)
+  // ✨ 🔧 디버깅 강화된 사용자 데이터 로드 함수 (서버 기반 + 완료 보장 + 강화된 에러 처리)
   const loadCurrentUserData = useCallback(async (nickname) => {
+    let debugStep = 0;
+    console.log(`📦 [LOAD STEP ${++debugStep}] loadCurrentUserData 함수 진입:`, nickname);
+    
     if (!nickname) {
-      console.warn('⚠️ nickname 없음 - 데이터 로딩 스킵');
+      console.warn(`⚠️ [LOAD STEP ${++debugStep}] nickname 없음 - 데이터 로딩 스킵`);
       setDataLoaded(true);
       return;
     }
     
-    console.log('📦 서버 기반 데이터 로딩 시작:', nickname);
+    console.log(`📦 [LOAD STEP ${++debugStep}] 서버 기반 데이터 로딩 시작:`, nickname);
     
     try {
+      console.log(`🔍 [LOAD STEP ${++debugStep}] 관리자 체크 시작`);
       // 먼저 관리자 여부를 확인
       const isUserAdmin = checkIsAdmin(nickname);
-      console.log('👑 관리자 체크 결과:', { nickname, isUserAdmin });
+      console.log(`👑 [LOAD STEP ${++debugStep}] 관리자 체크 결과:`, { nickname, isUserAdmin });
       
       // 관리자인 경우
       if (isUserAdmin) {
-        console.log('👑 관리자 로그인 - 데이터 로딩 스킵');
+        console.log(`👑 [LOAD STEP ${++debugStep}] 관리자 로그인 - 데이터 로딩 스킵`);
         setIsAdmin(true);
+        console.log(`👑 [LOAD STEP ${++debugStep}] 관리자 상태 설정 완료 - 함수 종료`);
         return; // 함수 종료 - finally에서 setDataLoaded(true) 실행됨
       }
       
+      console.log(`👤 [LOAD STEP ${++debugStep}] 일반 사용자 처리 시작`);
       // 일반 사용자 데이터 로딩
       setIsAdmin(false);
-      console.log('📦 일반 사용자 서버 데이터 로딩 시작:', nickname);
+      console.log(`📦 [LOAD STEP ${++debugStep}] 일반 사용자 서버 데이터 로딩 시작:`, nickname);
       
+      console.log(`🌐 [LOAD STEP ${++debugStep}] loadUserDataFromServer 호출 직전`);
       // 서버에서 데이터 로드
       const userData = await loadUserDataFromServer(nickname);
+      console.log(`🌐 [LOAD STEP ${++debugStep}] loadUserDataFromServer 호출 완료:`, userData ? '데이터 있음' : '데이터 없음');
       
       if (userData) {
         // 서버 데이터가 있는 경우
-        console.log('✅ 서버 데이터 적용 시작');
+        console.log(`✅ [LOAD STEP ${++debugStep}] 서버 데이터 적용 시작`);
         
         // 🔧 상태 업데이트를 순차적으로 진행
+        console.log(`📝 [LOAD STEP ${++debugStep}] 상태 업데이트 시작 - schedules`);
         setSchedules(userData.schedules || []);
+        console.log(`📝 [LOAD STEP ${++debugStep}] 상태 업데이트 - tags`);
         setTags(userData.tags || []);
+        console.log(`📝 [LOAD STEP ${++debugStep}] 상태 업데이트 - tagItems`);
         setTagItems(userData.tagItems || []);
+        console.log(`📝 [LOAD STEP ${++debugStep}] 상태 업데이트 - monthlyPlans`);
         setMonthlyPlans(userData.monthlyPlans || []);
+        console.log(`📝 [LOAD STEP ${++debugStep}] 상태 업데이트 - monthlyGoals`);
         setMonthlyGoals(userData.monthlyGoals || []);
         
+        console.log(`🔧 [LOAD STEP ${++debugStep}] 데이터 해시 설정 시작`);
         // ✅ 초기 데이터 해시 설정
         prevDataRef.current = {
           schedules: userData.schedules || [],
@@ -383,7 +397,7 @@ function Appcopy() {
           userData.monthlyGoals || []
         );
         
-        console.log('✅ 서버 데이터 로딩 완료:', {
+        console.log(`✅ [LOAD STEP ${++debugStep}] 서버 데이터 로딩 완료:`, {
           nickname,
           schedulesCount: userData.schedules?.length || 0,
           tagsCount: userData.tags?.length || 0,
@@ -393,7 +407,7 @@ function Appcopy() {
         });
       } else {
         // 서버에 데이터가 없는 경우 - 신규 사용자
-        console.log('🆕 신규 사용자 - 기본 데이터 구조 생성:', nickname);
+        console.log(`🆕 [LOAD STEP ${++debugStep}] 신규 사용자 - 기본 데이터 구조 생성:`, nickname);
         
         const defaultTags = [
           { tagType: '공부', color: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' } },
@@ -414,6 +428,7 @@ function Appcopy() {
           { tagType: '업무', tagName: '프로젝트' }
         ];
         
+        console.log(`📝 [LOAD STEP ${++debugStep}] 신규 사용자 기본 데이터 설정 시작`);
         // 신규 사용자 기본 데이터 설정
         setSchedules([]);
         setTags(defaultTags);
@@ -421,6 +436,7 @@ function Appcopy() {
         setMonthlyPlans([]);
         setMonthlyGoals([]);
         
+        console.log(`🔧 [LOAD STEP ${++debugStep}] 신규 사용자 데이터 해시 설정`);
         // ✅ 초기 데이터 해시 설정
         prevDataRef.current = {
           schedules: [],
@@ -439,6 +455,7 @@ function Appcopy() {
           []
         );
         
+        console.log(`💾 [LOAD STEP ${++debugStep}] 기본 데이터 서버 저장 시도 (비차단)`);
         // 기본 데이터를 서버에 저장 (비동기, 실패해도 진행)
         try {
           const initialData = {
@@ -451,21 +468,23 @@ function Appcopy() {
           
           const saveResult = await saveUserDataToDAL(nickname, initialData);
           if (saveResult.success) {
-            console.log('💾 신규 사용자 기본 데이터 서버 저장 완료');
+            console.log(`💾 [LOAD STEP ${++debugStep}] 신규 사용자 기본 데이터 서버 저장 완료`);
           } else {
-            console.warn('⚠️ 기본 데이터 저장 실패 (진행 계속):', saveResult.error);
+            console.warn(`⚠️ [LOAD STEP ${++debugStep}] 기본 데이터 저장 실패 (진행 계속):`, saveResult.error);
           }
         } catch (saveError) {
-          console.warn('⚠️ 기본 데이터 저장 중 오류 (진행 계속):', saveError);
+          console.warn(`⚠️ [LOAD STEP ${++debugStep}] 기본 데이터 저장 중 오류 (진행 계속):`, saveError);
         }
       }
       
+      console.log(`⏰ [LOAD STEP ${++debugStep}] 동기화 시간 설정`);
       setLastSyncTime(new Date());
-      console.log('✅ loadCurrentUserData 성공 완료');
+      console.log(`✅ [LOAD STEP ${++debugStep}] loadCurrentUserData try 블록 성공 완료`);
       
     } catch (error) {
-      console.error('❌ 서버 데이터 로딩 실패:', error);
+      console.error(`❌ [LOAD STEP ${++debugStep}] 서버 데이터 로딩 실패:`, error);
       
+      console.log(`🔄 [LOAD STEP ${++debugStep}] 실패 시 빈 상태로 초기화`);
       // 실패 시 빈 상태로 초기화
       setSchedules([]);
       setTags([]);
@@ -482,60 +501,85 @@ function Appcopy() {
       };
     } finally {
       // 🔧 중요: 무조건 데이터 로딩 완료 표시
-      console.log('🎯 loadCurrentUserData 최종 단계 - 데이터 로딩 완료 플래그 설정');
+      console.log(`🎯 [LOAD STEP ${++debugStep}] loadCurrentUserData 최종 단계 - 데이터 로딩 완료 플래그 설정`);
       setDataLoaded(true);
+      console.log(`🏁 [LOAD STEP ${++debugStep}] loadCurrentUserData 함수 완전 종료`);
     }
   }, [checkIsAdmin, loadUserDataFromServer, generateDataHash]);
 
-  // ✨ 🔧 개선된 로그인 상태 확인 (세션 기반 + 완료 보장 + 타임아웃)
+  // ✨ 🔧 디버깅 강화된 로그인 상태 확인 (세션 기반 + 완료 보장 + 타임아웃)
   useEffect(() => {
+    let debugStep = 0;
+    
     const checkLoginStatus = async () => {
-      console.log('🔐 로그인 상태 확인 시작 (세션 기반)');
+      console.log(`🔐 [STEP ${++debugStep}] 로그인 상태 확인 시작 (세션 기반)`);
       
-      // 🔧 안전장치: 10초 후 강제 완료
+      // 🔧 안전장치: 3초 후 강제 완료 (빠른 테스트)
       const safetyTimeout = setTimeout(() => {
-        console.warn('⚠️ 로딩 타임아웃 - 강제 완료');
+        console.warn(`⚠️ [STEP ${++debugStep}] 로딩 타임아웃 - 강제 완료`);
         setDataLoaded(true);
         setIsLoading(false);
         setIsInitializing(false);
-      }, 10000);
+      }, 3000); // 3초로 단축
       
       try {
+        console.log(`📍 [STEP ${++debugStep}] 세션 스토리지 확인 중...`);
         const currentUser = sessionStorage.getItem('currentUser');
         const userType = sessionStorage.getItem('userType');
         
-        console.log('🔐 저장된 세션 정보:', { currentUser, userType });
+        console.log(`🔐 [STEP ${++debugStep}] 저장된 세션 정보:`, { currentUser, userType });
         
         if (currentUser) {
+          console.log(`👤 [STEP ${++debugStep}] 사용자 발견 - 로그인 상태 설정`);
           // 로그인 상태 먼저 설정
           setIsLoggedIn(true);
           setCurrentUser(currentUser);
           
-          console.log('📦 데이터 로딩 시작...');
+          console.log(`📦 [STEP ${++debugStep}] 데이터 로딩 시작...`);
           
-          // 데이터 로딩 (완료까지 기다림)
+          // 🔧 임시: loadCurrentUserData 호출 전후 로그
+          console.log(`🚀 [STEP ${++debugStep}] loadCurrentUserData 호출 직전`);
           await loadCurrentUserData(currentUser);
+          console.log(`✅ [STEP ${++debugStep}] loadCurrentUserData 호출 완료`);
           
-          console.log('✅ 서버 기반 모든 초기화 완료');
+          console.log(`✅ [STEP ${++debugStep}] 서버 기반 모든 초기화 완료`);
         } else {
-          console.log('❌ 세션 정보 없음');
+          console.log(`❌ [STEP ${++debugStep}] 세션 정보 없음 - 로그인 페이지로`);
           setDataLoaded(true); // 로그인 안 된 상태도 완료로 처리
         }
       } catch (error) {
-        console.error('❌ 초기화 중 오류:', error);
+        console.error(`❌ [STEP ${++debugStep}] 초기화 중 오류:`, error);
         setDataLoaded(true); // 오류 발생 시에도 완료로 처리
       } finally {
         // 타임아웃 해제
         clearTimeout(safetyTimeout);
         
         // 🔧 중요: 무조건 로딩 완료 처리
-        console.log('🎯 초기화 최종 단계 - 로딩 상태 해제');
+        console.log(`🎯 [STEP ${++debugStep}] 초기화 최종 단계 - 로딩 상태 해제`);
         setIsLoading(false);
         setIsInitializing(false);
+        
+        console.log(`🏁 [STEP ${++debugStep}] checkLoginStatus 함수 완전 종료`);
       }
     };
     
-    checkLoginStatus();
+    console.log(`🎬 [STEP ${++debugStep}] useEffect 시작 - checkLoginStatus 호출`);
+    checkLoginStatus()
+      .then(() => {
+        console.log(`🎉 [STEP ${++debugStep}] checkLoginStatus Promise 완료`);
+      })
+      .catch((error) => {
+        console.error(`💥 [STEP ${++debugStep}] checkLoginStatus Promise 에러:`, error);
+        // 에러 발생시에도 강제 완료
+        setDataLoaded(true);
+        setIsLoading(false);
+        setIsInitializing(false);
+      });
+    
+    // 클린업 함수도 로그 추가
+    return () => {
+      console.log(`🧹 [CLEANUP] useEffect 클린업 실행`);
+    };
   }, [loadCurrentUserData]);
 
   // ✅ 개선된 자동 저장 로직 (무한 루프 방지 강화)
