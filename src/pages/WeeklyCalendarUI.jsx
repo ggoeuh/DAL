@@ -1,236 +1,4 @@
-// WeeklyCalendarUI.jsx - 기존 구조 유지하면서 필요한 기능만 추가
-import React, { useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-
-// ✅ 기존 컴포넌트들 유지
-const SyncStatusDisplay = React.memo(({ isLoading, isSaving, lastSyncTime }) => {
-  if (isSaving) {
-    return (
-      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-orange-100 text-orange-800 px-4 py-2 rounded-lg shadow-md z-50 flex items-center">
-        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-500 mr-2"></div>
-        💾 서버에 저장 중...
-      </div>
-    );
-  }
-  
-  if (isLoading) {
-    return (
-      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50 flex items-center">
-        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
-        🔄 서버 데이터 동기화 중...
-      </div>
-    );
-  }
-  
-  return null;
-});
-
-const OverlapMessage = React.memo(({ showOverlapMessage }) => {
-  if (!showOverlapMessage) return null;
-  
-  return (
-    <div className="fixed top-4 right-4 bg-red-100 text-red-800 px-4 py-2 rounded-lg shadow-md z-50">
-      일정이 다른 일정과 겹칩니다
-    </div>
-  );
-});
-
-const CopyModeMessage = React.memo(({ copyingSchedule }) => {
-  if (!copyingSchedule) return null;
-  
-  return (
-    <div className="fixed top-4 left-4 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50">
-      📋 복사 모드: "{copyingSchedule.title}" - 원하는 위치에 클릭하세요
-    </div>
-  );
-});
-
-// 🔧 개선된 컨텍스트 메뉴 (복사 기능 강화)
-const ContextMenu = React.memo(({ contextMenu, handleCopySchedule, handleDeleteSchedule }) => {
-  if (!contextMenu.visible) return null;
-  
-  return (
-    <div 
-      className="fixed bg-white shadow-lg rounded-lg overflow-hidden z-50 border"
-      style={{ top: contextMenu.y, left: contextMenu.x }}
-    >
-      <div 
-        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm" 
-        onClick={handleCopySchedule}
-      >
-        📋 복사
-      </div>
-      <div 
-        className="px-4 py-2 hover:bg-gray-100 text-red-600 cursor-pointer text-sm" 
-        onClick={handleDeleteSchedule}
-      >
-        🗑️ 삭제
-      </div>
-    </div>
-  );
-});
-
-const TagSummary = React.memo(({ tagTotals, getTagColor }) => {
-  const tagEntries = Object.entries(tagTotals);
-  
-  if (tagEntries.length === 0) {
-    return (
-      <div className="text-gray-500 text-sm italic">
-        아직 등록된 일정이 없습니다
-      </div>
-    );
-  }
-  
-  return (
-    <div className="flex gap-4 flex-wrap">
-      {tagEntries.map(([tagType, totalTime]) => {
-        const tagColor = getTagColor(tagType);
-        return (
-          <div 
-            key={tagType} 
-            className={`${tagColor.bg} ${tagColor.text} rounded-lg px-3 py-1 text-sm font-medium flex items-center`}
-          >
-            <span>{tagType}</span>
-            <span className="ml-2 font-bold">{totalTime}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-});
-
-// 🔧 요일 선택 컴포넌트 수정 - DAYS_OF_WEEK 기본값 추가
-const WeekdaySelector = React.memo(({ form, setForm, handleWeekdaySelect, DAYS_OF_WEEK }) => {
-  // 🔧 DAYS_OF_WEEK가 없거나 빈 배열인 경우 기본값 사용
-  const defaultDaysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const daysToUse = (DAYS_OF_WEEK && DAYS_OF_WEEK.length > 0) ? DAYS_OF_WEEK : defaultDaysOfWeek;
-  
-  const WEEKDAY_NAMES = {
-    'Sunday': '일',
-    'Monday': '월', 
-    'Tuesday': '화',
-    'Wednesday': '수',
-    'Thursday': '목',
-    'Friday': '금',
-    'Saturday': '토'
-  };
-
-  // 🔍 디버깅 로그
-  console.log('🔍 WeekdaySelector - DAYS_OF_WEEK:', DAYS_OF_WEEK);
-  console.log('🔍 WeekdaySelector - daysToUse:', daysToUse);
-
-  return (
-    <div className="mb-3">
-      <h3 className="font-medium mb-2">반복 요일 선택</h3>
-      <div className="grid grid-cols-7 gap-1 mb-2">
-        {daysToUse.map(weekday => (
-          <button
-            key={weekday}
-            onClick={() => handleWeekdaySelect(weekday)}
-            className={`w-8 h-8 text-xs font-medium rounded-full transition-colors ${
-              form.weekdays?.includes(weekday)
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {WEEKDAY_NAMES[weekday] || weekday}
-          </button>
-        ))}
-      </div>
-      <div className="text-xs text-gray-500">
-        {form.weekdays?.length > 0 
-          ? `선택된 요일: ${form.weekdays.map(day => WEEKDAY_NAMES[day] || day).join(', ')}`
-          : '선택된 요일이 없으면 현재 요일에만 추가됩니다'
-        }
-      </div>
-    </div>
-  );
-});
-
-// 🔧 반복 설정 컴포넌트 추가
-const RepeatSettings = React.memo(({ form, setForm, handleIntervalChange, handleRepeatCountChange }) => {
-  const INTERVAL_OPTIONS = [
-    { value: 1, label: '매주' },
-    { value: 2, label: '2주마다' },
-    { value: 3, label: '3주마다' },
-    { value: 4, label: '4주마다' }
-  ];
-
-  const REPEAT_COUNT_OPTIONS = [
-    { value: 1, label: '1회' },
-    { value: 2, label: '2회' },
-    { value: 3, label: '3회' },
-    { value: 4, label: '4회' },
-    { value: 5, label: '5회' },
-    { value: 8, label: '8회' },
-    { value: 10, label: '10회' },
-    { value: 12, label: '12회' },
-    { value: 16, label: '16회' }
-  ];
-
-  return (
-    <div className="grid grid-cols-2 gap-2 mb-3">
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">
-          반복 간격
-        </label>
-        <select
-          value={form.interval || "1"}
-          onChange={(e) => handleIntervalChange(parseInt(e.target.value))}
-          className="w-full text-xs bg-white border rounded-md px-2 py-1 focus:outline-none focus:border-blue-400"
-        >
-          {INTERVAL_OPTIONS.map(option => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="block text-xs font-medium text-gray-700 mb-1">
-          반복 횟수
-        </label>
-        <select
-          value={form.repeatCount || "1"}
-          onChange={(e) => handleRepeatCountChange(parseInt(e.target.value))}
-          className="w-full text-xs bg-white border rounded-md px-2 py-1 focus:outline-none focus:border-blue-400"
-        >
-          {REPEAT_COUNT_OPTIONS.map(option => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
-  );
-});
-
-// 기존 컴포넌트들 유지 (TimeSlotGrid, DayColumn, ScheduleItem)
-const TimeSlotGrid = React.memo(({ 
-  timeSlots, 
-  SLOT_HEIGHT, 
-  visibleDays, 
-  safeSchedules,
-  filterSchedulesByDate,
-  calculateSlotPosition,
-  getTagColor,
-  safeTagItems,
-  getCurrentTimeLine,
-  activeTimeSlot,
-  handleTimeSlotClick,
-  handleDayFocus,
-  handleDragStart,
-  handleContextMenu,
-  handleResizeStart,
-  handleCheckboxChange,
-  dragging,
-  isServerBased,
-  currentUser
-}) => {
-  return (
-    <div className="flex">
-      {/* 시간 열 */}
+{/* 시간 열 */}
       <div className="w-10 flex-shrink-0 relative" style={{ height: `${SLOT_HEIGHT * 48}px` }}>
         {timeSlots.map((time, i) => (
           <div
@@ -751,7 +519,8 @@ export const WeeklyCalendarUI = ({
           </div>
         </div>
         
-        <TagSummary tagTotals={tagTotals} getTagColor={getTagColor} />
+        {/* ✅ 수정된 TagSummary - currentWeek 전달 */}
+        <TagSummary tagTotals={tagTotals} getTagColor={getTagColor} currentWeek={currentWeek} />
       </div>
 
       {/* 메인 컨텐츠 */}
@@ -932,112 +701,296 @@ export const WeeklyCalendarUI = ({
                             ×
                           </button>
                         </div>
-                      );
-                    })}
-                    {safeTagItems.length === 0 && (
-                      <div className="text-center text-gray-500 py-8 text-sm">
-                        <div className="mb-2">📝</div>
-                        <div>태그를 추가해주세요</div>
-                        <div className="text-xs text-gray-400 mt-1">
-                          아래에서 새 태그를 만들 수 있습니다
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
-                {/* 🔧 개선된 새 태그 추가 - 즉시 반영 */}
-                <div className="mb-3">
-                  <h3 className="font-medium mb-2">새 태그 추가</h3>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      placeholder="태그 타입"
-                      className="w-20 text-xs bg-white border rounded-l-md px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
-                      value={newTagType}
-                      onChange={(e) => setNewTagType(e.target.value)}
-                    />
-                    <input
-                      type="text"
-                      placeholder="항목 이름"
-                      className="flex-1 text-xs bg-white border-y border-r-0 px-2 py-1 focus:outline-none focus:border-blue-400 transition-colors"
-                      value={newTagName}
-                      onChange={(e) => setNewTagName(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && newTagType.trim() && newTagName.trim()) {
-                          handleAddTag();
-                        }
-                      }}
-                    />
-                    <button 
-                      className="bg-blue-500 hover:bg-blue-600 text-white w-8 h-6 rounded-r-md flex items-center justify-center text-sm font-bold transition-colors disabled:opacity-50"
-                      onClick={handleAddTag}
-                      disabled={!newTagType.trim() || !newTagName.trim() || isSaving}
-                      title="태그 추가"
-                    >
-                      {isSaving ? '...' : '+'}
-                    </button>
-                  </div>
-                  {newTagType.trim() && newTagName.trim() && (
-                    <div className="mt-2 text-xs text-gray-600">
-                      미리보기: <span className="bg-gray-100 px-2 py-1 rounded">{newTagType}</span> - {newTagName}
-                    </div>
-                  )}
-                </div>
-              </div>
+                      // WeeklyCalendarUI.jsx - 완성 코드
+import React, { useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 
-              {/* 🔧 개선된 일정 추가 버튼 */}
-              <button
-                className="w-full bg-green-500 hover:bg-green-600 text-white text-center py-3 rounded-lg text-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={handleAdd}
-                disabled={!form.title || !startSlot || !form.end || isLoading || isSaving}
-              >
-                {isLoading || isSaving ? (
-                  <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    {isSaving ? '저장 중...' : '로딩 중...'}
-                  </div>
-                ) : (
-                  <>
-                    일정 추가하기
-                    {form.weekdays?.length > 0 && form.repeatCount && parseInt(form.repeatCount) > 1 && (
-                      <div className="text-sm mt-1 opacity-90">
-                        {form.weekdays.length}개 요일 × {form.repeatCount}회 = {form.weekdays.length * parseInt(form.repeatCount)}개 일정
-                      </div>
-                    )}
-                  </>
-                )}
-              </button>
+// ✅ 기존 컴포넌트들 유지
+const SyncStatusDisplay = React.memo(({ isLoading, isSaving, lastSyncTime }) => {
+  if (isSaving) {
+    return (
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-orange-100 text-orange-800 px-4 py-2 rounded-lg shadow-md z-50 flex items-center">
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-500 mr-2"></div>
+        💾 서버에 저장 중...
+      </div>
+    );
+  }
+  
+  if (isLoading) {
+    return (
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50 flex items-center">
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+        🔄 서버 데이터 동기화 중...
+      </div>
+    );
+  }
+  
+  return null;
+});
 
-              {/* 서버 연동 상태 정보 */}
-              {isServerBased && (
-                <div className="mt-3 p-2 bg-blue-50 rounded-lg text-xs text-blue-700">
-                  <div className="flex items-center justify-between">
-                    <span>🌐 서버 자동 저장 활성화</span>
-                    {lastSyncTime && !isLoading && !isSaving && (
-                      <span className="text-blue-500">
-                        ✅ {lastSyncTime.toLocaleTimeString('ko-KR')}
-                      </span>
-                    )}
-                    {(isLoading || isSaving) && (
-                      <span className="text-orange-600">
-                        {isSaving ? '💾 저장 중...' : '🔄 로딩 중...'}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-1 text-blue-600">
-                    {isSaving ? '서버에 데이터를 저장하고 있습니다' :
-                     isLoading ? '서버에서 최신 데이터를 가져오고 있습니다' :
-                     '모든 변경사항이 실시간으로 서버에 저장됩니다'}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+const OverlapMessage = React.memo(({ showOverlapMessage }) => {
+  if (!showOverlapMessage) return null;
+  
+  return (
+    <div className="fixed top-4 right-4 bg-red-100 text-red-800 px-4 py-2 rounded-lg shadow-md z-50">
+      일정이 다른 일정과 겹칩니다
+    </div>
+  );
+});
+
+const CopyModeMessage = React.memo(({ copyingSchedule }) => {
+  if (!copyingSchedule) return null;
+  
+  return (
+    <div className="fixed top-4 left-4 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg shadow-md z-50">
+      📋 복사 모드: "{copyingSchedule.title}" - 원하는 위치에 클릭하세요
+    </div>
+  );
+});
+
+// 🔧 개선된 컨텍스트 메뉴 (복사 기능 강화)
+const ContextMenu = React.memo(({ contextMenu, handleCopySchedule, handleDeleteSchedule }) => {
+  if (!contextMenu.visible) return null;
+  
+  return (
+    <div 
+      className="fixed bg-white shadow-lg rounded-lg overflow-hidden z-50 border"
+      style={{ top: contextMenu.y, left: contextMenu.x }}
+    >
+      <div 
+        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm" 
+        onClick={handleCopySchedule}
+      >
+        📋 복사
+      </div>
+      <div 
+        className="px-4 py-2 hover:bg-gray-100 text-red-600 cursor-pointer text-sm" 
+        onClick={handleDeleteSchedule}
+      >
+        🗑️ 삭제
       </div>
     </div>
   );
-};
+});
 
-export default WeeklyCalendarUI;
+// ✅ 수정된 TagSummary - 현재 주 정보 표시
+const TagSummary = React.memo(({ tagTotals, getTagColor, currentWeek }) => {
+  const tagEntries = Object.entries(tagTotals);
+  
+  if (tagEntries.length === 0) {
+    return (
+      <div className="text-gray-500 text-sm italic">
+        이번 주에 등록된 일정이 없습니다
+      </div>
+    );
+  }
+  
+  // ✅ 현재 주 정보 표시 추가
+  const weekStart = currentWeek?.[0]?.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+  const weekEnd = currentWeek?.[6]?.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+  
+  return (
+    <div>
+      <div className="text-xs text-gray-600 mb-2">
+        📊 이번 주 태그별 시간 ({weekStart} ~ {weekEnd})
+      </div>
+      <div className="flex gap-4 flex-wrap">
+        {tagEntries.map(([tagType, totalTime]) => {
+          const tagColor = getTagColor(tagType);
+          return (
+            <div 
+              key={tagType} 
+              className={`${tagColor.bg} ${tagColor.text} rounded-lg px-3 py-1 text-sm font-medium flex items-center`}
+            >
+              <span>{tagType}</span>
+              <span className="ml-2 font-bold">{totalTime}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+// 🔧 요일 선택 컴포넌트 수정 - DAYS_OF_WEEK 기본값 추가
+const WeekdaySelector = React.memo(({ form, setForm, handleWeekdaySelect, DAYS_OF_WEEK }) => {
+  // 🔧 DAYS_OF_WEEK가 없거나 빈 배열인 경우 기본값 사용
+  const defaultDaysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const daysToUse = (DAYS_OF_WEEK && DAYS_OF_WEEK.length > 0) ? DAYS_OF_WEEK : defaultDaysOfWeek;
+  
+  const WEEKDAY_NAMES = {
+    'Sunday': '일',
+    'Monday': '월', 
+    'Tuesday': '화',
+    'Wednesday': '수',
+    'Thursday': '목',
+    'Friday': '금',
+    'Saturday': '토'
+  };
+
+  // 🔍 디버깅 로그
+  console.log('🔍 WeekdaySelector - DAYS_OF_WEEK:', DAYS_OF_WEEK);
+  console.log('🔍 WeekdaySelector - daysToUse:', daysToUse);
+
+  return (
+    <div className="mb-3">
+      <h3 className="font-medium mb-2">반복 요일 선택</h3>
+      <div className="grid grid-cols-7 gap-1 mb-2">
+        {daysToUse.map(weekday => (
+          <button
+            key={weekday}
+            onClick={() => handleWeekdaySelect(weekday)}
+            className={`w-8 h-8 text-xs font-medium rounded-full transition-colors ${
+              form.weekdays?.includes(weekday)
+                ? 'bg-blue-500 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {WEEKDAY_NAMES[weekday] || weekday}
+          </button>
+        ))}
+      </div>
+      <div className="text-xs text-gray-500">
+        {form.weekdays?.length > 0 
+          ? `선택된 요일: ${form.weekdays.map(day => WEEKDAY_NAMES[day] || day).join(', ')}`
+          : '선택된 요일이 없으면 현재 요일에만 추가됩니다'
+        }
+      </div>
+    </div>
+  );
+});
+
+// 🔧 반복 설정 컴포넌트 추가
+const RepeatSettings = React.memo(({ form, setForm, handleIntervalChange, handleRepeatCountChange }) => {
+  const INTERVAL_OPTIONS = [
+    { value: 1, label: '매주' },
+    { value: 2, label: '2주마다' },
+    { value: 3, label: '3주마다' },
+    { value: 4, label: '4주마다' }
+  ];
+
+  const REPEAT_COUNT_OPTIONS = [
+    { value: 1, label: '1회' },
+    { value: 2, label: '2회' },
+    { value: 3, label: '3회' },
+    { value: 4, label: '4회' },
+    { value: 5, label: '5회' },
+    { value: 8, label: '8회' },
+    { value: 10, label: '10회' },
+    { value: 12, label: '12회' },
+    { value: 16, label: '16회' }
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2 mb-3">
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          반복 간격
+        </label>
+        <select
+          value={form.interval || "1"}
+          onChange={(e) => handleIntervalChange(parseInt(e.target.value))}
+          className="w-full text-xs bg-white border rounded-md px-2 py-1 focus:outline-none focus:border-blue-400"
+        >
+          {INTERVAL_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          반복 횟수
+        </label>
+        <select
+          value={form.repeatCount || "1"}
+          onChange={(e) => handleRepeatCountChange(parseInt(e.target.value))}
+          className="w-full text-xs bg-white border rounded-md px-2 py-1 focus:outline-none focus:border-blue-400"
+        >
+          {REPEAT_COUNT_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+});
+
+// 기존 컴포넌트들 유지 (TimeSlotGrid, DayColumn, ScheduleItem)
+const TimeSlotGrid = React.memo(({ 
+  timeSlots, 
+  SLOT_HEIGHT, 
+  visibleDays, 
+  safeSchedules,
+  filterSchedulesByDate,
+  calculateSlotPosition,
+  getTagColor,
+  safeTagItems,
+  getCurrentTimeLine,
+  activeTimeSlot,
+  handleTimeSlotClick,
+  handleDayFocus,
+  handleDragStart,
+  handleContextMenu,
+  handleResizeStart,
+  handleCheckboxChange,
+  dragging,
+  isServerBased,
+  currentUser
+}) => {
+  return (
+    <div className="flex">
+      {/* 시간 열 */}
+      <div className="w-10 flex-shrink-0 relative" style={{ height: `${SLOT_HEIGHT * 48}px` }}>
+        {timeSlots.map((time, i) => (
+          <div
+            key={time}
+            className="absolute w-full pl-2 text-xs text-gray-500"
+            style={{ top: `${i * SLOT_HEIGHT}px`, height: `${SLOT_HEIGHT}px` }}
+          >
+            <div className="text-right pr-1">{time}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 날짜 열들 */}
+      <div className="flex flex-1 min-w-0">
+        {visibleDays.map((date, i) => {
+          const isFocusDay = i === 2;
+          const isToday = date.toDateString() === new Date().toDateString();
+          const dateSchedules = filterSchedulesByDate(safeSchedules, date);
+
+          return (
+            <DayColumn
+              key={`${date.toISOString()}-${i}`}
+              date={date}
+              dayIndex={i}
+              isFocusDay={isFocusDay}
+              isToday={isToday}
+              dateSchedules={dateSchedules}
+              timeSlots={timeSlots}
+              SLOT_HEIGHT={SLOT_HEIGHT}
+              activeTimeSlot={activeTimeSlot}
+              handleTimeSlotClick={handleTimeSlotClick}
+              handleDayFocus={handleDayFocus}
+              getCurrentTimeLine={getCurrentTimeLine}
+              calculateSlotPosition={calculateSlotPosition}
+              getTagColor={getTagColor}
+              safeTagItems={safeTagItems}
+              handleDragStart={handleDragStart}
+              handleContextMenu={handleContextMenu}
+              handleResizeStart={handleResizeStart}
+              handleCheckboxChange={handleCheckboxChange}
+              dragging={dragging}
+              isServerBased={isServerBased}
+              currentUser={currentUser}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+});
