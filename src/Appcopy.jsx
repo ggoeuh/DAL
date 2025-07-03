@@ -1,4 +1,4 @@
-// Appcopy.jsx - 완전 서버 기반 버전 + 무한동기화 해결 + 데이터 로딩 완료 후 렌더링
+// Appcopy.jsx - 완전 서버 기반 버전 + 무한동기화 해결 (기존 구조 유지)
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LogInPage from './pages/LogInPage';
@@ -14,85 +14,10 @@ import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './pages/utils/
 // ✨ 관리자 목록 상수 (LogInPage와 동일하게 유지)
 const ADMIN_USERS = ['교수님', 'admin', '관리자'];
 
-// 🔧 더욱 개선된 보호된 라우트 컴포넌트 (실시간 세션 체크)
-const ProtectedRoute = ({ children, dataLoaded }) => {
+// 보호된 라우트 컴포넌트 (세션 기반)
+const ProtectedRoute = ({ children }) => {
   const currentUser = sessionStorage.getItem('currentUser');
-  const userType = sessionStorage.getItem('userType');
-  const isAdmin = userType === 'admin' || ADMIN_USERS.includes(currentUser);
-  
-  // 🔧 관리자이거나 로그인되지 않은 경우 dataLoaded 무시
-  const shouldIgnoreDataLoaded = !currentUser || isAdmin;
-  const canProceed = shouldIgnoreDataLoaded || dataLoaded;
-  
-  console.log('🛡️ ProtectedRoute 체크:', { 
-    currentUser, 
-    dataLoaded, 
-    isAdmin,
-    userType,
-    shouldIgnoreDataLoaded,
-    canProceed,
-    timestamp: new Date().toISOString()
-  });
-  
-  // 로그인되지 않은 경우
-  if (!currentUser) {
-    console.log('🚫 ProtectedRoute: 로그인 안됨 - /login으로 리다이렉트');
-    return <Navigate to="/login" replace />;
-  }
-  
-  // 관리자인 경우 데이터 로딩 완료 여부와 상관없이 진행
-  if (isAdmin) {
-    console.log('👑 ProtectedRoute: 관리자 - 즉시 통과');
-    return children;
-  }
-  
-  // 🔧 일반 사용자인 경우에만 데이터 로딩 완료까지 대기
-  if (!canProceed) {
-    console.log('⏳ ProtectedRoute: 데이터 로딩 미완료 - 로딩 화면 표시');
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">
-            {currentUser}님의 개인 캘린더를 준비 중입니다...
-          </p>
-          <div className="mt-2 text-xs text-gray-500">
-            <div className="space-y-1">
-              <div>🌐 서버 데이터 로딩 중...</div>
-              <div>📅 일정 정보 불러오기...</div>
-              <div>🏷️ 태그 설정 확인...</div>
-              <div>📊 월간 계획 동기화...</div>
-              <div className="text-blue-600 mt-2">
-                디버그: dataLoaded = {dataLoaded.toString()}
-              </div>
-            </div>
-            
-            {/* 🔧 강제 진행 버튼 - 더 빠른 타임아웃 */}
-            <div className="mt-4 space-y-2">
-              <button
-                onClick={() => {
-                  console.log('🚀 ProtectedRoute에서 강제 진행 요청');
-                  // sessionStorage에 강제 완료 플래그 설정
-                  sessionStorage.setItem('forceDataLoaded', 'true');
-                  window.location.reload();
-                }}
-                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
-              >
-                데이터 로딩 완료 - 강제 진행
-              </button>
-              
-              <div className="text-xs text-gray-600">
-                로그에서 "데이터 로딩 완료"가 보이면 위 버튼을 클릭하세요
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  
-  console.log('✅ ProtectedRoute: 모든 조건 통과 - 컴포넌트 렌더링');
-  return children;
+  return currentUser ? children : <Navigate to="/login" replace />;
 };
 
 // ✨ 수정된 관리자 전용 라우트 컴포넌트 (세션 기반)
@@ -119,30 +44,8 @@ function Appcopy() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
-  
-  // 🔧 dataLoaded 초기값을 sessionStorage 기반으로 설정
-  const [dataLoaded, setDataLoaded] = useState(() => {
-    const currentUser = sessionStorage.getItem('currentUser');
-    const userType = sessionStorage.getItem('userType');
-    const isAdmin = userType === 'admin' || ADMIN_USERS.includes(currentUser);
-    
-    // 관리자이거나 로그인되지 않은 경우 즉시 완료로 처리
-    const initialDataLoaded = !currentUser || isAdmin;
-    
-    console.log('🚀 dataLoaded 초기값 설정:', {
-      currentUser,
-      userType,
-      isAdmin,
-      initialDataLoaded
-    });
-    
-    return initialDataLoaded;
-  });
-  
+  const [dataLoaded, setDataLoaded] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
-  
-  // 🔧 새로 추가: 초기 로딩 상태 분리
-  const [isInitializing, setIsInitializing] = useState(true);
 
   // 🔧 서버 저장 상태 관리 (무한동기화 방지 강화)
   const isSavingRef = useRef(false);
@@ -382,60 +285,40 @@ function Appcopy() {
     }
   }, [getAllUsersFromServer, getUserData]);
 
-  // ✨ 🔧 디버깅 강화된 사용자 데이터 로드 함수 (서버 기반 + 완료 보장 + 강화된 에러 처리)
+  // ✨ 개선된 사용자 데이터 로드 함수 (서버 기반)
   const loadCurrentUserData = useCallback(async (nickname) => {
-    let debugStep = 0;
-    console.log(`📦 [LOAD STEP ${++debugStep}] loadCurrentUserData 함수 진입:`, nickname);
+    if (!nickname) return;
     
-    if (!nickname) {
-      console.warn(`⚠️ [LOAD STEP ${++debugStep}] nickname 없음 - 데이터 로딩 스킵`);
+    console.log('📦 서버 기반 데이터 로딩 시작:', nickname);
+    
+    // 먼저 관리자 여부를 확인
+    const isUserAdmin = checkIsAdmin(nickname);
+    console.log('👑 관리자 체크 결과:', { nickname, isUserAdmin });
+    
+    // 관리자인 경우
+    if (isUserAdmin) {
+      console.log('👑 관리자 로그인 - 데이터 로딩 스킵');
+      setIsAdmin(true);
       setDataLoaded(true);
       return;
     }
     
-    console.log(`📦 [LOAD STEP ${++debugStep}] 서버 기반 데이터 로딩 시작:`, nickname);
+    // 일반 사용자 데이터 로딩
+    setIsAdmin(false);
+    console.log('📦 일반 사용자 서버 데이터 로딩 시작:', nickname);
     
     try {
-      console.log(`🔍 [LOAD STEP ${++debugStep}] 관리자 체크 시작`);
-      // 먼저 관리자 여부를 확인
-      const isUserAdmin = checkIsAdmin(nickname);
-      console.log(`👑 [LOAD STEP ${++debugStep}] 관리자 체크 결과:`, { nickname, isUserAdmin });
-      
-      // 관리자인 경우
-      if (isUserAdmin) {
-        console.log(`👑 [LOAD STEP ${++debugStep}] 관리자 로그인 - 데이터 로딩 스킵`);
-        setIsAdmin(true);
-        console.log(`👑 [LOAD STEP ${++debugStep}] 관리자 상태 설정 완료 - 함수 종료`);
-        return; // 함수 종료 - finally에서 setDataLoaded(true) 실행됨
-      }
-      
-      console.log(`👤 [LOAD STEP ${++debugStep}] 일반 사용자 처리 시작`);
-      // 일반 사용자 데이터 로딩
-      setIsAdmin(false);
-      console.log(`📦 [LOAD STEP ${++debugStep}] 일반 사용자 서버 데이터 로딩 시작:`, nickname);
-      
-      console.log(`🌐 [LOAD STEP ${++debugStep}] loadUserDataFromServer 호출 직전`);
       // 서버에서 데이터 로드
       const userData = await loadUserDataFromServer(nickname);
-      console.log(`🌐 [LOAD STEP ${++debugStep}] loadUserDataFromServer 호출 완료:`, userData ? '데이터 있음' : '데이터 없음');
       
       if (userData) {
         // 서버 데이터가 있는 경우
-        console.log(`✅ [LOAD STEP ${++debugStep}] 서버 데이터 적용 시작`);
-        
-        // 🔧 상태 업데이트를 순차적으로 진행
-        console.log(`📝 [LOAD STEP ${++debugStep}] 상태 업데이트 시작 - schedules`);
         setSchedules(userData.schedules || []);
-        console.log(`📝 [LOAD STEP ${++debugStep}] 상태 업데이트 - tags`);
         setTags(userData.tags || []);
-        console.log(`📝 [LOAD STEP ${++debugStep}] 상태 업데이트 - tagItems`);
         setTagItems(userData.tagItems || []);
-        console.log(`📝 [LOAD STEP ${++debugStep}] 상태 업데이트 - monthlyPlans`);
         setMonthlyPlans(userData.monthlyPlans || []);
-        console.log(`📝 [LOAD STEP ${++debugStep}] 상태 업데이트 - monthlyGoals`);
         setMonthlyGoals(userData.monthlyGoals || []);
         
-        console.log(`🔧 [LOAD STEP ${++debugStep}] 데이터 해시 설정 시작`);
         // ✅ 초기 데이터 해시 설정
         prevDataRef.current = {
           schedules: userData.schedules || [],
@@ -445,16 +328,7 @@ function Appcopy() {
           monthlyGoals: userData.monthlyGoals || []
         };
         
-        // 초기 데이터 해시 설정
-        lastSaveDataRef.current = generateDataHash(
-          userData.schedules || [],
-          userData.tags || [],
-          userData.tagItems || [],
-          userData.monthlyPlans || [],
-          userData.monthlyGoals || []
-        );
-        
-        console.log(`✅ [LOAD STEP ${++debugStep}] 서버 데이터 로딩 완료:`, {
+        console.log('✅ 서버 데이터 로딩 완료:', {
           nickname,
           schedulesCount: userData.schedules?.length || 0,
           tagsCount: userData.tags?.length || 0,
@@ -464,7 +338,7 @@ function Appcopy() {
         });
       } else {
         // 서버에 데이터가 없는 경우 - 신규 사용자
-        console.log(`🆕 [LOAD STEP ${++debugStep}] 신규 사용자 - 기본 데이터 구조 생성:`, nickname);
+        console.log('🆕 신규 사용자 - 기본 데이터 구조 생성:', nickname);
         
         const defaultTags = [
           { tagType: '공부', color: { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' } },
@@ -485,7 +359,6 @@ function Appcopy() {
           { tagType: '업무', tagName: '프로젝트' }
         ];
         
-        console.log(`📝 [LOAD STEP ${++debugStep}] 신규 사용자 기본 데이터 설정 시작`);
         // 신규 사용자 기본 데이터 설정
         setSchedules([]);
         setTags(defaultTags);
@@ -493,7 +366,6 @@ function Appcopy() {
         setMonthlyPlans([]);
         setMonthlyGoals([]);
         
-        console.log(`🔧 [LOAD STEP ${++debugStep}] 신규 사용자 데이터 해시 설정`);
         // ✅ 초기 데이터 해시 설정
         prevDataRef.current = {
           schedules: [],
@@ -503,45 +375,35 @@ function Appcopy() {
           monthlyGoals: []
         };
         
-        // 초기 데이터 해시 설정
-        lastSaveDataRef.current = generateDataHash(
-          [],
-          defaultTags,
-          defaultTagItems,
-          [],
-          []
-        );
+        // 기본 데이터를 서버에 저장
+        const initialData = {
+          schedules: [],
+          tags: defaultTags,
+          tagItems: defaultTagItems,
+          monthlyPlans: [],
+          monthlyGoals: []
+        };
         
-        console.log(`💾 [LOAD STEP ${++debugStep}] 기본 데이터 서버 저장 시도 (비차단)`);
-        // 기본 데이터를 서버에 저장 (비동기, 실패해도 진행)
-        try {
-          const initialData = {
-            schedules: [],
-            tags: defaultTags,
-            tagItems: defaultTagItems,
-            monthlyPlans: [],
-            monthlyGoals: []
-          };
-          
-          const saveResult = await saveUserDataToDAL(nickname, initialData);
-          if (saveResult.success) {
-            console.log(`💾 [LOAD STEP ${++debugStep}] 신규 사용자 기본 데이터 서버 저장 완료`);
-          } else {
-            console.warn(`⚠️ [LOAD STEP ${++debugStep}] 기본 데이터 저장 실패 (진행 계속):`, saveResult.error);
-          }
-        } catch (saveError) {
-          console.warn(`⚠️ [LOAD STEP ${++debugStep}] 기본 데이터 저장 중 오류 (진행 계속):`, saveError);
+        const saveResult = await saveUserDataToDAL(nickname, initialData);
+        if (saveResult.success) {
+          console.log('💾 신규 사용자 기본 데이터 서버 저장 완료');
         }
       }
       
-      console.log(`⏰ [LOAD STEP ${++debugStep}] 동기화 시간 설정`);
+      // 초기 데이터 해시 설정
+      lastSaveDataRef.current = generateDataHash(
+        schedules,
+        tags,
+        tagItems,
+        monthlyPlans,
+        monthlyGoals
+      );
+      
       setLastSyncTime(new Date());
-      console.log(`✅ [LOAD STEP ${++debugStep}] loadCurrentUserData try 블록 성공 완료`);
       
     } catch (error) {
-      console.error(`❌ [LOAD STEP ${++debugStep}] 서버 데이터 로딩 실패:`, error);
+      console.error('❌ 서버 데이터 로딩 실패:', error);
       
-      console.log(`🔄 [LOAD STEP ${++debugStep}] 실패 시 빈 상태로 초기화`);
       // 실패 시 빈 상태로 초기화
       setSchedules([]);
       setTags([]);
@@ -556,107 +418,38 @@ function Appcopy() {
         monthlyPlans: [],
         monthlyGoals: []
       };
-    } finally {
-      // 🔧 중요: 무조건 데이터 로딩 완료 표시
-      console.log(`🎯 [LOAD STEP ${++debugStep}] loadCurrentUserData 최종 단계 - 데이터 로딩 완료 플래그 설정`);
-      setDataLoaded(true);
-      console.log(`🏁 [LOAD STEP ${++debugStep}] loadCurrentUserData 함수 완전 종료`);
     }
+    
+    setDataLoaded(true);
   }, [checkIsAdmin, loadUserDataFromServer, generateDataHash]);
 
-  // ✨ 🔧 강제 완료 플래그 확인 및 적용
+  // ✨ 개선된 로그인 상태 확인 (세션 기반)
   useEffect(() => {
-    const forceFlag = sessionStorage.getItem('forceDataLoaded');
-    if (forceFlag === 'true') {
-      console.log('🚀 강제 완료 플래그 감지 - 즉시 완료 처리');
-      setDataLoaded(true);
-      setIsLoading(false);
-      setIsInitializing(false);
-      // 플래그 제거
-      sessionStorage.removeItem('forceDataLoaded');
-    }
-  }, []);
-
-  // ✨ 🔧 디버깅 강화된 로그인 상태 확인 (세션 기반 + 완료 보장 + 타임아웃)
-  useEffect(() => {
-    let debugStep = 0;
-    
     const checkLoginStatus = async () => {
-      console.log(`🔐 [STEP ${++debugStep}] 로그인 상태 확인 시작 (세션 기반)`);
+      console.log('🔐 로그인 상태 확인 시작 (세션 기반)');
       
-      // 🔧 안전장치: 3초 후 강제 완료 (빠른 테스트)
-      const safetyTimeout = setTimeout(() => {
-        console.warn(`⚠️ [STEP ${++debugStep}] 로딩 타임아웃 - 강제 완료`);
+      const currentUser = sessionStorage.getItem('currentUser');
+      const userType = sessionStorage.getItem('userType');
+      
+      console.log('🔐 저장된 세션 정보:', { currentUser, userType });
+      
+      if (currentUser) {
+        setIsLoggedIn(true);
+        setCurrentUser(currentUser);
+        
+        // 데이터 로딩을 완전히 완료한 후에만 다음 단계로
+        await loadCurrentUserData(currentUser);
+        console.log('✅ 서버 기반 모든 초기화 완료');
+      } else {
+        console.log('❌ 세션 정보 없음');
+        setIsLoading(false);
         setDataLoaded(true);
-        setIsLoading(false);
-        setIsInitializing(false);
-      }, 3000); // 3초로 단축
-      
-      try {
-        console.log(`📍 [STEP ${++debugStep}] 세션 스토리지 확인 중...`);
-        const currentUser = sessionStorage.getItem('currentUser');
-        const userType = sessionStorage.getItem('userType');
-        
-        console.log(`🔐 [STEP ${++debugStep}] 저장된 세션 정보:`, { currentUser, userType });
-        
-        if (currentUser) {
-          console.log(`👤 [STEP ${++debugStep}] 사용자 발견 - 로그인 상태 설정`);
-          // 로그인 상태 먼저 설정
-          setIsLoggedIn(true);
-          setCurrentUser(currentUser);
-          
-          // 🔧 관리자인 경우 데이터 로딩 스킵
-          const isUserAdmin = userType === 'admin' || ADMIN_USERS.includes(currentUser);
-          if (isUserAdmin) {
-            console.log(`👑 [STEP ${++debugStep}] 관리자 확인 - 데이터 로딩 스킵`);
-            setIsAdmin(true);
-            setDataLoaded(true);
-          } else {
-            console.log(`📦 [STEP ${++debugStep}] 일반 사용자 - 데이터 로딩 시작...`);
-            
-            console.log(`🚀 [STEP ${++debugStep}] loadCurrentUserData 호출 직전`);
-            await loadCurrentUserData(currentUser);
-            console.log(`✅ [STEP ${++debugStep}] loadCurrentUserData 호출 완료`);
-          }
-          
-          console.log(`✅ [STEP ${++debugStep}] 서버 기반 모든 초기화 완료`);
-        } else {
-          console.log(`❌ [STEP ${++debugStep}] 세션 정보 없음 - 로그인 페이지로`);
-          setDataLoaded(true); // 로그인 안 된 상태도 완료로 처리
-        }
-      } catch (error) {
-        console.error(`❌ [STEP ${++debugStep}] 초기화 중 오류:`, error);
-        setDataLoaded(true); // 오류 발생 시에도 완료로 처리
-      } finally {
-        // 타임아웃 해제
-        clearTimeout(safetyTimeout);
-        
-        // 🔧 중요: 무조건 로딩 완료 처리
-        console.log(`🎯 [STEP ${++debugStep}] 초기화 최종 단계 - 로딩 상태 해제`);
-        setIsLoading(false);
-        setIsInitializing(false);
-        
-        console.log(`🏁 [STEP ${++debugStep}] checkLoginStatus 함수 완전 종료`);
       }
+      
+      setIsLoading(false);
     };
     
-    console.log(`🎬 [STEP ${++debugStep}] useEffect 시작 - checkLoginStatus 호출`);
-    checkLoginStatus()
-      .then(() => {
-        console.log(`🎉 [STEP ${++debugStep}] checkLoginStatus Promise 완료`);
-      })
-      .catch((error) => {
-        console.error(`💥 [STEP ${++debugStep}] checkLoginStatus Promise 에러:`, error);
-        // 에러 발생시에도 강제 완료
-        setDataLoaded(true);
-        setIsLoading(false);
-        setIsInitializing(false);
-      });
-    
-    // 클린업 함수도 로그 추가
-    return () => {
-      console.log(`🧹 [CLEANUP] useEffect 클린업 실행`);
-    };
+    checkLoginStatus();
   }, [loadCurrentUserData]);
 
   // ✅ 개선된 자동 저장 로직 (무한 루프 방지 강화)
@@ -745,7 +538,6 @@ function Appcopy() {
     setIsAdmin(false);
     setDataLoaded(false);
     setIsLoading(false);
-    setIsInitializing(false);
     setLastSyncTime(null);
     
     // 플래그 초기화
@@ -773,8 +565,8 @@ function Appcopy() {
     };
   }, []);
 
-  // ✨ 🔧 개선된 로딩 화면 (서버 기반 + 초기화 상태 체크 + 강제 진행)
-  if (isInitializing || isLoading || !dataLoaded) {
+  // ✨ 개선된 로딩 화면 (서버 기반)
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
@@ -792,9 +584,6 @@ function Appcopy() {
                 <div>📅 일정 데이터 로딩...</div>
                 <div>🏷️ 태그 설정 확인...</div>
                 <div>📊 월간 계획 불러오기...</div>
-                <div className="text-blue-600 mt-2">
-                  🔄 데이터 로딩 완료 후 자동으로 이동합니다
-                </div>
               </div>
             )}
             {lastSyncTime && (
@@ -802,21 +591,6 @@ function Appcopy() {
                 마지막 동기화: {lastSyncTime.toLocaleTimeString('ko-KR')}
               </div>
             )}
-            
-            {/* 🔧 강제 진행 버튼 추가 */}
-            <div className="mt-4">
-              <button
-                onClick={() => {
-                  console.log('🚀 사용자가 강제 진행 요청');
-                  setDataLoaded(true);
-                  setIsLoading(false);
-                  setIsInitializing(false);
-                }}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-              >
-                로딩이 오래 걸리면 여기를 클릭하세요
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -828,7 +602,7 @@ function Appcopy() {
       <Routes>
         <Route path="/login" element={<LogInPage />} />
         
-        {/* ✨ 🔧 개선된 루트 라우팅 (세션 기반 + 데이터 로딩 완료 확인) */}
+        {/* ✨ 개선된 루트 라우팅 (세션 기반) */}
         <Route
           path="/"
           element={(() => {
@@ -841,11 +615,10 @@ function Appcopy() {
             const userType = sessionStorage.getItem('userType');
             const isDirectAdmin = userType === 'admin' || ADMIN_USERS.includes(currentUser);
             
-            console.log('🏠 루트 라우팅 (세션 기반 + 데이터 완료):', {
+            console.log('🏠 루트 라우팅 (세션 기반):', {
               currentUser,
               userType,
               isDirectAdmin,
-              dataLoaded,
               targetRoute: isDirectAdmin ? '/admin' : '/calendar'
             });
             
@@ -883,37 +656,25 @@ function Appcopy() {
           }
         />
 
-        {/* ✅ 🔧 개선된 보호된 라우트: 데이터 로딩 완료까지 대기 + 디버깅 */}
+        {/* ✅ 기존 구조 유지: App.jsx에서 props로 데이터 전달 */}
         <Route
           path="/calendar"
           element={
-            <ProtectedRoute dataLoaded={dataLoaded}>
-              {(() => {
-                console.log('📅 CalendarPage 렌더링 시점 상태:', {
-                  dataLoaded,
-                  isLoading,
-                  isInitializing,
-                  currentUser,
-                  schedulesCount: schedules?.length || 0
-                });
-                
-                return (
-                  <CalendarPage
-                    schedules={schedules}
-                    setSchedules={updateSchedules}
-                    tags={tags}
-                    setTags={updateTags}
-                    tagItems={tagItems}
-                    setTagItems={updateTagItems}
-                    monthlyGoals={monthlyGoals}
-                    setMonthlyGoals={updateMonthlyGoals}
-                    currentUser={currentUser}
-                    onLogout={handleLogout}
-                    lastSyncTime={lastSyncTime}
-                    isServerBased={true}
-                  />
-                );
-              })()}
+            <ProtectedRoute>
+              <CalendarPage
+                schedules={schedules}
+                setSchedules={updateSchedules}
+                tags={tags}
+                setTags={updateTags}
+                tagItems={tagItems}
+                setTagItems={updateTagItems}
+                monthlyGoals={monthlyGoals}
+                setMonthlyGoals={updateMonthlyGoals}
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                lastSyncTime={lastSyncTime}
+                isServerBased={true}
+              />
             </ProtectedRoute>
           }
         />
@@ -921,7 +682,7 @@ function Appcopy() {
         <Route
           path="/day/:date"
           element={
-            <ProtectedRoute dataLoaded={dataLoaded}>
+            <ProtectedRoute>
               <DayDetailPagecopy
                 schedules={schedules}
                 setSchedules={updateSchedules}
@@ -941,7 +702,7 @@ function Appcopy() {
         <Route
           path="/monthly-plan"
           element={
-            <ProtectedRoute dataLoaded={dataLoaded}>
+            <ProtectedRoute>
               <MonthlyPlanPage
                 schedules={schedules}
                 setSchedules={updateSchedules}
