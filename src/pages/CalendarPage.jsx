@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { 
   saveUserDataToDAL, 
@@ -213,12 +213,25 @@ const CalendarPage = ({
 }) => {
   const navigate = useNavigate();
 
-  // ✅ 현재 날짜를 useMemo로 최적화
-  const currentDate = useMemo(() => new Date(), []);
+  // ✅ 현재 날짜를 상태로 관리 (월 네비게이션을 위해)
+  const [currentDate, setCurrentDate] = useState(new Date());
 
   // 로딩 상태만 로컬에서 관리
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // ✅ 월 네비게이션 함수들
+  const goToPreviousMonth = useCallback(() => {
+    setCurrentDate(prevDate => subMonths(prevDate, 1));
+  }, []);
+
+  const goToNextMonth = useCallback(() => {
+    setCurrentDate(prevDate => addMonths(prevDate, 1));
+  }, []);
+
+  const goToCurrentMonth = useCallback(() => {
+    setCurrentDate(new Date());
+  }, []);
 
   // ✅ 서버 태그 색상을 우선 사용하고, 없으면 기본 색상 생성하는 함수
   const getTagColor = useCallback((tagType) => {
@@ -359,6 +372,9 @@ const CalendarPage = ({
     if (hours === 0) return `${minutes}m`;
     return `${hours}h${minutes}m`;
   }, [currentMonthSchedules]);
+
+  // ✅ 오늘 날짜인지 확인 - useMemo로 최적화
+  const today = useMemo(() => new Date(), []);
 
   // ✅ 디버깅 정보 출력
   React.useEffect(() => {
@@ -503,10 +519,46 @@ const CalendarPage = ({
         )}
       </div>
       
-      {/* 캘린더 */}
+      {/* ✅ 캘린더 - 월 네비게이션 추가 */}
       <div className="bg-white rounded-lg shadow-lg overflow-hidden">
         <div className="bg-gray-50 p-4 border-b">
-          <h2 className="text-xl font-semibold text-gray-700">캘린더</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-gray-700">캘린더</h2>
+            
+            {/* ✅ 월 네비게이션 버튼들 */}
+            <div className="flex items-center gap-4">
+              {/* 이전 달 버튼 */}
+              <button
+                onClick={goToPreviousMonth}
+                className="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-600 hover:text-gray-800 transition-colors"
+                title="이전 달"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              
+              {/* 현재 월 표시 및 오늘로 가기 버튼 */}
+              <button
+                onClick={goToCurrentMonth}
+                className="px-4 py-2 text-lg font-semibold text-gray-700 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                title="오늘로 가기"
+              >
+                {format(currentDate, 'yyyy년 M월')}
+              </button>
+              
+              {/* 다음 달 버튼 */}
+              <button
+                onClick={goToNextMonth}
+                className="flex items-center justify-center w-10 h-10 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-600 hover:text-gray-800 transition-colors"
+                title="다음 달"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
         
         {/* 요일 헤더 */}
@@ -523,7 +575,7 @@ const CalendarPage = ({
         {/* 날짜 그리드 */}
         <div className="grid grid-cols-7">
           {days.map((day, index) => {
-            const isToday = format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+            const isToday = format(day, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd');
             const isWeekend = index % 7 === 0 || index % 7 === 6;
             const dateStr = format(day, 'yyyy-MM-dd');
             const daySchedules = (schedules || []).filter(schedule => schedule.date === dateStr);
