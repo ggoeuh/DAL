@@ -14,26 +14,35 @@ import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './pages/utils/
 // ✨ 관리자 목록 상수 (LogInPage와 동일하게 유지)
 const ADMIN_USERS = ['교수님', 'admin', '관리자'];
 
-// 🔧 개선된 보호된 라우트 컴포넌트 (데이터 로딩 상태 체크)
+// 🔧 개선된 보호된 라우트 컴포넌트 (데이터 로딩 상태 체크 + 강화된 디버깅)
 const ProtectedRoute = ({ children, dataLoaded }) => {
   const currentUser = sessionStorage.getItem('currentUser');
   const userType = sessionStorage.getItem('userType');
   const isAdmin = userType === 'admin' || ADMIN_USERS.includes(currentUser);
   
-  console.log('🛡️ ProtectedRoute 체크:', { currentUser, dataLoaded, isAdmin });
+  console.log('🛡️ ProtectedRoute 체크:', { 
+    currentUser, 
+    dataLoaded, 
+    isAdmin,
+    userType,
+    timestamp: new Date().toISOString()
+  });
   
   // 로그인되지 않은 경우
   if (!currentUser) {
+    console.log('🚫 ProtectedRoute: 로그인 안됨 - /login으로 리다이렉트');
     return <Navigate to="/login" replace />;
   }
   
   // 관리자인 경우 데이터 로딩 완료 여부와 상관없이 진행
   if (isAdmin) {
+    console.log('👑 ProtectedRoute: 관리자 - 즉시 통과');
     return children;
   }
   
   // 일반 사용자인 경우 데이터 로딩 완료까지 대기
   if (!dataLoaded) {
+    console.log('⏳ ProtectedRoute: 데이터 로딩 미완료 - 로딩 화면 표시');
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
@@ -48,12 +57,27 @@ const ProtectedRoute = ({ children, dataLoaded }) => {
               <div>🏷️ 태그 설정 확인...</div>
               <div>📊 월간 계획 동기화...</div>
             </div>
+            
+            {/* 🔧 여기서도 강제 진행 버튼 */}
+            <div className="mt-4">
+              <button
+                onClick={() => {
+                  console.log('🚀 ProtectedRoute에서 강제 진행 요청');
+                  // 부모 컴포넌트의 상태를 직접 변경할 수 없으므로 새로고침으로 해결
+                  window.location.reload();
+                }}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+              >
+                데이터 로딩이 완료되었는데 안 넘어가면 클릭하세요
+              </button>
+            </div>
           </div>
         </div>
       </div>
     );
   }
   
+  console.log('✅ ProtectedRoute: 모든 조건 통과 - 컴포넌트 렌더링');
   return children;
 };
 
@@ -696,8 +720,8 @@ function Appcopy() {
     };
   }, []);
 
-  // ✨ 🔧 개선된 로딩 화면 (서버 기반 + 초기화 상태 체크)
-  if (isInitializing || isLoading) {
+  // ✨ 🔧 개선된 로딩 화면 (서버 기반 + 초기화 상태 체크 + 강제 진행)
+  if (isInitializing || isLoading || !dataLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
@@ -725,6 +749,21 @@ function Appcopy() {
                 마지막 동기화: {lastSyncTime.toLocaleTimeString('ko-KR')}
               </div>
             )}
+            
+            {/* 🔧 강제 진행 버튼 추가 */}
+            <div className="mt-4">
+              <button
+                onClick={() => {
+                  console.log('🚀 사용자가 강제 진행 요청');
+                  setDataLoaded(true);
+                  setIsLoading(false);
+                  setIsInitializing(false);
+                }}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+              >
+                로딩이 오래 걸리면 여기를 클릭하세요
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -791,25 +830,37 @@ function Appcopy() {
           }
         />
 
-        {/* ✅ 🔧 개선된 보호된 라우트: 데이터 로딩 완료까지 대기 */}
+        {/* ✅ 🔧 개선된 보호된 라우트: 데이터 로딩 완료까지 대기 + 디버깅 */}
         <Route
           path="/calendar"
           element={
             <ProtectedRoute dataLoaded={dataLoaded}>
-              <CalendarPage
-                schedules={schedules}
-                setSchedules={updateSchedules}
-                tags={tags}
-                setTags={updateTags}
-                tagItems={tagItems}
-                setTagItems={updateTagItems}
-                monthlyGoals={monthlyGoals}
-                setMonthlyGoals={updateMonthlyGoals}
-                currentUser={currentUser}
-                onLogout={handleLogout}
-                lastSyncTime={lastSyncTime}
-                isServerBased={true}
-              />
+              {(() => {
+                console.log('📅 CalendarPage 렌더링 시점 상태:', {
+                  dataLoaded,
+                  isLoading,
+                  isInitializing,
+                  currentUser,
+                  schedulesCount: schedules?.length || 0
+                });
+                
+                return (
+                  <CalendarPage
+                    schedules={schedules}
+                    setSchedules={updateSchedules}
+                    tags={tags}
+                    setTags={updateTags}
+                    tagItems={tagItems}
+                    setTagItems={updateTagItems}
+                    monthlyGoals={monthlyGoals}
+                    setMonthlyGoals={updateMonthlyGoals}
+                    currentUser={currentUser}
+                    onLogout={handleLogout}
+                    lastSyncTime={lastSyncTime}
+                    isServerBased={true}
+                  />
+                );
+              })()}
             </ProtectedRoute>
           }
         />
