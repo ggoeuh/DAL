@@ -99,8 +99,12 @@ const TagSummary = React.memo(({ tagTotals, getTagColor }) => {
   );
 });
 
-// 🔧 요일 선택 컴포넌트 추가
+// 🔧 요일 선택 컴포넌트 수정 - DAYS_OF_WEEK 기본값 추가
 const WeekdaySelector = React.memo(({ form, setForm, handleWeekdaySelect, DAYS_OF_WEEK }) => {
+  // 🔧 DAYS_OF_WEEK가 없거나 빈 배열인 경우 기본값 사용
+  const defaultDaysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const daysToUse = (DAYS_OF_WEEK && DAYS_OF_WEEK.length > 0) ? DAYS_OF_WEEK : defaultDaysOfWeek;
+  
   const WEEKDAY_NAMES = {
     'Sunday': '일',
     'Monday': '월', 
@@ -111,11 +115,15 @@ const WeekdaySelector = React.memo(({ form, setForm, handleWeekdaySelect, DAYS_O
     'Saturday': '토'
   };
 
+  // 🔍 디버깅 로그
+  console.log('🔍 WeekdaySelector - DAYS_OF_WEEK:', DAYS_OF_WEEK);
+  console.log('🔍 WeekdaySelector - daysToUse:', daysToUse);
+
   return (
     <div className="mb-3">
       <h3 className="font-medium mb-2">반복 요일 선택</h3>
       <div className="grid grid-cols-7 gap-1 mb-2">
-        {DAYS_OF_WEEK.map(weekday => (
+        {daysToUse.map(weekday => (
           <button
             key={weekday}
             onClick={() => handleWeekdaySelect(weekday)}
@@ -125,13 +133,13 @@ const WeekdaySelector = React.memo(({ form, setForm, handleWeekdaySelect, DAYS_O
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            {WEEKDAY_NAMES[weekday]}
+            {WEEKDAY_NAMES[weekday] || weekday}
           </button>
         ))}
       </div>
       <div className="text-xs text-gray-500">
         {form.weekdays?.length > 0 
-          ? `선택된 요일: ${form.weekdays.map(day => WEEKDAY_NAMES[day]).join(', ')}`
+          ? `선택된 요일: ${form.weekdays.map(day => WEEKDAY_NAMES[day] || day).join(', ')}`
           : '선택된 요일이 없으면 현재 요일에만 추가됩니다'
         }
       </div>
@@ -878,12 +886,12 @@ export const WeeklyCalendarUI = ({
                   onChange={(e) => formHandlers.setDescription(e.target.value)}
                 ></textarea>
                 
-                {/* 🔧 새로 추가: 요일 선택 */}
+                {/* 🔧 새로 추가: 요일 선택 - DAYS_OF_WEEK 확인 및 전달 */}
                 <WeekdaySelector 
                   form={form}
                   setForm={setForm}
                   handleWeekdaySelect={handleWeekdaySelect}
-                  DAYS_OF_WEEK={DAYS_OF_WEEK}
+                  DAYS_OF_WEEK={DAYS_OF_WEEK || ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']}
                 />
                 
                 {/* 🔧 새로 추가: 반복 설정 */}
