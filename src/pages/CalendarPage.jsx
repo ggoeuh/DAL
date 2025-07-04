@@ -234,20 +234,213 @@ const CalendarPage = ({
   }, []);
 
   // ✅ 서버 태그 색상을 우선 사용하고, 없으면 기본 색상 생성하는 함수
+  // 🎨 정의된 태그(tagItems에 있는 태그)에 자동으로 색상 할당하는 로직
+
   const getTagColor = useCallback((tagType) => {
-    // 1. 서버에서 받아온 태그 색상 정보 확인
+    // 1. 서버에서 받아온 태그 색상 정보 확인 (기존 로직)
     const serverTag = tags?.find(t => t.tagType === tagType);
     if (serverTag && serverTag.color) {
       console.log(`🎨 서버에서 받은 색상 사용: ${tagType}`, serverTag.color);
       return serverTag.color;
     }
     
-    // 2. 서버에 색상 정보가 없으면 기본 색상 할당
+    // 2. ✨ 새로운 로직: tagItems에 정의된 태그인지 확인
+    const isDefinedTag = tagItems?.some(item => item.tagType === tagType);
+    
+    if (isDefinedTag) {
+      // 정의된 태그라면 서버에 색상이 없어도 자동으로 색상 할당
+      console.log(`🎯 정의된 태그 발견: ${tagType}, 자동 색상 할당 중...`);
+      
+      // 이미 사용된 색상들 확인
+      const usedColors = tags?.map(t => t.color?.bg).filter(Boolean) || [];
+      
+      // 사용되지 않은 색상 찾기
+      const availableColors = PASTEL_COLORS.filter(
+        color => !usedColors.includes(color.bg)
+      );
+      
+      let assignedColor;
+      if (availableColors.length > 0) {
+        // 사용 가능한 색상이 있으면 첫 번째 사용
+        assignedColor = availableColors[0];
+      } else {
+        // 모든 색상이 사용되었으면 tagType 해시로 색상 선택
+        const hash = tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        assignedColor = PASTEL_COLORS[Math.abs(hash) % PASTEL_COLORS.length];
+      }
+      
+      console.log(`🎨 정의된 태그 자동 색상 할당: ${tagType}`, assignedColor);
+      
+      // 🔄 서버에 즉시 저장 (비동기로 백그라운드에서)
+      saveTagColorToServer(tagType, assignedColor);
+      
+      return assignedColor;
+    }
+    
+    // 3. 정의되지 않은 태그는 기본 회색 (기존 로직)
     const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
     const defaultColor = PASTEL_COLORS[index];
-    console.log(`🎨 기본 색상 사용: ${tagType}`, defaultColor);
+    console.log(`🎨 정의되지 않은 태그, 기본 색상 사용: ${tagType}`, defaultColor);
     return defaultColor;
-  }, [tags]);
+  }, [tags, tagItems]);
+  
+  // 🔄 서버에 태그 색상을 저장하는 함수
+  const saveTagColorToServer = useCallback(async (tagType, color) => {
+    try {
+      console.log(`💾 서버에 태그 색상 저장 시작: ${tagType}`, color);
+      
+      // 현재 tags 배열에 새 태그 추가
+      const updatedTags = [...(tags || [])];
+      const existingIndex = updatedTags.findIndex(t => t.tagType === tagType);
+      
+      if (existingIndex >= 0) {
+        // 기존 태그 업데이트
+        updatedTags[existingIndex] = { ...updatedTags[existingIndex], color };
+      } else {
+        // 새 태그 추가
+        updatedTags.push({ tagType, color });
+      }
+      
+      // 로컬 상태 즉시 업데이트
+      if (setTags) {
+        setTags(updatedTags);
+      }
+      
+      // 서버 저장 (비동기)
+      if (currentUser) {
+        // saveUserDataToDAL 함수를 사용하여 전체 데이터 저장
+        const userData = {
+          schedules: schedules || [],
+          tags: updatedTags,
+          tagItems: tagItems || [],
+          monthlyGoals: monthlyGoals || []
+        };
+        
+        const result = await saveUserDataToDAL(currentUser, userData);
+        if (result.success) {
+          console.log(`✅ 태그 색상 서버 저장 성공: ${tagType}`);
+        } else {
+          console.warn(`⚠️ 태그 색상 서버 저장 실패: ${tagType}`, result.error);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ 태그 색상 저장 중 오류: ${tagType}`, error);
+    }
+  }, [tags, setTags, schedules, tagItems, monthlyGoals, currentUser]);
+  
+  // 🔧 모든 정의된 태그에 색상을 일괄 할당하는 함수
+  const assignColorsToAllDefinedTags = useCallback(async () => {
+    console.log('🎨 모든 정의된 태그에 색상 일괄 할당 시작');
+    
+    if (!tagItems || tagItems.length === 0) {
+      console.log('⚠️ 정의된 태그가 없습니다');
+      return;
+    }
+    
+    // 정의된 모든 tagType들 추출
+    const definedTagTypes = [...new Set(tagItems.map(item => item.tagType))];
+    console.log('🏷️ 정의된 태그 타입들:', definedTagTypes);
+    
+    // 현재 서버에 색상이 없는 태그들만 필터링
+    const tagsWithoutColors = definedTagTypes.filter(tagType => {
+      const serverTag = tags?.find(t => t.tagType === tagType);
+      return !serverTag || !serverTag.color;
+    });
+    
+    console.log('🎯 색상이 필요한 태그들:', tagsWithoutColors);
+    
+    if (tagsWithoutColors.length === 0) {
+      console.log('✅ 모든 정의된 태그에 이미 색상이 있습니다');
+      return;
+    }
+    
+    // 각 태그에 색상 할당
+    const updatedTags = [...(tags || [])];
+    const usedColors = new Set(updatedTags.map(t => t.color?.bg).filter(Boolean));
+    
+    tagsWithoutColors.forEach((tagType, index) => {
+      // 사용되지 않은 색상 찾기
+      let assignedColor;
+      const availableColors = PASTEL_COLORS.filter(color => !usedColors.has(color.bg));
+      
+      if (availableColors.length > 0) {
+        assignedColor = availableColors[0];
+        usedColors.add(assignedColor.bg);
+      } else {
+        // 모든 색상이 사용되었으면 순환
+        assignedColor = PASTEL_COLORS[index % PASTEL_COLORS.length];
+      }
+      
+      // 태그 목록에 추가
+      const existingIndex = updatedTags.findIndex(t => t.tagType === tagType);
+      if (existingIndex >= 0) {
+        updatedTags[existingIndex] = { ...updatedTags[existingIndex], color: assignedColor };
+      } else {
+        updatedTags.push({ tagType, color: assignedColor });
+      }
+      
+      console.log(`🎨 ${tagType} → ${assignedColor.bg}`);
+    });
+    
+    // 상태 업데이트
+    if (setTags) {
+      setTags(updatedTags);
+    }
+    
+    // 서버 저장
+    if (currentUser) {
+      const userData = {
+        schedules: schedules || [],
+        tags: updatedTags,
+        tagItems: tagItems || [],
+        monthlyGoals: monthlyGoals || []
+      };
+      
+      try {
+        const result = await saveUserDataToDAL(currentUser, userData);
+        if (result.success) {
+          console.log('✅ 모든 태그 색상 서버 저장 완료');
+        } else {
+          console.warn('⚠️ 서버 저장 실패:', result.error);
+        }
+      } catch (error) {
+        console.error('❌ 서버 저장 중 오류:', error);
+      }
+    }
+    
+    console.log(`🎨 총 ${tagsWithoutColors.length}개 태그에 색상 할당 완료`);
+  }, [tags, setTags, tagItems, schedules, monthlyGoals, currentUser]);
+  
+  // 🚀 컴포넌트 마운트 시 자동으로 정의된 태그들에 색상 할당
+  React.useEffect(() => {
+    // 데이터가 모두 로드되고 tagItems가 있을 때 실행
+    if (tagItems && tagItems.length > 0 && tags !== undefined) {
+      console.log('🔍 정의된 태그 색상 자동 할당 체크 시작');
+      
+      // 색상이 없는 정의된 태그가 있는지 확인
+      const definedTagTypes = [...new Set(tagItems.map(item => item.tagType))];
+      const tagsWithoutColors = definedTagTypes.filter(tagType => {
+        const serverTag = tags?.find(t => t.tagType === tagType);
+        return !serverTag || !serverTag.color;
+      });
+      
+      if (tagsWithoutColors.length > 0) {
+        console.log('🎯 색상이 없는 정의된 태그들 발견:', tagsWithoutColors);
+        
+        // 약간의 지연 후 자동 할당 (UI 로딩 완료 후)
+        setTimeout(() => {
+          assignColorsToAllDefinedTags();
+        }, 1000);
+      } else {
+        console.log('✅ 모든 정의된 태그에 색상이 이미 할당되어 있음');
+      }
+    }
+  }, [tagItems, tags, assignColorsToAllDefinedTags]);
+  
+  // 전역에서 접근 가능하도록 (개발/디버깅용)
+  if (typeof window !== 'undefined') {
+    window.assignColorsToAllDefinedTags = assignColorsToAllDefinedTags;
+  }
 
   // ✅ 수동 새로고침 함수 - useCallback으로 최적화
   const handleManualRefresh = useCallback(async () => {
