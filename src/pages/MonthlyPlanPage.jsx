@@ -679,41 +679,36 @@ const MonthlyPlan = ({
                                 className={`${colors.bg} ${colors.border} border rounded-lg p-3 relative cursor-pointer hover:shadow-md transition-shadow hover:bg-opacity-80`}
                                 onClick={(e) => {
                                   console.log('🖱️ 블럭 클릭됨:', item);
-                                  // 서버에서 불러온 실제 데이터인 경우에만 클릭 허용
-                                  if (item.id && !item.id.toString().startsWith('goal-')) {
-                                    handleBlockClick(item, e);
-                                  }
+                                  handleBlockClick(item, e);
                                 }}
                               >
-                                {/* 수정/삭제 버튼 - 서버에서 불러온 실제 계획들에만 표시 */}
-                                {item.id && !item.id.toString().startsWith('goal-') && (
-                                  <div className="absolute top-2 right-2 flex gap-1 z-10">
-                                    <button
-                                      onClick={(e) => {
-                                        console.log('✏️ 수정 버튼 클릭됨', item);
-                                        e.stopPropagation();
-                                        handleEditPlan(item, e);
-                                      }}
-                                      disabled={saving}
-                                      className="text-gray-600 hover:text-blue-600 text-xs bg-white rounded px-2 py-1 shadow-md disabled:opacity-50 border border-gray-200"
-                                      title="수정"
-                                    >
-                                      수정
-                                    </button>
-                                    <button
-                                      onClick={(e) => {
-                                        console.log('🗑️ 삭제 버튼 클릭됨', item);
-                                        e.stopPropagation();
-                                        handleDeleteSinglePlan(item.id, e);
-                                      }}
-                                      disabled={saving}
-                                      className="text-gray-600 hover:text-red-600 text-xs bg-white rounded px-2 py-1 shadow-md disabled:opacity-50 border border-gray-200"
-                                      title="삭제"
-                                    >
-                                      삭제
-                                    </button>
-                                  </div>
-                                )}
+                                {/* 무조건 모든 블럭에 수정/삭제 버튼 표시 */}
+                                <div className="absolute top-2 right-2 flex gap-1 z-20">
+                                  <button
+                                    onClick={(e) => {
+                                      console.log('✏️ 수정 버튼 클릭됨', item);
+                                      e.stopPropagation();
+                                      handleEditPlan(item, e);
+                                    }}
+                                    disabled={saving}
+                                    className="text-gray-600 hover:text-blue-600 text-xs bg-white rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-gray-300"
+                                    title="수정"
+                                  >
+                                    수정
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      console.log('🗑️ 삭제 버튼 클릭됨', item);
+                                      e.stopPropagation();
+                                      handleDeleteSinglePlan(item.id, e);
+                                    }}
+                                    disabled={saving}
+                                    className="text-gray-600 hover:text-red-600 text-xs bg-white rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-gray-300"
+                                    title="삭제"
+                                  >
+                                    삭제
+                                  </button>
+                                </div>
                                 
                                 <div className="flex justify-between items-center mb-2 pr-16">
                                   <span className={`font-medium ${colors.text}`}>{item.tag}</span>
