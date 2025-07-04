@@ -50,13 +50,10 @@ const MonthlyPlan = ({
   const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
   const safeMonthlyGoals = Array.isArray(monthlyGoals) ? monthlyGoals : [];
 
-  // ✅ 현재 선택된 월의 목표 가져오기 - 빈 배열로 수정
+  // ✅ 현재 선택된 월의 목표 가져오기
   const currentMonthGoals = useMemo(() => {
-    // 목표 자동 생성 비활성화 - 빈 배열 반환
-    return [];
-    
-    // const currentGoal = safeMonthlyGoals.find(goal => goal.month === currentMonthKey);
-    // return currentGoal?.goals || [];
+    const currentGoal = safeMonthlyGoals.find(goal => goal.month === currentMonthKey);
+    return currentGoal?.goals || [];
   }, [safeMonthlyGoals, currentMonthKey]);
 
   // ✅ 현재 선택된 월의 계획 가져오기
@@ -651,10 +648,14 @@ const MonthlyPlan = ({
               )}
             </div>
 
-            {/* 태그별 그룹화된 실제 계획들만 표시 */}
+            {/* 태그별 그룹화된 목표들 */}
             <div className="space-y-6">
               {Object.entries(getGroupedGoals).map(([tagType, goalItems]) => {
                 const colors = getTagColor(tagType);
+                const actualPlannedTime = currentMonthPlans
+                  .filter(plan => plan.tagType === tagType)
+                  .reduce((sum, plan) => sum + plan.estimatedTime, 0);
+                const targetHours = getTargetHoursForTagType(tagType);
 
                 return (
                   <div key={tagType} className="flex items-start space-x-4">
@@ -663,7 +664,7 @@ const MonthlyPlan = ({
                       <div className={`px-4 py-3 rounded-lg text-lg font-semibold text-left bg-white ${colors.text} w-full border-2 ${colors.border}`}>
                         <div className="font-bold">{tagType}</div>
                         <div className="text-sm mt-1 opacity-80">
-                          총: {goalItems.reduce((sum, item) => sum + item.estimatedTime, 0)}시간
+                          목표: {targetHours}시간
                         </div>
                       </div>
                     </div>
@@ -740,10 +741,10 @@ const MonthlyPlan = ({
               {Object.keys(getGroupedGoals).length === 0 && (
                 <div className="text-center py-12 text-gray-500">
                   <h3 className="text-xl font-medium mb-2">
-                    {format(currentDate, 'yyyy년 M월')}에 등록된 계획이 없습니다
+                    {format(currentDate, 'yyyy년 M월')}에 등록된 월간 계획이 없습니다
                   </h3>
                   <p className="text-sm mb-4">오른쪽 패널에서 새로운 계획을 추가해보세요!</p>
-                  <p className="text-xs text-gray-400">계획을 추가하면 이곳에 표시됩니다.</p>
+                  <p className="text-xs text-gray-400">모든 데이터는 Supabase 서버에 안전하게 저장됩니다.</p>
                 </div>
               )}
             </div>
