@@ -1,4 +1,4 @@
-// WeeklyCalendar.jsx - 드래그 앤 드롭 완전히 수정된 버전
+// WeeklyCalendar.jsx - 완성된 버전
 
 import React, { useCallback, useMemo, useEffect } from "react";
 import { useSearchParams, useParams, useLocation } from "react-router-dom";
@@ -295,7 +295,7 @@ const WeeklyCalendar = ({
     setCopyingSchedule(null);
   }, [copyingSchedule, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, checkScheduleOverlap, safeSchedules, addSchedule, setShowOverlapMessage, setCopyingSchedule]);
 
-  // 🔧 수정된 드래그 핸들러들 - 실시간 시각적 피드백 추가
+  // 🔧 수정된 드래그 핸들러들
   const handleDragStart = useCallback((e, scheduleId) => {
     console.log('🖱️ 드래그 시작:', scheduleId);
     
@@ -554,6 +554,90 @@ const WeeklyCalendar = ({
     setDragging(null);
     console.log('🏁 드래그 종료 완료');
   }, [calendarLogic.dragging, calendarLogic.dragOffset, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, updateSchedule, setDragging, getDayOfWeek]);
+
+  // ✅ 일정 추가 핸들러 (누락된 함수)
+  const handleAdd = useCallback(async () => {
+    if (!form.title || !startSlot || !form.end) {
+      alert('제목, 시작 시간, 종료 시간을 모두 입력해주세요.');
+      return;
+    }
+
+    const tagInfo = safeTagItems.find(
+      item => item.tagType === selectedTagType && item.tagName === form.tag
+    );
+
+    const focusedBaseDate = new Date(currentWeek[focusedDayIndex]);
+    
+    const baseSchedule = {
+      id: Date.now(),
+      date: focusedBaseDate.toISOString().split("T")[0],
+      start: startSlot,
+      end: form.end,
+      title: form.title,
+      description: form.description || "",
+      tag: form.tag,
+      tagType: tagInfo ? tagInfo.tagType : "",
+      done: false
+    };
+
+    const repeatCount = parseInt(form.repeatCount || "1");
+    const interval = parseInt(form.interval || "1");
+    
+    const selectedWeekdays = form.weekdays && form.weekdays.length > 0
+      ? form.weekdays
+      : [DAYS_OF_WEEK[focusedDayIndex]];
+
+    const newSchedules = [];
+
+    for (let week = 0; week < repeatCount; week++) {
+      for (const koreanWeekday of selectedWeekdays) {
+        const weekdayIndex = getDayIndexFromKoreanDay(koreanWeekday);
+        if (weekdayIndex === -1) continue;
+
+        const currentWeekDate = currentWeek[weekdayIndex];
+        const targetDate = new Date(currentWeekDate);
+        targetDate.setDate(currentWeekDate.getDate() + (week * 7 * interval));
+
+        const schedule = {
+          ...baseSchedule,
+          id: Date.now() + week * 10000 + weekdayIndex * 100 + Math.random() * 100,
+          date: targetDate.toISOString().split("T")[0],
+        };
+
+        if (checkScheduleOverlap(safeSchedules, schedule)) {
+          alert(`${targetDate.toLocaleDateString()} ${koreanWeekday}에 시간 겹침이 발생하여 일정 추가를 중단합니다.`);
+          return;
+        }
+
+        newSchedules.push(schedule);
+      }
+    }
+
+    let addedCount = 0;
+    for (const schedule of newSchedules) {
+      const result = await addSchedule(schedule);
+      if (result.success) {
+        addedCount++;
+      } else {
+        alert(`일정 추가에 실패했습니다: ${result.error}`);
+        return;
+      }
+    }
+
+    // 폼 초기화
+    setStartSlot("07:00");
+    setForm({
+      title: "",
+      end: "08:00",
+      description: "",
+      tag: "",
+      repeatCount: "1",
+      interval: "1",
+      weekdays: [],
+    });
+    setSelectedTagType("");
+    setActiveTimeSlot(null);
+  }, [form, startSlot, safeTagItems, selectedTagType, currentWeek, focusedDayIndex, DAYS_OF_WEEK, checkScheduleOverlap, safeSchedules, addSchedule, getDayIndexFromKoreanDay, setStartSlot, setForm, setSelectedTagType, setActiveTimeSlot]);
   
   const handleAddTag = useCallback(async () => {
     if (!newTagType.trim() || !newTagName.trim()) {
