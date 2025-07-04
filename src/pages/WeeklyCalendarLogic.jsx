@@ -31,10 +31,31 @@ const minutesToTimeString = (totalMinutes) => {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
+// 🔧 수정된 픽셀을 시간으로 변환하는 함수
 const pixelToNearestTimeSlot = (pixelPosition) => {
-  const slotIndex = Math.round(pixelPosition / SLOT_HEIGHT);
-  const totalMinutes = slotIndex * 30;
-  return minutesToTimeString(totalMinutes);
+  // 음수 방지
+  const safePixelPosition = Math.max(0, pixelPosition);
+  
+  // 30분 단위로 스냅
+  const slotIndex = Math.round(safePixelPosition / SLOT_HEIGHT);
+  
+  // 24시간을 넘지 않도록 제한 (48 슬롯 = 24시간)
+  const limitedSlotIndex = Math.min(47, slotIndex);
+  
+  const totalMinutes = limitedSlotIndex * 30;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  
+  console.log('🕐 픽셀 → 시간 변환:', {
+    픽셀: pixelPosition,
+    안전픽셀: safePixelPosition,
+    슬롯인덱스: slotIndex,
+    제한슬롯: limitedSlotIndex,
+    총분: totalMinutes,
+    시간: `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`
+  });
+  
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
 const formatDate = (date) => {
@@ -570,11 +591,21 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     });
   }, []);
 
-  // 시간 슬롯 계산 헬퍼 함수
+  // 🔧 시간을 픽셀 위치로 변환하는 함수 (디버깅 로그 추가)
   const calculateSlotPosition = useCallback((time) => {
     const minutes = parseTimeToMinutes(time);
     const slotIndex = minutes / 30;
-    return slotIndex * SLOT_HEIGHT;
+    const pixelPosition = slotIndex * SLOT_HEIGHT;
+    
+    console.log('📍 시간 → 픽셀 변환:', {
+      시간: time,
+      분: minutes,
+      슬롯인덱스: slotIndex,
+      픽셀위치: pixelPosition,
+      SLOT_HEIGHT
+    });
+    
+    return pixelPosition;
   }, []);
 
   // ✅ 리사이즈 핸들러들 - 저장 최적화
