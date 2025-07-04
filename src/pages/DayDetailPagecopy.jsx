@@ -496,22 +496,23 @@ const WeeklyCalendar = ({
       targetDate: currentWeek[targetDayIndex]?.toISOString().split("T")[0]
     });
     
-    // 🔧 Y 좌표를 이용한 시간 계산
+    // 🔧 Y 좌표를 이용한 시간 계산 - 정확한 계산
     const scrollContainer = document.querySelector('.overflow-y-auto');
     const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
     
-    // 단순히 클릭한 Y 위치를 시간으로 변환
-    const adjustedY = targetY + scrollTop;
+    // targetY는 컨테이너 상단에서부터의 거리
+    // scrollTop을 더해서 전체 캘린더에서의 절대 위치 계산
+    const absoluteY = targetY + scrollTop;
     
-    console.log('📐 Y 좌표 → 시간 변환:', {
-      originalY: targetY,
-      scrollTop,
-      adjustedY,
+    console.log('📐 Y 좌표 → 시간 변환 상세:', {
+      targetY: targetY,
+      scrollTop: scrollTop,
+      absoluteY: absoluteY,
+      SLOT_HEIGHT: pixelToNearestTimeSlot(0) // 0시간 확인
     });
     
-    // 새로운 날짜와 시간 계산
-    const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
-    const newStartTime = pixelToNearestTimeSlot(adjustedY);
+    // 절대 Y 위치를 시간으로 변환
+    const newStartTime = pixelToNearestTimeSlot(absoluteY);
     
     // 기존 일정의 지속 시간 유지
     const startMinutes = parseTimeToMinutes(schedule.start);
@@ -528,23 +529,32 @@ const WeeklyCalendar = ({
       end: newEndTime
     };
     
-    console.log('📅 일정 이동 계산:', {
+    console.log('📅 일정 이동 계산 상세:', {
       원본: {
         date: schedule.date,
         start: schedule.start,
         end: schedule.end,
-        title: schedule.title
+        title: schedule.title,
+        startPixel: parseTimeToMinutes(schedule.start) / 30 * 24, // 원본 픽셀 위치
+      },
+      마우스위치: {
+        clientY: e.clientY,
+        targetY: targetY,
+        scrollTop: scrollTop,
+        absoluteY: absoluteY,
       },
       새위치: {
         date: newDate,
         start: newStartTime,
         end: newEndTime,
-        targetDay: getDayOfWeek(currentWeek[targetDayIndex])
+        targetDay: getDayOfWeek(currentWeek[targetDayIndex]),
+        newPixel: parseTimeToMinutes(newStartTime) / 30 * 24, // 새 픽셀 위치
       },
       변경사항: {
         날짜변경: originalDate !== newDate,
         시간변경: schedule.start !== newStartTime,
-        지속시간: `${duration}분`
+        지속시간: `${duration}분`,
+        픽셀이동: (parseTimeToMinutes(newStartTime) / 30 * 24) - (parseTimeToMinutes(schedule.start) / 30 * 24)
       }
     });
     
