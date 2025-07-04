@@ -697,7 +697,7 @@ const WeeklyCalendar = ({
       return;
     }
   
-    // 🔍 현재 상태 디버깅
+    // 🔍 현재 상태 디버깅 (이 부분을 기존 handleAdd 함수 시작 부분에 추가)
     console.log('🔍 현재 상태 디버깅:');
     console.log('form.weekdays:', form.weekdays);
     console.log('focusedDayIndex:', focusedDayIndex);
@@ -734,6 +734,13 @@ const WeeklyCalendar = ({
       : [DAYS_OF_WEEK[focusedDayIndex]];
   
     console.log('🗓️ 최종 선택된 요일들:', selectedWeekdays);
+
+  // 🔧 getDayIndexFromKoreanDay 함수 검증 (기존 반복문 전에 추가)
+  console.log('🔍 getDayIndexFromKoreanDay 함수 테스트:');
+  DAYS_OF_WEEK.forEach((day, idx) => {
+    const calculatedIndex = getDayIndexFromKoreanDay(day);
+    console.log(`${day}: 예상 ${idx} → 실제 ${calculatedIndex}`);
+  });
   
     const newSchedules = [];
     let scheduleIdCounter = Date.now();
@@ -870,6 +877,7 @@ const WeeklyCalendar = ({
       });
     }
   }, [form, setForm]);
+
   // 기존 WeekdaySelector 컴포넌트를 그대로 사용하면 됩니다.
   const handleAddTag = useCallback(async () => {
     if (!newTagType.trim() || !newTagName.trim()) {
