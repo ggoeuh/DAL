@@ -61,6 +61,41 @@ const MonthlyPlan = ({
     return 0;
   }, [currentMonthGoals]);
 
+  // ✨ 서버 데이터 검증 및 정리 함수
+  const validateAndCleanServerData = useCallback((serverData) => {
+    console.log('🔍 서버 데이터 검증 시작:', serverData);
+    
+    if (!serverData) return {};
+    
+    // monthlyPlans 데이터 정리
+    const cleanedPlans = (serverData.monthlyPlans || []).map(plan => {
+      // description 필드가 시간 형식인지 확인
+      let cleanDescription = plan.description || '';
+      
+      // "목표 시간: XX:XX" 형태나 시간 패턴이면 빈 문자열로 변경
+      if (cleanDescription.includes('목표 시간:') || 
+          cleanDescription.match(/^\d{1,3}:\d{2}$/) ||
+          cleanDescription.match(/^목표\s*시간/)) {
+        console.log('⚠️ 잘못된 description 발견:', cleanDescription);
+        cleanDescription = '';
+      }
+      
+      return {
+        ...plan,
+        description: cleanDescription,
+        name: plan.name || '',
+        estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0
+      };
+    });
+    
+    console.log('🧹 정리된 plans:', cleanedPlans);
+    
+    return {
+      ...serverData,
+      monthlyPlans: cleanedPlans
+    };
+  }, []);
+
   // ✨ 서버에서 전체 사용자 데이터 로드
   const loadUserDataFromServer = useCallback(async () => {
     if (!currentUser || !supabase) return;
@@ -72,25 +107,26 @@ const MonthlyPlan = ({
       const result = await loadUserDataFromDAL(currentUser);
       
       if (result.success && result.data) {
-        const serverData = result.data;
+        // ✅ 서버 데이터 검증 및 정리
+        const validatedData = validateAndCleanServerData(result.data);
         
         console.log('✅ 서버 데이터 로드 성공:', {
-          schedules: serverData.schedules?.length || 0,
-          tags: serverData.tags?.length || 0,
-          tagItems: serverData.tagItems?.length || 0,
-          monthlyGoals: serverData.monthlyGoals?.length || 0,
-          monthlyPlans: serverData.monthlyPlans?.length || 0
+          schedules: validatedData.schedules?.length || 0,
+          tags: validatedData.tags?.length || 0,
+          tagItems: validatedData.tagItems?.length || 0,
+          monthlyGoals: validatedData.monthlyGoals?.length || 0,
+          monthlyPlans: validatedData.monthlyPlans?.length || 0
         });
 
-        // ✅ 서버 데이터를 상태에 저장
-        setSchedules(serverData.schedules || []);
-        setTags(serverData.tags || []);
-        setTagItems(serverData.tagItems || []);
-        setMonthlyGoals(serverData.monthlyGoals || []);
-        setMonthlyPlans(serverData.monthlyPlans || []);
+        // ✅ 검증된 서버 데이터를 상태에 저장
+        setSchedules(validatedData.schedules || []);
+        setTags(validatedData.tags || []);
+        setTagItems(validatedData.tagItems || []);
+        setMonthlyGoals(validatedData.monthlyGoals || []);
+        setMonthlyPlans(validatedData.monthlyPlans || []);
         
         // monthlyPlans를 plans로 설정 (호환성)
-        setPlans(serverData.monthlyPlans || []);
+        setPlans(validatedData.monthlyPlans || []);
         setLastSyncTime(new Date());
 
       } else {
@@ -109,7 +145,7 @@ const MonthlyPlan = ({
     } finally {
       setLoading(false);
     }
-  }, [currentUser, currentMonthKey]);
+  }, [currentUser, validateAndCleanServerData]);
 
   // ✨ 서버에 전체 사용자 데이터 저장
   const saveUserDataToServer = useCallback(async (updatedData) => {
@@ -188,12 +224,13 @@ const MonthlyPlan = ({
     setMonthlyGoals(updatedGoals);
     
     // 서버에 저장
-    await saveUserDataToServer({
+    const saveResult = await saveUserDataToServer({
       monthlyGoals: updatedGoals,
       monthlyPlans: updatedPlans
     });
 
     console.log('✅ 월간 목표 업데이트 및 저장 완료');
+    return saveResult;
   }, [currentUser, currentMonthKey, safeMonthlyGoals, saveUserDataToServer]);
 
   // ✨ 초기 데이터 로드
@@ -312,6 +349,7 @@ const MonthlyPlan = ({
     return grouped;
   }, [currentMonthGoals, plans]);
 
+  // ✨ 계획 추가 함수 - description 저장 개선
   const handleAddPlan = useCallback(async () => {
     const firstDesc = form.descriptions[0]?.trim();
 
@@ -320,19 +358,24 @@ const MonthlyPlan = ({
       return;
     }
 
+    // 설명 내용을 제대로 결합
+    const combinedDescription = form.descriptions
+      .filter(desc => desc && desc.trim()) // 빈 값 제거
+      .map(desc => desc.trim()) // 앞뒤 공백 제거
+      .join(', '); // 쉼표로 연결
+
     const newPlan = {
       id: Date.now(),
       tagType: form.tagType,
       tag: form.tag,
-      name: form.name,
-      description: Array.isArray(form.descriptions)
-        ? form.descriptions.filter(Boolean).join(', ')
-        : '',
+      name: form.name || '', // name 필드도 확실히 저장
+      description: combinedDescription, // 여기가 핵심!
       estimatedTime: parseInt(form.estimatedTime) || 0
     };
     
     console.log('🆕 새 계획 생성:', newPlan);
-    console.log('📝 description 내용:', newPlan.description);
+    console.log('📝 저장할 description:', combinedDescription);
+    console.log('📝 form.descriptions 원본:', form.descriptions);
     
     const updatedPlans = [...plans, newPlan];
     setPlans(updatedPlans);
@@ -341,16 +384,23 @@ const MonthlyPlan = ({
     console.log('📊 업데이트된 plans:', updatedPlans);
 
     // 월간 목표 업데이트 및 서버 저장
-    await updateAndSaveMonthlyGoals(updatedPlans);
-
-    setForm({
-      tagType: '',
-      tag: '',
-      name: '',
-      descriptions: ['', '', ''],
-      estimatedTime: ''
-    });
-    setSelectedTagType('');
+    const saveResult = await updateAndSaveMonthlyGoals(updatedPlans);
+    
+    if (saveResult !== false) {
+      // 저장 성공 시에만 폼 초기화
+      setForm({
+        tagType: '',
+        tag: '',
+        name: '',
+        descriptions: ['', '', ''],
+        estimatedTime: ''
+      });
+      setSelectedTagType('');
+      
+      console.log('✅ 계획 추가 및 저장 완료');
+    } else {
+      console.error('❌ 서버 저장 실패 - 폼 유지');
+    }
   }, [form, plans, updateAndSaveMonthlyGoals]);
   
   const handleDeletePlan = useCallback(async (id) => {
@@ -367,9 +417,9 @@ const MonthlyPlan = ({
     navigate('/calendar');
   }, [navigate]);
 
-  // ✨ 서버 데이터 정리 함수
+  // ✨ 서버 데이터 정리 함수 - description 필드 특별 처리
   const handleServerDataCleanup = useCallback(async () => {
-    if (!currentUser || !window.confirm('⚠️ 서버에서 불일치 데이터를 정리하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
+    if (!currentUser || !window.confirm('⚠️ 서버에서 잘못된 데이터를 정리하시겠습니까?\n이 작업은 description 필드의 잘못된 시간 정보만 제거합니다.')) {
       return;
     }
 
@@ -380,10 +430,33 @@ const MonthlyPlan = ({
       // 서버에서 최신 데이터 로드
       await loadUserDataFromServer();
       
-      // 데이터 정리 로직
+      // 데이터 정리 로직 - description 필드 검증
       const cleanedTags = tags.filter(tag => tag.tagType && tag.tagType.trim());
       const cleanedTagItems = tagItems.filter(item => item.tagType && item.tagName && item.tagType.trim() && item.tagName.trim());
-      const cleanedPlans = plans.filter(plan => plan.tagType && plan.tag && plan.tagType.trim() && plan.tag.trim());
+      
+      // plans 정리 - description 필드 특별 처리
+      const cleanedPlans = plans.map(plan => {
+        let cleanDescription = plan.description || '';
+        
+        // description에 시간 정보가 들어있다면 제거
+        if (cleanDescription.includes('목표 시간:') || 
+            cleanDescription.match(/^\d{1,3}:\d{2}$/) ||
+            cleanDescription.match(/^목표\s*시간/)) {
+          console.log('🧹 잘못된 description 정리:', cleanDescription, '→ 빈 문자열');
+          cleanDescription = '';
+        }
+        
+        return {
+          ...plan,
+          description: cleanDescription,
+          estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0
+        };
+      }).filter(plan => plan.tagType && plan.tag && plan.tagType.trim() && plan.tag.trim());
+
+      console.log('🧹 정리 결과:', {
+        'plans 개수': cleanedPlans.length,
+        '정리된 descriptions': cleanedPlans.map(p => ({ tag: p.tag, description: p.description }))
+      });
 
       // 정리된 데이터로 상태 업데이트
       setTags(cleanedTags);
@@ -395,7 +468,7 @@ const MonthlyPlan = ({
       await updateAndSaveMonthlyGoals(cleanedPlans);
 
       console.log('✅ 서버 데이터 정리 완료');
-      alert('✅ 서버 데이터 정리가 완료되었습니다.');
+      alert('✅ 서버 데이터 정리가 완료되었습니다.\n잘못된 description 필드가 수정되었습니다.');
       
     } catch (error) {
       console.error('❌ 서버 데이터 정리 실패:', error);
@@ -489,7 +562,7 @@ const MonthlyPlan = ({
                   onClick={handleServerDataCleanup}
                   disabled={saving}
                   className="bg-yellow-100 hover:bg-yellow-200 text-yellow-700 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                  title="서버 데이터 정리"
+                  title="서버 데이터 정리 (잘못된 description만 수정)"
                 >
                   {saving ? '처리 중...' : '🧹 서버 정리'}
                 </button>
