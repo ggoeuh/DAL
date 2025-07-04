@@ -786,7 +786,7 @@ const CalendarPage = ({
             const dateStr = format(day, 'yyyy-MM-dd');
             const daySchedules = (schedules || []).filter(schedule => schedule.date === dateStr);
             const dayTotalHours = getDayTotalHours(day);
-            
+        
             return (
               <div
                 key={day.toISOString()}
@@ -797,7 +797,7 @@ const CalendarPage = ({
                 `}
                 onClick={() => navigate(`/day/${format(day, 'yyyy-MM-dd')}`)}
               >
-                {/* 날짜 표시 행 */}
+                {/* 날짜 표시 */}
                 <div className="flex justify-between items-center mb-2">
                   <div className={`
                     inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium
@@ -807,54 +807,57 @@ const CalendarPage = ({
                   `}>
                     {format(day, 'd')}
                   </div>
-                  {/* 총 시간 표시 */}
                   {dayTotalHours && (
                     <div className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-1 rounded">
                       {dayTotalHours}
                     </div>
                   )}
                 </div>
-
+        
                 {/* 일정 목록 */}
                 <div className="space-y-1">
-                  {daySchedules.map((schedule) => {
-                    const tagType = schedule.tagType || "기타";
-                    const tagColor = getTagColor(tagType); // ✅ 서버 색상 우선 사용
-                    return (
-                      <div
-                        key={schedule.id}
-                        className={`
-                          ${tagColor.bg} ${tagColor.border} border rounded-md p-2 text-xs
-                          hover:shadow-md cursor-pointer transition-all
-                        `}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/day/${format(day, 'yyyy-MM-dd')}`);
-                        }}
-                        title={`${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}`}
-                      >
-                        <div className="space-y-1">
-                          {/* 1줄: 시작시간-마감시간 */}
-                          <div className={`font-bold ${tagColor.text} text-left`}>
-                            {schedule.start} - {schedule.end}
-                          </div>
-                          {/* 2줄: 태그-일정명 */}
-                          <div className="flex items-center gap-1">
-                            <div className={`w-2 h-2 rounded-full ${tagColor.bg.replace('100', '500')} flex-shrink-0`}></div>
-                            <div className={`font-medium ${tagColor.text} truncate flex-1`}>
-                              {schedule.tag} I {schedule.title}
+                  {[...daySchedules]
+                    .sort((a, b) => {
+                      const [aH, aM] = a.start.split(':').map(Number);
+                      const [bH, bM] = b.start.split(':').map(Number);
+                      return aH * 60 + aM - (bH * 60 + bM);
+                    })
+                    .map((schedule) => {
+                      const tagType = schedule.tagType || "기타";
+                      const tagColor = getTagColor(tagType);
+        
+                      return (
+                        <div
+                          key={schedule.id || `${schedule.date}-${schedule.start}-${schedule.title}`}
+                          className={`
+                            ${tagColor.bg} ${tagColor.border} border rounded-md p-2 text-xs
+                            hover:shadow-md cursor-pointer transition-all
+                          `}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/day/${format(day, 'yyyy-MM-dd')}`);
+                          }}
+                          title={`${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}`}
+                        >
+                          <div className="space-y-1">
+                            <div className={`font-bold ${tagColor.text} text-left`}>
+                              {schedule.start} - {schedule.end}
                             </div>
-                          </div>
-                          {/* 3줄: 설명 (있을 경우만) */}
-                          {schedule.description && (
-                            <div className="text-gray-600 truncate text-[10px] italic">
-                              {schedule.description}
+                            <div className="flex items-center gap-1">
+                              <div className={`w-2 h-2 rounded-full ${tagColor.bg.replace('100', '500')} flex-shrink-0`}></div>
+                              <div className={`font-medium ${tagColor.text} truncate flex-1`}>
+                                {schedule.tag} I {schedule.title}
+                              </div>
                             </div>
-                          )}
+                            {schedule.description && (
+                              <div className="text-gray-600 truncate text-[10px] italic">
+                                {schedule.description}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               </div>
             );
