@@ -298,6 +298,8 @@ const WeeklyCalendar = ({
   // 🔧 수정된 드래그 핸들러들
   // 🔧 드래그 중 드롭 위치 미리보기 그림자가 있는 드래그 핸들러
 
+  // 🔧 드래그 중 드롭 위치 미리보기 그림자가 있는 드래그 핸들러
+
   const handleDragStart = useCallback((e, scheduleId) => {
     console.log('🖱️ 드래그 시작:', scheduleId);
     
@@ -418,11 +420,32 @@ const WeeklyCalendar = ({
       existingPreview.remove();
     }
     
+    // 🔧 상세한 컨테이너 정보 출력
+    const containers = document.querySelectorAll('[data-day-index]');
+    console.log('🔍 모든 컨테이너 정보:');
+    containers.forEach((container, idx) => {
+      const rect = container.getBoundingClientRect();
+      const dayIndex = parseInt(container.dataset.dayIndex);
+      const dayName = DAYS_OF_WEEK[dayIndex];
+      const isMouseInside = e.clientX >= rect.left && e.clientX <= rect.right;
+      
+      console.log(`  ${idx}: dayIndex=${dayIndex}, 요일=${dayName}, 마우스포함=${isMouseInside}`, {
+        left: Math.round(rect.left),
+        right: Math.round(rect.right), 
+        마우스X: e.clientX
+      });
+    });
+    
     // 🔧 공통 드롭 위치 계산 함수 사용
     const dropPos = getDropPosition(e.clientX, e.clientY);
-    if (!dropPos) return;
+    if (!dropPos) {
+      console.log('❌ 드롭 위치를 찾을 수 없음');
+      return;
+    }
     
     const { dayIndex: targetDayIndex, container: targetContainer, absoluteY } = dropPos;
+    
+    console.log(`✅ 프리뷰 타겟: ${DAYS_OF_WEEK[targetDayIndex]} (dayIndex=${targetDayIndex})`);
     
     // 예상 시간 계산
     const newStartTime = pixelToNearestTimeSlot(absoluteY);
