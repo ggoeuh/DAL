@@ -382,7 +382,7 @@ const MonthlyPlan = ({
     return tag ? tag.color : { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' };
   }, [safeTags]);
 
-  // ✅ 목표를 기반으로 한 그룹화
+  // ✅ 목표를 기반으로 한 그룹화 - isGoal 조건 수정
   const getGroupedGoals = useMemo(() => {
     const grouped = {};
     
@@ -391,20 +391,26 @@ const MonthlyPlan = ({
         grouped[goal.tagType] = [];
       }
       
+      // 해당 태그타입의 실제 계획들 찾기 (현재 월만)
       const relatedPlans = currentMonthPlans.filter(plan => plan.tagType === goal.tagType);
       
       if (relatedPlans.length > 0) {
+        // 실제 계획들이 있으면 각각 표시 (isGoal: false로 설정)
         relatedPlans.forEach(plan => {
-          grouped[goal.tagType].push(plan);
+          grouped[goal.tagType].push({
+            ...plan,
+            isGoal: false  // ✅ 실제 계획은 수정/삭제 가능
+          });
         });
       } else {
+        // 계획이 없으면 목표만 표시 (isGoal: true로 설정)
         grouped[goal.tagType].push({
           id: `goal-${goal.tagType}`,
           tagType: goal.tagType,
           tag: goal.tagType + ' 목표',
           description: '',
           estimatedTime: parseInt(goal.targetHours.split(':')[0]) || 0,
-          isGoal: true
+          isGoal: true  // ✅ 목표 블럭은 수정/삭제 불가
         });
       }
     });
