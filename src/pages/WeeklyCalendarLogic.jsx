@@ -299,40 +299,30 @@ export const useWeeklyCalendarLogic = (props = {}) => {
 
   // ✅ initialDate 변경 시 주간 뷰 업데이트 - 의존성 최적화
   useEffect(() => {
-    if (initialDate) {
-      const targetDate = new Date(initialDate);
+    if (isInitialLoadComplete && safeSchedules.length > 0) {
+      console.log('📋 데이터 로드 완료, 태그 색상 자동 할당 시작');
       
-      console.log('🎯 initialDate 변경 감지:', {
-        initialDate,
-        targetDate: targetDate.toISOString().split('T')[0],
-        dayOfWeek: targetDate.getDay()
+      // 모든 일정에서 사용된 태그타입들 수집
+      const usedTagTypes = new Set();
+      safeSchedules.forEach(schedule => {
+        if (schedule.tagType) usedTagTypes.add(schedule.tagType);
+        // tagItems에서 tagType 찾기
+        if (schedule.tag) {
+          const tagItem = safeTagItems.find(item => item.tagName === schedule.tag);
+          if (tagItem && tagItem.tagType) {
+            usedTagTypes.add(tagItem.tagType);
+          }
+        }
       });
       
-      // currentWeek 업데이트
-      const startOfWeek = new Date(targetDate);
-      startOfWeek.setDate(targetDate.getDate() - targetDate.getDay());
-      
-      const newWeek = Array(7).fill().map((_, i) => {
-        const date = new Date(startOfWeek);
-        date.setDate(startOfWeek.getDate() + i);
-        return date;
+      // 각 태그타입에 대해 색상 할당 (getTagColor 호출만으로 자동 할당됨)
+      usedTagTypes.forEach(tagType => {
+        getTagColor(tagType);
       });
       
-      setCurrentWeek(newWeek);
-      setFocusedDayIndex(targetDate.getDay());
-      
-      // visibleDays 업데이트
-      const newVisibleDays = [];
-      for (let i = -2; i <= 2; i++) {
-        const date = new Date(targetDate);
-        date.setDate(targetDate.getDate() + i);
-        newVisibleDays.push(date);
-      }
-      setVisibleDays(newVisibleDays);
-      
-      console.log('✅ initialDate로 주간뷰 설정 완료');
+      console.log('✅ 태그 색상 자동 할당 완료:', Array.from(usedTagTypes));
     }
-  }, [initialDate]);
+  }, [isInitialLoadComplete, safeSchedules, safeTagItems, getTagColor]);
 
   // ✅ 서버에서 데이터 불러오기 - 중복 호출 방지 개선
   const loadDataFromServer = useCallback(async (forceRefresh = false) => {
@@ -540,21 +530,29 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     return slotPosition;
   }, []);
 
-  // 새 태그 타입에 색상 할당
+  // 🔧 assignNewTagColor 함수도 더 간단하게 수정
   const assignNewTagColor = useCallback((tagType) => {
-    const existingTag = safeTags.find(t => t.tagType === tagType);
-    if (existingTag) {
-      return existingTag.color;
-    }
+    // 이미 사용된 색상들 확인
+    const usedColors = safeTags
+      .filter(t => t.color)
+      .map(t => t.color.bg);
     
-    const usedColors = safeTags.map(t => t.color).filter(color => color);
+    // 사용되지 않은 색상 찾기
     const availableColors = PASTEL_COLORS.filter(
-      color => !usedColors.some(used => used && used.bg === color.bg)
+      color => !usedColors.includes(color.bg)
     );
     
-    return availableColors.length > 0 
-      ? availableColors[0] 
-      : PASTEL_COLORS[safeTags.length % PASTEL_COLORS.length];
+    // 사용 가능한 색상이 있으면 첫 번째 사용, 없으면 순환
+    if (availableColors.length > 0) {
+      return availableColors[0];
+    } else {
+      // 모든 색상이 사용되었으면 tagType 문자열 해시로 색상 선택
+      const hash = tagType.split('').reduce((a, b) => {
+        a = ((a << 5) - a) + b.charCodeAt(0);
+        return a & a;
+      }, 0);
+      return PASTEL_COLORS[Math.abs(hash) % PASTEL_COLORS.length];
+    }
   }, [safeTags]);
 
   // ✅ 수정된 포커스 날짜 변경 핸들러
@@ -686,9 +684,51 @@ export const useWeeklyCalendarLogic = (props = {}) => {
 
   // 태그 색상 가져오기
   const getTagColor = useCallback((tagType) => {
-    const tag = safeTags.find(t => t.tagType === tagType);
-    return tag ? tag.color : { bg: "bg-gray-100", text: "text-gray-800" };
-  }, [safeTags]);
+    // 1. 기존에 저장된 태그 색상이 있으면 사용
+    const existingTag = safeTags.find(t => t.tagType === tagType);
+    if (existingTag && existingTag.color) {
+      return existingTag.color;
+    }
+    
+    // 2. 저장된 태그가 없거나 색상이 없으면 자동 할당
+    const autoColor = assignNewTagColor(tagType);
+    
+    // 3. 새로 할당된 색상을 태그 목록에 추가/업데이트 (서버 저장 없이 임시)
+    const updatedTags = [...safeTags];
+    const existingIndex = updatedTags.findIndex(t => t.tagType === tagType);
+    
+    if (existingIndex >= 0) {
+      // 기존 태그 업데이트
+      updatedTags[existingIndex] = {
+        ...updatedTags[existingIndex],
+        color: autoColor
+      };
+    } else {
+      // 새 태그 추가
+      updatedTags.push({
+        tagType: tagType,
+        color: autoColor
+      });
+    }
+    
+    // 상태 업데이트 (즉시 반영)
+    setTags(updatedTags);
+    
+    // 서버 저장 (비동기, 실패해도 UI는 이미 업데이트됨)
+    if (isServerBased && currentUser) {
+      saveDataToServer({
+        schedules: safeSchedules,
+        monthlyGoals: safeMonthlyGoals,
+        tags: updatedTags,
+        tagItems: safeTagItems
+      }, { silent: true, debounceMs: 1000 }).catch(error => {
+        console.warn('태그 색상 서버 저장 실패 (UI는 정상 동작):', error);
+      });
+    }
+    
+    return autoColor;
+  }, [safeTags, setTags, safeSchedules, safeMonthlyGoals, safeTagItems, isServerBased, currentUser, saveDataToServer]);
+
 
   // ✅ 일정 추가/수정/삭제 헬퍼 함수들 - 즉시 저장
   const addSchedule = useCallback(async (newSchedule) => {
