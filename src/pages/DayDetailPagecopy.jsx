@@ -122,6 +122,7 @@ const WeeklyCalendar = ({
     minutesToTimeString,
     getDayOfWeek,
     pixelToNearestTimeSlot,
+    getDayIndexFromKoreanDay, // ✅ 문제 3 해결용 함수
     
     // 서버 관리 함수들
     loadDataFromServer,
@@ -169,9 +170,6 @@ const WeeklyCalendar = ({
       currentWeek: currentWeek.map(d => d.toISOString().split('T')[0]),
       focusedDayIndex
     });
-    
-    // 주별 변경 시 필요한 추가 로직이 있다면 여기에 추가
-    // 예: 특정 주의 일정들만 필터링하여 시간 태그 업데이트
   }, [currentWeek, focusedDayIndex]);
 
   // ✅ 🔧 개선된 컨텍스트 메뉴 핸들러들
@@ -216,7 +214,9 @@ const WeeklyCalendar = ({
       document.body.appendChild(message);
       
       setTimeout(() => {
-        document.body.removeChild(message);
+        if (document.body.contains(message)) {
+          document.body.removeChild(message);
+        }
       }, 3000);
     }
     setContextMenu({ ...contextMenu, visible: false });
@@ -242,7 +242,7 @@ const WeeklyCalendar = ({
     setContextMenu({ ...contextMenu, visible: false });
   }, [safeSchedules, contextMenu, deleteSchedule, setContextMenu]);
 
-  // ✅ 🔧 개선된 복사 관련 핸들러들
+  // ✅ 🔧 개선된 복사 관련 핸들러들 - 문제 2 해결
   const handleCopyMove = useCallback((e) => {
     if (!copyingSchedule) return;
     
@@ -326,7 +326,9 @@ const WeeklyCalendar = ({
           document.body.appendChild(message);
           
           setTimeout(() => {
-            document.body.removeChild(message);
+            if (document.body.contains(message)) {
+              document.body.removeChild(message);
+            }
           }, 2000);
         } else {
           console.error('❌ 일정 붙여넣기 실패:', result.error);
@@ -341,7 +343,7 @@ const WeeklyCalendar = ({
     setCopyingSchedule(null);
   }, [copyingSchedule, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, checkScheduleOverlap, safeSchedules, addSchedule, getDayOfWeek, setShowOverlapMessage, setCopyingSchedule]);
 
-  // ✅ 드래그 관련 핸들러들
+  // ✅ 드래그 관련 핸들러들 - 문제 2 해결
   const handleDragStart = useCallback((e, scheduleId) => {
     e.preventDefault();
     e.stopPropagation();
@@ -383,6 +385,8 @@ const WeeklyCalendar = ({
       setDragging(null);
       return;
     }
+    
+    console.log('🖱️ 드래그 종료:', calendarLogic.dragging);
     
     const containers = document.querySelectorAll('[data-day-index]');
     let targetDayIndex = null;
@@ -442,7 +446,7 @@ const WeeklyCalendar = ({
     setDragging(null);
   }, [calendarLogic.dragging, calendarLogic.dragOffset, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, checkScheduleOverlap, updateSchedule, setShowOverlapMessage, setDragging]);
 
-  // ✅ 🔧 개선된 일정 추가 핸들러 (반복 설정 포함)
+  // ✅ 🔧 개선된 일정 추가 핸들러 (문제 3 해결 - 요일 선택 반복 설정)
   const handleAdd = useCallback(async () => {
     if (!form.title || !startSlot || !form.end) {
       alert('제목, 시작 시간, 종료 시간을 모두 입력해주세요.');
@@ -470,31 +474,41 @@ const WeeklyCalendar = ({
     const repeatCount = parseInt(form.repeatCount || "1");
     const interval = parseInt(form.interval || "1");
     
-    // 🔧 요일 선택 처리 개선
-    const weekdays = form.weekdays && form.weekdays.length > 0
+    // ✅ 문제 3 해결: 요일 선택 처리 개선
+    const selectedWeekdays = form.weekdays && form.weekdays.length > 0
       ? form.weekdays
       : [DAYS_OF_WEEK[focusedDayIndex]]; // 선택된 요일이 없으면 현재 요일 사용
   
+    console.log('📅 선택된 요일들:', selectedWeekdays, 'focusedDayIndex:', focusedDayIndex);
+  
     const newSchedules = [];
-    let addedCount = 0;
   
-    for (let i = 0; i < repeatCount; i++) {
-      for (const weekday of weekdays) {
-        const weekdayIndex = DAYS_OF_WEEK.indexOf(weekday);
-        if (weekdayIndex === -1) continue;
+    for (let week = 0; week < repeatCount; week++) {
+      for (const koreanWeekday of selectedWeekdays) {
+        // ✅ 한국어 요일을 인덱스로 변환
+        const weekdayIndex = getDayIndexFromKoreanDay(koreanWeekday);
+        if (weekdayIndex === -1) {
+          console.warn('⚠️ 잘못된 요일:', koreanWeekday);
+          continue;
+        }
   
-        const offsetDays = (weekdayIndex - focusedDayIndex) + (i * 7 * interval);
-        const repeatDate = new Date(focusedBaseDate);
-        repeatDate.setDate(repeatDate.getDate() + offsetDays);
+        // 현재 주의 해당 요일 날짜 계산
+        const currentWeekDate = currentWeek[weekdayIndex];
+        
+        // 반복 간격을 고려하여 미래 날짜 계산
+        const targetDate = new Date(currentWeekDate);
+        targetDate.setDate(currentWeekDate.getDate() + (week * 7 * interval));
   
         const schedule = {
           ...baseSchedule,
-          id: Date.now() + i * 10000 + weekdayIndex,
-          date: repeatDate.toISOString().split("T")[0],
+          id: Date.now() + week * 10000 + weekdayIndex * 100 + Math.random() * 100,
+          date: targetDate.toISOString().split("T")[0],
         };
   
+        console.log(`📅 일정 생성: ${koreanWeekday}(${weekdayIndex}) -> ${schedule.date}`);
+  
         if (checkScheduleOverlap(safeSchedules, schedule)) {
-          alert(`${repeatDate.toLocaleDateString()} ${weekday}에 시간 겹침이 발생하여 일정 추가를 중단합니다.`);
+          alert(`${targetDate.toLocaleDateString()} ${koreanWeekday}에 시간 겹침이 발생하여 일정 추가를 중단합니다.`);
           return;
         }
   
@@ -505,11 +519,12 @@ const WeeklyCalendar = ({
     console.log(`📅 총 ${newSchedules.length}개의 일정을 추가합니다:`, newSchedules);
   
     // 모든 일정을 순차적으로 추가
+    let addedCount = 0;
     for (const schedule of newSchedules) {
       const result = await addSchedule(schedule);
       if (result.success) {
         addedCount++;
-        console.log(`✅ 일정 추가 완료 (${addedCount}/${newSchedules.length}):`, schedule.title);
+        console.log(`✅ 일정 추가 완료 (${addedCount}/${newSchedules.length}):`, schedule.title, schedule.date);
       } else {
         console.error('❌ 일정 추가 실패:', result.error);
         alert(`일정 추가에 실패했습니다: ${result.error}`);
@@ -530,7 +545,7 @@ const WeeklyCalendar = ({
     });
     setSelectedTagType("");
     setActiveTimeSlot(null);
-  }, [form, startSlot, safeTagItems, selectedTagType, currentWeek, focusedDayIndex, DAYS_OF_WEEK, checkScheduleOverlap, safeSchedules, addSchedule, setStartSlot, setForm, setSelectedTagType, setActiveTimeSlot]);
+  }, [form, startSlot, safeTagItems, selectedTagType, currentWeek, focusedDayIndex, DAYS_OF_WEEK, checkScheduleOverlap, safeSchedules, addSchedule, getDayIndexFromKoreanDay, setStartSlot, setForm, setSelectedTagType, setActiveTimeSlot]);
   
   // ✅ 🔧 개선된 태그 추가 핸들러 (즉시 반영)
   const handleAddTag = useCallback(async () => {
@@ -593,7 +608,9 @@ const WeeklyCalendar = ({
           document.body.appendChild(message);
           
           setTimeout(() => {
-            document.body.removeChild(message);
+            if (document.body.contains(message)) {
+              document.body.removeChild(message);
+            }
           }, 2000);
         } else {
           console.error('❌ 태그 추가 실패:', result.error);
@@ -798,7 +815,9 @@ const WeeklyCalendar = ({
         document.body.appendChild(message);
         
         setTimeout(() => {
-          document.body.removeChild(message);
+          if (document.body.contains(message)) {
+            document.body.removeChild(message);
+          }
         }, 2000);
       } else {
         console.error('❌ 수동 새로고침 실패:', result.error);
@@ -870,8 +889,8 @@ const WeeklyCalendar = ({
     // 시간 및 요일 선택
     handleTimeSlotClick,
     handleWeekdaySelect,
-    handleIntervalChange,      // 🔧 새로 추가
-    handleRepeatCountChange,   // 🔧 새로 추가
+    handleIntervalChange,
+    handleRepeatCountChange,
     
     // 상태 정보
     currentWeek,
