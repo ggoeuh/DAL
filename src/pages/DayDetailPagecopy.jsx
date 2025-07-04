@@ -374,6 +374,8 @@ const WeeklyCalendar = ({
 
   // 🔧 정확한 좌표 계산을 위한 드래그 핸들러 수정
 
+  // 🔧 정확한 좌표 계산을 위한 드래그 핸들러 수정
+
   const handleDragEnd = useCallback(async (e) => {
     console.log('🖱️ 드래그 종료 시작');
     
