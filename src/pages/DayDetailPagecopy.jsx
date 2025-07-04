@@ -301,6 +301,8 @@ const WeeklyCalendar = ({
 
   // 🔧 드래그 중 드롭 위치 미리보기 그림자가 있는 드래그 핸들러
 
+  // 🔧 드래그 중 드롭 위치 미리보기 그림자가 있는 드래그 핸들러
+
   const handleDragStart = useCallback((e, scheduleId) => {
     console.log('🖱️ 드래그 시작:', scheduleId);
     
