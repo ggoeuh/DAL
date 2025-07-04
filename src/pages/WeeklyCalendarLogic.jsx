@@ -50,10 +50,21 @@ const filterSchedulesByDate = (schedules, date) => {
   return schedules.filter(schedule => schedule.date === dateString);
 };
 
-const calculateTagTotals = (schedules) => {
+// ✅ 문제 1 해결: 월별 태그 시간 계산 함수 수정
+const calculateTagTotals = (schedules, targetMonth = null) => {
   const totals = {};
   
-  schedules.forEach(schedule => {
+  // 현재 주에 포함된 월을 기준으로 필터링
+  const filteredSchedules = targetMonth 
+    ? schedules.filter(schedule => {
+        const scheduleDate = new Date(schedule.date);
+        const scheduleMonth = scheduleDate.getMonth() + 1; // getMonth()는 0부터 시작
+        const scheduleYear = scheduleDate.getFullYear();
+        return scheduleMonth === targetMonth.month && scheduleYear === targetMonth.year;
+      })
+    : schedules;
+  
+  filteredSchedules.forEach(schedule => {
     const tagType = schedule.tagType || "기타";
     if (!totals[tagType]) {
       totals[tagType] = 0;
@@ -95,6 +106,13 @@ const checkScheduleOverlap = (schedules, newSchedule) => {
   });
 };
 
+// ✅ 문제 3 해결: 요일 문자열을 요일 인덱스로 변환하는 함수 추가
+const getDayIndexFromKoreanDay = (koreanDay) => {
+  const dayMap = {
+    "일": 0, "월": 1, "화": 2, "수": 3, "목": 4, "금": 5, "토": 6
+  };
+  return dayMap[koreanDay] !== undefined ? dayMap[koreanDay] : -1;
+};
 
 // 커스텀 훅: 캘린더 로직 (최적화됨)
 export const useWeeklyCalendarLogic = (props = {}) => {
@@ -106,7 +124,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     initialTagItems = [],
     initialMonthlyGoals = [],
     isServerBased = true,
-    enableAutoRefresh = false, // ✅ 기본값을 false로 변경 (필요시에만 활성화)
+    enableAutoRefresh = false,
     initialDate = null
   } = props;
   
@@ -118,7 +136,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
   const [tags, setTags] = useState(initialTags);
   const [tagItems, setTagItems] = useState(initialTagItems);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false); // ✅ 저장 상태 추가
+  const [isSaving, setIsSaving] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
   // ✅ 데이터 로딩 완료 상태 추가
@@ -289,7 +307,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         setTags(serverData.tags || []);
         setTagItems(serverData.tagItems || []);
         setLastSyncTime(new Date());
-        setIsInitialLoadComplete(true); // ✅ 초기 로드 완료 표시
+        setIsInitialLoadComplete(true);
         
         console.log('✅ 서버 데이터 로드 성공:', {
           schedules: serverData.schedules?.length || 0,
@@ -306,7 +324,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         setTags([]);
         setTagItems([]);
         setLastSyncTime(new Date());
-        setIsInitialLoadComplete(true); // ✅ 빈 데이터라도 초기 로드 완료 표시
+        setIsInitialLoadComplete(true);
         
         return { success: true, data: null };
       }
@@ -381,7 +399,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
       setMonthlyGoals(initialMonthlyGoals);
       setIsInitialLoadComplete(true);
     }
-  }, [currentUser, isServerBased, isInitialLoadComplete]); // ✅ 불필요한 의존성 제거
+  }, [currentUser, isServerBased, isInitialLoadComplete]);
 
   // ✅ 페이지 포커스 시 자동 새로고침 - 선택적 활성화
   useEffect(() => {
@@ -559,8 +577,6 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         if (!checkScheduleOverlap(safeSchedules, updatedSchedule)) {
           updatedSchedules[scheduleIndex] = updatedSchedule;
           setSchedules(updatedSchedules);
-          
-          // ✅ 리사이즈 중에는 저장하지 않음 (handleResizeEnd에서 처리)
         } else {
           setShowOverlapMessage(true);
           setTimeout(() => setShowOverlapMessage(false), 3000);
@@ -580,8 +596,6 @@ export const useWeeklyCalendarLogic = (props = {}) => {
         if (!checkScheduleOverlap(safeSchedules, updatedSchedule)) {
           updatedSchedules[scheduleIndex] = updatedSchedule;
           setSchedules(updatedSchedules);
-          
-          // ✅ 리사이즈 중에는 저장하지 않음
         } else {
           setShowOverlapMessage(true);
           setTimeout(() => setShowOverlapMessage(false), 3000);
@@ -661,8 +675,19 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     return { success: true };
   }, [safeSchedules, safeMonthlyGoals, safeTags, safeTagItems, isServerBased, currentUser, saveDataToServer]);
 
-  // ✅ 태그 관련 데이터 계산 - useMemo로 최적화
-  const tagTotals = useMemo(() => calculateTagTotals(safeSchedules), [safeSchedules]);
+  // ✅ 문제 1 해결: 현재 포커스된 날짜의 월 정보를 계산
+  const currentMonth = useMemo(() => {
+    const focusedDate = currentWeek[focusedDayIndex];
+    return {
+      month: focusedDate.getMonth() + 1, // getMonth()는 0부터 시작
+      year: focusedDate.getFullYear()
+    };
+  }, [currentWeek, focusedDayIndex]);
+
+  // ✅ 문제 1 해결: 월별 태그 총합 계산 - useMemo로 최적화
+  const tagTotals = useMemo(() => {
+    return calculateTagTotals(safeSchedules, currentMonth);
+  }, [safeSchedules, currentMonth]);
 
   return {
     // 상태들
@@ -701,9 +726,9 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     autoScrollTimer,
     setAutoScrollTimer,
     isLoading,
-    isSaving, // ✅ 저장 상태 추가
+    isSaving,
     lastSyncTime,
-    isInitialLoadComplete, // ✅ 초기 로드 완료 상태 추가
+    isInitialLoadComplete,
     
     // 상태 설정 함수들
     setSchedules,
@@ -719,6 +744,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     tagTotals,
     repeatOptions,
     intervalOptions,
+    currentMonth, // ✅ 추가: 현재 월 정보
     
     // 서버 관련 함수들
     loadDataFromServer,
@@ -748,6 +774,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     handleDayFocus,
     calculateSlotPosition,
     getTagColor,
+    getDayIndexFromKoreanDay, // ✅ 문제 3 해결용 함수 추가
     
     // 이벤트 핸들러들
     handleResizeStart,
