@@ -415,16 +415,44 @@ const WeeklyCalendar = ({
       mousePos: { x: e.clientX, y: e.clientY }
     });
     
-    // 드롭 위치 계산 - 더 정확한 방법
+    // 🔧 드래그를 시작한 원본 일정의 날짜 정보 가져오기
+    const schedule = safeSchedules.find(s => s.id === calendarLogic.dragging);
+    if (!schedule) {
+      console.error('❌ 드래그 중인 스케줄을 찾을 수 없음:', calendarLogic.dragging);
+      setDragging(null);
+      document.body.style.cursor = 'default';
+      return;
+    }
+    
+    // 🔧 원본 일정이 있던 날짜의 컬럼 인덱스 찾기
+    const originalDate = schedule.date;
+    let originalDayIndex = -1;
+    
+    for (let i = 0; i < currentWeek.length; i++) {
+      if (currentWeek[i].toISOString().split("T")[0] === originalDate) {
+        originalDayIndex = i;
+        break;
+      }
+    }
+    
+    console.log('📍 원본 일정 위치:', {
+      originalDate,
+      originalDayIndex,
+      title: schedule.title
+    });
+    
+    // 드롭 위치 계산 - 모든 컨테이너 확인
     const containers = document.querySelectorAll('[data-day-index]');
     let targetDayIndex = null;
     let targetY = null;
     let targetContainer = null;
     
-    // 각 날짜 컨테이너를 확인하여 마우스가 어느 영역에 있는지 판단
+    // 🔧 마우스 위치에 따른 타겟 결정
     for (const container of containers) {
       const rect = container.getBoundingClientRect();
-      console.log(`📍 컨테이너 ${container.dataset.dayIndex} 체크:`, {
+      const dayIndex = parseInt(container.dataset.dayIndex);
+      
+      console.log(`📍 컨테이너 ${dayIndex} 체크:`, {
         rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
         mouse: { x: e.clientX, y: e.clientY },
         isInX: e.clientX >= rect.left && e.clientX <= rect.right,
@@ -433,7 +461,7 @@ const WeeklyCalendar = ({
       
       if (e.clientX >= rect.left && e.clientX <= rect.right &&
           e.clientY >= rect.top && e.clientY <= rect.bottom) {
-        targetDayIndex = parseInt(container.dataset.dayIndex);
+        targetDayIndex = dayIndex;
         targetY = e.clientY - rect.top;
         targetContainer = container;
         console.log('✅ 타겟 컨테이너 찾음:', { targetDayIndex, targetY });
@@ -441,130 +469,117 @@ const WeeklyCalendar = ({
       }
     }
     
-    if (targetDayIndex !== null && targetY !== null) {
-      const schedule = safeSchedules.find(s => s.id === calendarLogic.dragging);
-      if (!schedule) {
-        console.error('❌ 드래그 중인 스케줄을 찾을 수 없음:', calendarLogic.dragging);
+    // 🔧 타겟을 찾지 못했거나, 같은 컬럼 내에서만 이동하는 경우 처리
+    if (targetDayIndex === null) {
+      // 타겟을 찾지 못한 경우, 원본 컬럼에서 Y 좌표만 변경
+      console.log('⚠️ 타겟 컨테이너를 찾지 못함 → 원본 컬럼에서 시간만 변경');
+      targetDayIndex = originalDayIndex;
+      
+      // 원본 컨테이너의 Y 좌표 계산
+      const originalContainer = document.querySelector(`[data-day-index="${originalDayIndex}"]`);
+      if (originalContainer) {
+        const rect = originalContainer.getBoundingClientRect();
+        targetY = e.clientY - rect.top;
+        targetContainer = originalContainer;
+      } else {
+        console.error('❌ 원본 컨테이너를 찾을 수 없음');
         setDragging(null);
         document.body.style.cursor = 'default';
         return;
       }
-      
-      // 🔧 스크롤 위치 고려한 Y 좌표 계산 수정
-      const scrollContainer = document.querySelector('.overflow-y-auto');
-      const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
-      
-      // 드래그 오프셋을 빼지 말고, 단순히 클릭한 Y 위치로 계산
-      const adjustedY = targetY + scrollTop;
-      
-      console.log('📐 Y 좌표 계산:', {
-        originalY: targetY,
-        scrollTop,
-        adjustedY,
-        dragOffset: calendarLogic.dragOffset
-      });
-      
-      // 새로운 날짜와 시간 계산
-      const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
-      const newStartTime = pixelToNearestTimeSlot(adjustedY);
-      
-      // 기존 일정의 지속 시간 유지
-      const startMinutes = parseTimeToMinutes(schedule.start);
-      const endMinutes = parseTimeToMinutes(schedule.end);
-      const duration = endMinutes - startMinutes;
-      
-      const newStartMinutes = parseTimeToMinutes(newStartTime);
-      const newEndMinutes = newStartMinutes + duration;
-      const newEndTime = minutesToTimeString(newEndMinutes);
-      
-      const updatedData = {
+    }
+    
+    console.log('🎯 최종 드롭 위치:', {
+      targetDayIndex,
+      targetY,
+      isNewColumn: targetDayIndex !== originalDayIndex,
+      targetDate: currentWeek[targetDayIndex]?.toISOString().split("T")[0]
+    });
+    
+    // 🔧 Y 좌표를 이용한 시간 계산
+    const scrollContainer = document.querySelector('.overflow-y-auto');
+    const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+    
+    // 단순히 클릭한 Y 위치를 시간으로 변환
+    const adjustedY = targetY + scrollTop;
+    
+    console.log('📐 Y 좌표 → 시간 변환:', {
+      originalY: targetY,
+      scrollTop,
+      adjustedY,
+    });
+    
+    // 새로운 날짜와 시간 계산
+    const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
+    const newStartTime = pixelToNearestTimeSlot(adjustedY);
+    
+    // 기존 일정의 지속 시간 유지
+    const startMinutes = parseTimeToMinutes(schedule.start);
+    const endMinutes = parseTimeToMinutes(schedule.end);
+    const duration = endMinutes - startMinutes;
+    
+    const newStartMinutes = parseTimeToMinutes(newStartTime);
+    const newEndMinutes = newStartMinutes + duration;
+    const newEndTime = minutesToTimeString(newEndMinutes);
+    
+    const updatedData = {
+      date: newDate,
+      start: newStartTime,
+      end: newEndTime
+    };
+    
+    console.log('📅 일정 이동 계산:', {
+      원본: {
+        date: schedule.date,
+        start: schedule.start,
+        end: schedule.end,
+        title: schedule.title
+      },
+      새위치: {
         date: newDate,
         start: newStartTime,
-        end: newEndTime
-      };
-      
-      const updatedSchedule = { ...schedule, ...updatedData };
-      
-      console.log('📅 일정 이동 계산:', {
-        원본: {
-          id: schedule.id,
-          date: schedule.date,
-          start: schedule.start,
-          end: schedule.end,
-          title: schedule.title
-        },
-        새위치: {
-          date: newDate,
-          start: newStartTime,
-          end: newEndTime,
-          targetDay: getDayOfWeek(currentWeek[targetDayIndex])
-        },
+        end: newEndTime,
+        targetDay: getDayOfWeek(currentWeek[targetDayIndex])
+      },
+      변경사항: {
+        날짜변경: originalDate !== newDate,
+        시간변경: schedule.start !== newStartTime,
         지속시간: `${duration}분`
-      });
+      }
+    });
+    
+    // 🔧 겹침 검사 - 자기 자신은 제외하고 검사
+    const otherSchedules = safeSchedules.filter(s => s.id !== schedule.id);
+    const conflictSchedule = otherSchedules.find(s => {
+      if (s.date !== newDate) return false;
       
-      // 🔧 겹침 검사 개선 - 자기 자신은 제외하고 검사
-      const otherSchedules = safeSchedules.filter(s => s.id !== schedule.id);
-      const conflictSchedule = otherSchedules.find(s => {
-        if (s.date !== newDate) return false;
-        
-        const sStart = parseTimeToMinutes(s.start);
-        const sEnd = parseTimeToMinutes(s.end);
-        const newStart = parseTimeToMinutes(newStartTime);
-        const newEnd = parseTimeToMinutes(newEndTime);
-        
-        return (
-          (newStart >= sStart && newStart < sEnd) ||
-          (newEnd > sStart && newEnd <= sEnd) ||
-          (newStart <= sStart && newEnd >= sEnd)
-        );
-      });
+      const sStart = parseTimeToMinutes(s.start);
+      const sEnd = parseTimeToMinutes(s.end);
+      const newStart = parseTimeToMinutes(newStartTime);
+      const newEnd = parseTimeToMinutes(newEndTime);
       
-      if (!conflictSchedule) {
-        const result = await updateSchedule(calendarLogic.dragging, updatedData);
+      return (
+        (newStart >= sStart && newStart < sEnd) ||
+        (newEnd > sStart && newEnd <= sEnd) ||
+        (newStart <= sStart && newEnd >= sEnd)
+      );
+    });
+    
+    if (!conflictSchedule) {
+      const result = await updateSchedule(calendarLogic.dragging, updatedData);
+      
+      if (result.success) {
+        console.log(`✅ 일정 이동 완료: ${schedule.title}`);
+        console.log(`   ${schedule.date} ${schedule.start}-${schedule.end}`);
+        console.log(`→ ${newDate} ${newStartTime}-${newEndTime}`);
         
-        if (result.success) {
-          console.log(`✅ 일정 이동 완료: ${schedule.title} -> ${getDayOfWeek(currentWeek[targetDayIndex])} ${newStartTime}-${newEndTime}`);
-          
-          // 성공 피드백
-          const message = document.createElement('div');
-          message.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #10b981;
-            color: white;
-            padding: 12px 20px;
-            border-radius: 8px;
-            font-size: 14px;
-            z-index: 9999;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          `;
-          message.textContent = `일정 이동 완료: ${schedule.title}`;
-          document.body.appendChild(message);
-          
-          setTimeout(() => {
-            if (document.body.contains(message)) {
-              document.body.removeChild(message);
-            }
-          }, 2000);
-        } else {
-          console.error('❌ 일정 이동 실패:', result.error);
-          alert('일정 이동에 실패했습니다: ' + result.error);
-        }
-      } else {
-        console.warn('⚠️ 일정 겹침 감지:', {
-          충돌일정: conflictSchedule.title,
-          충돌시간: `${conflictSchedule.start}-${conflictSchedule.end}`,
-          새시간: `${newStartTime}-${newEndTime}`
-        });
-        
-        // 더 구체적인 겹침 메시지
+        // 성공 피드백
         const message = document.createElement('div');
         message.style.cssText = `
           position: fixed;
           top: 20px;
           right: 20px;
-          background: #ef4444;
+          background: #10b981;
           color: white;
           padding: 12px 20px;
           border-radius: 8px;
@@ -572,24 +587,60 @@ const WeeklyCalendar = ({
           z-index: 9999;
           box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         `;
-        message.textContent = `일정 겹침: "${conflictSchedule.title}" (${conflictSchedule.start}-${conflictSchedule.end})`;
+        
+        if (originalDate === newDate) {
+          message.textContent = `시간 변경: ${schedule.title} (${newStartTime}-${newEndTime})`;
+        } else {
+          message.textContent = `일정 이동: ${schedule.title} → ${getDayOfWeek(currentWeek[targetDayIndex])}`;
+        }
+        
         document.body.appendChild(message);
         
         setTimeout(() => {
           if (document.body.contains(message)) {
             document.body.removeChild(message);
           }
-        }, 3000);
+        }, 2000);
+      } else {
+        console.error('❌ 일정 이동 실패:', result.error);
+        alert('일정 이동에 실패했습니다: ' + result.error);
       }
     } else {
-      console.log('🚫 유효한 드롭 위치를 찾지 못함');
+      console.warn('⚠️ 일정 겹침 감지:', {
+        충돌일정: conflictSchedule.title,
+        충돌시간: `${conflictSchedule.start}-${conflictSchedule.end}`,
+        새시간: `${newStartTime}-${newEndTime}`
+      });
+      
+      // 구체적인 겹침 메시지
+      const message = document.createElement('div');
+      message.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #ef4444;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 14px;
+        z-index: 9999;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      `;
+      message.textContent = `일정 겹침: "${conflictSchedule.title}" (${conflictSchedule.start}-${conflictSchedule.end})`;
+      document.body.appendChild(message);
+      
+      setTimeout(() => {
+        if (document.body.contains(message)) {
+          document.body.removeChild(message);
+        }
+      }, 3000);
     }
     
     // 드래그 상태 초기화
     setDragging(null);
     document.body.style.cursor = 'default';
     console.log('🏁 드래그 종료 완료');
-  }, [calendarLogic.dragging, calendarLogic.dragOffset, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, updateSchedule, setDragging, getDayOfWeek]);
+  }, [calendarLogic.dragging, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, updateSchedule, setDragging, getDayOfWeek]);
 
   // ✅ 🔧 개선된 일정 추가 핸들러 (문제 3 해결 - 요일 선택 반복 설정)
   const handleAdd = useCallback(async () => {
