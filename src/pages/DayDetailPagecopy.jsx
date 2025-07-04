@@ -308,21 +308,34 @@ const WeeklyCalendar = ({
     // 드래그 상태 설정
     setDragging(scheduleId);
     
-    // 간단한 드래그 오프셋 계산
+    // 🔧 블록의 상단 가운데를 기준점으로 계산
     const rect = e.currentTarget.getBoundingClientRect();
+    const blockCenterX = rect.left + (rect.width / 2); // 블록의 가로 중앙
+    const blockTopY = rect.top; // 블록의 상단
+    
     const dragOffset = {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
+      x: e.clientX - blockCenterX, // 마우스와 블록 중앙의 X 차이
+      y: e.clientY - blockTopY,    // 마우스와 블록 상단의 Y 차이
+      blockWidth: rect.width,
+      blockHeight: rect.height
     };
     setDragOffset(dragOffset);
+    
+    console.log('📍 드래그 시작 오프셋:', {
+      마우스위치: { x: e.clientX, y: e.clientY },
+      블록영역: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      블록중앙X: blockCenterX,
+      블록상단Y: blockTopY,
+      계산된오프셋: dragOffset
+    });
     
     // 드래그 중 시각적 피드백
     const dragGhost = document.createElement('div');
     dragGhost.id = 'drag-ghost';
     dragGhost.style.cssText = `
       position: fixed;
-      left: ${e.clientX - dragOffset.x}px;
-      top: ${e.clientY - dragOffset.y}px;
+      left: ${blockCenterX - (rect.width / 2)}px;
+      top: ${blockTopY}px;
       width: ${rect.width}px;
       height: ${rect.height}px;
       z-index: 9999;
@@ -350,11 +363,15 @@ const WeeklyCalendar = ({
     e.preventDefault();
     e.stopPropagation();
     
-    // 드래그 고스트 업데이트
+    // 🔧 블록의 상단 가운데가 마우스를 따라가도록 드래그 고스트 업데이트
     const dragGhost = document.getElementById('drag-ghost');
     if (dragGhost && calendarLogic.dragOffset) {
-      dragGhost.style.left = `${e.clientX - calendarLogic.dragOffset.x}px`;
-      dragGhost.style.top = `${e.clientY - calendarLogic.dragOffset.y}px`;
+      // 마우스 위치에서 오프셋을 빼서 블록의 상단 가운데가 마우스 위치에 오도록
+      const ghostX = e.clientX - calendarLogic.dragOffset.x - (calendarLogic.dragOffset.blockWidth / 2);
+      const ghostY = e.clientY - calendarLogic.dragOffset.y;
+      
+      dragGhost.style.left = `${ghostX}px`;
+      dragGhost.style.top = `${ghostY}px`;
     }
     
     // 화면 가장자리에서 주간 이동
@@ -372,7 +389,6 @@ const WeeklyCalendar = ({
     }
   }, [calendarLogic.dragging, calendarLogic.dragOffset, focusedDayIndex, currentWeek, handleDayFocus]);
 
-  // 🔧 정확한 좌표 계산을 위한 드래그 핸들러 수정
 
   // 🔧 정확한 좌표 계산을 위한 드래그 핸들러 수정
 
@@ -400,95 +416,75 @@ const WeeklyCalendar = ({
       return;
     }
     
-    console.log('📍 마우스 위치:', {
-      clientX: e.clientX,
-      clientY: e.clientY,
-      pageX: e.pageX,
-      pageY: e.pageY
+    // 🔧 블록의 상단 가운데 위치 계산
+    const blockCenterX = e.clientX - (calendarLogic.dragOffset?.x || 0);
+    const blockTopY = e.clientY - (calendarLogic.dragOffset?.y || 0);
+    
+    console.log('📍 드롭 위치 계산:', {
+      마우스위치: { x: e.clientX, y: e.clientY },
+      드래그오프셋: calendarLogic.dragOffset,
+      블록상단가운데: { x: blockCenterX, y: blockTopY }
     });
     
-    // 🔧 개선된 컨테이너 찾기 - 중앙점 기준으로 판단
+    // 🔧 X축: 블록 중앙이 어느 요일 컨테이너에 있는지 확인
     const containers = document.querySelectorAll('[data-day-index]');
     let targetDayIndex = null;
     let targetContainer = null;
-    let targetY = null;
     
-    console.log('🔍 컨테이너 검색:', {
-      컨테이너수: containers.length,
-      마우스X: e.clientX,
-      마우스Y: e.clientY
-    });
-    
-    // 각 컨테이너의 영역을 체크
+    console.log('🔍 요일 컨테이너 검색:');
     for (const container of containers) {
       const rect = container.getBoundingClientRect();
       const dayIndex = parseInt(container.dataset.dayIndex);
+      const dayName = DAYS_OF_WEEK[dayIndex];
       
-      console.log(`📦 컨테이너 ${dayIndex}:`, {
-        left: rect.left,
-        right: rect.right,
-        top: rect.top,
-        bottom: rect.bottom,
-        width: rect.width,
-        height: rect.height,
-        마우스X: e.clientX,
-        마우스Y: e.clientY,
-        X범위내: e.clientX >= rect.left && e.clientX <= rect.right,
-        Y범위내: e.clientY >= rect.top && e.clientY <= rect.bottom
+      // 블록의 중앙 X가 이 컨테이너 범위에 있는지 확인
+      const isInRange = blockCenterX >= rect.left && blockCenterX <= rect.right;
+      
+      console.log(`  요일 ${dayIndex}(${dayName}):`, {
+        컨테이너범위: `${Math.round(rect.left)} ~ ${Math.round(rect.right)}`,
+        블록중앙X: Math.round(blockCenterX),
+        범위내: isInRange
       });
       
-      // X축만 체크 (Y축은 스크롤 때문에 신뢰하지 않음)
-      if (e.clientX >= rect.left && e.clientX <= rect.right) {
+      if (isInRange) {
         targetDayIndex = dayIndex;
         targetContainer = container;
-        
-        // Y 위치는 컨테이너 상단 기준으로 계산
-        targetY = e.clientY - rect.top;
-        
-        console.log(`✅ 타겟 컨테이너 발견: ${dayIndex}`, {
-          상대Y: targetY
-        });
+        console.log(`✅ 타겟 요일 확정: ${dayIndex}(${dayName})`);
         break;
       }
     }
     
-    // 컨테이너를 찾지 못한 경우 드래그 취소
     if (targetDayIndex === null || targetContainer === null) {
-      console.log('⚠️ 유효한 드롭 위치가 아님 - 드래그 취소');
+      console.log('⚠️ 유효한 요일 컨테이너가 아님 - 드래그 취소');
       setDragging(null);
       return;
     }
     
-    // 🔧 스크롤 위치 정확히 계산
+    // 🔧 Y축: 블록 상단이 어느 시간 슬롯에 있는지 확인
+    const containerRect = targetContainer.getBoundingClientRect();
+    const relativeY = blockTopY - containerRect.top; // 컨테이너 기준 상대 Y
+    
+    // 스크롤 위치 고려
     const scrollContainer = document.querySelector('.overflow-y-auto');
     const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+    const absoluteY = Math.max(0, relativeY + scrollTop);
     
-    // 드래그 오프셋 고려
-    let adjustedY = targetY;
-    if (calendarLogic.dragOffset) {
-      adjustedY = targetY - calendarLogic.dragOffset.y;
-    }
-    
-    const absoluteY = Math.max(0, adjustedY + scrollTop);
-    
-    console.log('📍 Y 좌표 계산:', {
-      마우스Y: e.clientY,
-      컨테이너상단: targetContainer.getBoundingClientRect().top,
-      상대Y: targetY,
-      드래그오프셋Y: calendarLogic.dragOffset?.y || 0,
-      조정된Y: adjustedY,
+    console.log('📍 Y좌표 계산:', {
+      블록상단Y: blockTopY,
+      컨테이너상단: containerRect.top,
+      상대Y: relativeY,
       스크롤: scrollTop,
       절대Y: absoluteY
     });
     
-    // 🔧 시간 계산
+    // 🔧 시간 슬롯 계산
     const newStartTime = pixelToNearestTimeSlot(absoluteY);
     const newStartMinutes = parseTimeToMinutes(newStartTime);
     
     console.log('⏰ 시간 변환:', {
-      절대Y픽셀: absoluteY,
+      픽셀: absoluteY,
       계산된시간: newStartTime,
-      분으로변환: newStartMinutes
+      분: newStartMinutes
     });
     
     // 24시간을 넘지 않도록 제한
@@ -514,6 +510,7 @@ const WeeklyCalendar = ({
     
     const newEndTime = minutesToTimeString(newEndMinutes);
     const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
+    const targetDayName = DAYS_OF_WEEK[targetDayIndex];
     
     const updatedData = {
       date: newDate,
@@ -521,21 +518,32 @@ const WeeklyCalendar = ({
       end: newEndTime
     };
     
-    console.log('📅 최종 일정 이동 계산:', {
+    console.log('📅 최종 이동 결과:', {
       원본: { 
         날짜: schedule.date, 
         시작: schedule.start, 
         종료: schedule.end,
-        요일인덱스: currentWeek.findIndex(d => d.toISOString().split("T")[0] === schedule.date)
+        요일: DAYS_OF_WEEK[currentWeek.findIndex(d => d.toISOString().split("T")[0] === schedule.date)]
       },
       새위치: { 
         날짜: newDate, 
         시작: newStartTime, 
         종료: newEndTime,
-        요일인덱스: targetDayIndex
+        요일: targetDayName
       },
       지속시간분: duration
     });
+    
+    // 변경사항이 있는지 확인
+    const hasChanged = schedule.date !== newDate || 
+                      schedule.start !== newStartTime || 
+                      schedule.end !== newEndTime;
+    
+    if (!hasChanged) {
+      console.log('📌 변경사항 없음 - 드래그 취소');
+      setDragging(null);
+      return;
+    }
     
     // 겹침 검사 (자기 자신 제외)
     const otherSchedules = safeSchedules.filter(s => s.id !== schedule.id);
@@ -576,7 +584,7 @@ const WeeklyCalendar = ({
         if (schedule.date === newDate) {
           message.textContent = `시간 변경: ${schedule.title} → ${newStartTime}`;
         } else {
-          message.textContent = `일정 이동: ${schedule.title} → ${getDayOfWeek(currentWeek[targetDayIndex])}`;
+          message.textContent = `일정 이동: ${schedule.title} → ${targetDayName} ${newStartTime}`;
         }
         
         document.body.appendChild(message);
@@ -618,7 +626,7 @@ const WeeklyCalendar = ({
     // 드래그 상태 초기화
     setDragging(null);
     console.log('🏁 드래그 종료 완료');
-  }, [calendarLogic.dragging, calendarLogic.dragOffset, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, updateSchedule, setDragging, getDayOfWeek]);
+  }, [calendarLogic.dragging, calendarLogic.dragOffset, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, updateSchedule, setDragging, DAYS_OF_WEEK]);
     
   // ✅ 일정 추가 핸들러 (누락된 함수)
   const handleAdd = useCallback(async () => {
