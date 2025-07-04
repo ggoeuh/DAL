@@ -86,24 +86,58 @@ const calculateTagTotals = (schedules, targetMonth = null) => {
   return totals;
 };
 
+// 🔧 수정된 겹침 검사 함수 - 더 정확한 로직
 const checkScheduleOverlap = (schedules, newSchedule) => {
+  // 자기 자신은 제외하고 같은 날짜의 일정들만 필터링
   const filtered = schedules.filter(s => 
     s.date === newSchedule.date && s.id !== newSchedule.id
   );
   
+  console.log('🔍 겹침 검사:', {
+    newSchedule: {
+      id: newSchedule.id,
+      date: newSchedule.date,
+      start: newSchedule.start,
+      end: newSchedule.end,
+      title: newSchedule.title
+    },
+    existingSchedules: filtered.map(s => ({
+      id: s.id,
+      start: s.start,
+      end: s.end,
+      title: s.title
+    }))
+  });
+  
   const newStart = parseTimeToMinutes(newSchedule.start);
   const newEnd = parseTimeToMinutes(newSchedule.end);
   
-  return filtered.some(s => {
+  const conflictingSchedule = filtered.find(s => {
     const existingStart = parseTimeToMinutes(s.start);
     const existingEnd = parseTimeToMinutes(s.end);
     
-    return (
+    const hasOverlap = (
       (newStart >= existingStart && newStart < existingEnd) ||
       (newEnd > existingStart && newEnd <= existingEnd) ||
       (newStart <= existingStart && newEnd >= existingEnd)
     );
+    
+    console.log(`📊 겹침 검사 상세: ${s.title}`, {
+      existing: `${s.start}(${existingStart}) - ${s.end}(${existingEnd})`,
+      new: `${newSchedule.start}(${newStart}) - ${newSchedule.end}(${newEnd})`,
+      hasOverlap
+    });
+    
+    return hasOverlap;
   });
+  
+  if (conflictingSchedule) {
+    console.log('❌ 겹침 발견:', conflictingSchedule.title);
+    return true;
+  }
+  
+  console.log('✅ 겹침 없음');
+  return false;
 };
 
 // ✅ 문제 3 해결: 요일 문자열을 요일 인덱스로 변환하는 함수 추가
