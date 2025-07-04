@@ -166,7 +166,9 @@ const getDayIndexFromKoreanDay = (koreanDay) => {
   const dayMap = {
     "일": 0, "월": 1, "화": 2, "수": 3, "목": 4, "금": 5, "토": 6
   };
-  return dayMap[koreanDay] !== undefined ? dayMap[koreanDay] : -1;
+  const result = dayMap[koreanDay] !== undefined ? dayMap[koreanDay] : -1;
+  console.log(`🔍 getDayIndexFromKoreanDay: "${koreanDay}" → ${result}`);
+  return result;
 };
 
 // 커스텀 훅: 캘린더 로직 (최적화됨)
@@ -692,6 +694,14 @@ export const useWeeklyCalendarLogic = (props = {}) => {
 
   // ✅ 일정 추가/수정/삭제 헬퍼 함수들 - 즉시 저장
   const addSchedule = useCallback(async (newSchedule) => {
+    console.log('➕ addSchedule 호출됨:', {
+      id: newSchedule.id,
+      date: newSchedule.date,
+      title: newSchedule.title,
+      start: newSchedule.start,
+      end: newSchedule.end
+    });
+    
     const updatedSchedules = [...safeSchedules, newSchedule];
     setSchedules(updatedSchedules);
     
@@ -739,6 +749,159 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     }
     return { success: true };
   }, [safeSchedules, safeMonthlyGoals, safeTags, safeTagItems, isServerBased, currentUser, saveDataToServer]);
+
+  // 🎯 핵심 추가: handleAdd 함수 - 요일 다중 선택 지원
+  const handleAdd = useCallback(async (formData) => {
+    console.log('🔍 handleAdd 호출됨 (Logic)!');
+    console.log('🔍 formData:', formData);
+    console.log('🔍 formData.weekdays:', formData.weekdays);
+    console.log('🔍 formData.weekdays.length:', formData.weekdays?.length);
+
+    if (!formData.title || !formData.startSlot || !formData.end) {
+      alert('제목, 시간을 모두 입력해주세요.');
+      return { success: false, error: 'Missing required fields' };
+    }
+
+    const tagInfo = safeTagItems.find(
+      item => item.tagType === formData.selectedTagType && item.tagName === formData.tag
+    );
+
+    const focusedBaseDate = new Date(currentWeek[focusedDayIndex]);
+    
+    const baseSchedule = {
+      id: Date.now(),
+      date: focusedBaseDate.toISOString().split("T")[0],
+      start: formData.startSlot,
+      end: formData.end,
+      title: formData.title,
+      description: formData.description || "",
+      tag: formData.tag,
+      tagType: tagInfo ? tagInfo.tagType : "",
+      done: false
+    };
+
+    const repeatCount = parseInt(formData.repeatCount || "1");
+    const interval = parseInt(formData.interval || "1");
+    
+    const selectedWeekdays = formData.weekdays && formData.weekdays.length > 0
+      ? formData.weekdays
+      : [DAYS_OF_WEEK[focusedDayIndex]];
+
+    console.log('🗓️ 최종 선택된 요일들:', selectedWeekdays);
+    console.log('📅 현재 주:', currentWeek.map(d => ({
+      date: d.toISOString().split('T')[0],
+      day: DAYS_OF_WEEK[d.getDay()]
+    })));
+
+    const newSchedules = [];
+    let scheduleIdCounter = Date.now();
+
+    // 🔧 getDayIndexFromKoreanDay 함수 검증
+    console.log('🔍 getDayIndexFromKoreanDay 함수 테스트:');
+    DAYS_OF_WEEK.forEach((day, idx) => {
+      const calculatedIndex = getDayIndexFromKoreanDay(day);
+      console.log(`${day}: 예상 ${idx} → 실제 ${calculatedIndex}`);
+    });
+
+    for (let week = 0; week < repeatCount; week++) {
+      console.log(`\n📆 ${week + 1}번째 주 처리 중...`);
+      
+      for (let dayIdx = 0; dayIdx < selectedWeekdays.length; dayIdx++) {
+        const koreanWeekday = selectedWeekdays[dayIdx];
+        
+        // 🔍 요일 인덱스 계산 디버깅
+        const weekdayIndex = getDayIndexFromKoreanDay(koreanWeekday);
+        console.log(`🔍 요일 처리: "${koreanWeekday}" → 인덱스 ${weekdayIndex}`);
+        
+        if (weekdayIndex === -1) {
+          console.log(`❌ "${koreanWeekday}"는 유효하지 않은 요일입니다.`);
+          continue;
+        }
+
+        // 🔍 날짜 계산 디버깅
+        const currentWeekDate = currentWeek[weekdayIndex];
+        console.log(`📅 currentWeek[${weekdayIndex}]:`, currentWeekDate.toISOString().split('T')[0]);
+        
+        const targetDate = new Date(currentWeekDate);
+        targetDate.setDate(currentWeekDate.getDate() + (week * 7 * interval));
+        
+        console.log(`📅 최종 계산된 날짜: ${targetDate.toISOString().split('T')[0]} (${DAYS_OF_WEEK[targetDate.getDay()]})`);
+
+        const schedule = {
+          ...baseSchedule,
+          id: scheduleIdCounter++, // 🔧 고유 ID 생성
+          date: targetDate.toISOString().split("T")[0],
+        };
+
+        console.log(`✅ 생성될 일정:`, {
+          id: schedule.id,
+          date: schedule.date,
+          title: schedule.title,
+          start: schedule.start,
+          end: schedule.end,
+          expectedDay: koreanWeekday,
+          actualDay: DAYS_OF_WEEK[targetDate.getDay()]
+        });
+
+        // 겹침 검사
+        if (checkScheduleOverlap(safeSchedules, schedule)) {
+          alert(`${targetDate.toLocaleDateString()} ${koreanWeekday}에 시간 겹침이 발생하여 일정 추가를 중단합니다.`);
+          return { success: false, error: 'Schedule overlap detected' };
+        }
+
+        newSchedules.push(schedule);
+      }
+    }
+
+    console.log(`\n🎯 최종 생성될 일정들:`, newSchedules.map(s => ({
+      date: s.date,
+      day: DAYS_OF_WEEK[new Date(s.date).getDay()],
+      title: s.title,
+      time: `${s.start}-${s.end}`
+    })));
+
+    // 실제 일정 추가
+    let addedCount = 0;
+    for (const schedule of newSchedules) {
+      console.log(`📝 일정 추가 시도:`, schedule.date, schedule.title);
+      const result = await addSchedule(schedule);
+      if (result.success) {
+        addedCount++;
+        console.log(`✅ 일정 추가 성공: ${schedule.date} (${DAYS_OF_WEEK[new Date(schedule.date).getDay()]}) ${schedule.title}`);
+      } else {
+        console.error(`❌ 일정 추가 실패: ${result.error}`);
+        alert(`일정 추가에 실패했습니다: ${result.error}`);
+        return { success: false, error: result.error };
+      }
+    }
+
+    console.log(`🎉 총 ${addedCount}개의 일정이 성공적으로 추가되었습니다!`);
+
+    // 성공 메시지 표시
+    const message = document.createElement('div');
+    message.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #10b981;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 9999;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+    message.textContent = `🎉 ${addedCount}개 일정 추가 완료! (요일: ${selectedWeekdays.join(', ')})`;
+    document.body.appendChild(message);
+    
+    setTimeout(() => {
+      if (document.body.contains(message)) {
+        document.body.removeChild(message);
+      }
+    }, 3000);
+
+    return { success: true, addedCount };
+  }, [safeTagItems, currentWeek, focusedDayIndex, DAYS_OF_WEEK, checkScheduleOverlap, safeSchedules, addSchedule]);
 
   // ✅ 문제 1 해결: 현재 포커스된 날짜의 월 정보를 계산
   const currentMonth = useMemo(() => {
@@ -819,6 +982,7 @@ export const useWeeklyCalendarLogic = (props = {}) => {
     addSchedule,
     updateSchedule,
     deleteSchedule,
+    handleAdd, // 🎯 핵심 추가: handleAdd 함수
     
     // 상수들
     SLOT_HEIGHT,
