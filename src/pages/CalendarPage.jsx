@@ -461,7 +461,20 @@ const CalendarPage = ({
         });
         
         // App.jsx의 상태 업데이트 함수들 호출
-        if (setSchedules) setSchedules(result.data.schedules || []);
+        // 중복 제거 함수 (함수 안쪽에 넣어도 OK)
+        const removeDuplicateSchedules = (scheduleList) => {
+          const seen = new Set();
+          return scheduleList.filter((s) => {
+            const key = `${s.date}-${s.start}-${s.end}-${s.tagType}-${s.title}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        };
+        
+        // 중복 제거 후 저장
+        const cleanedSchedules = removeDuplicateSchedules(result.data.schedules || []);
+        if (setSchedules) setSchedules(cleanedSchedules);
         if (setTags) setTags(result.data.tags || []);
         if (setTagItems) setTagItems(result.data.tagItems || []);
         if (setMonthlyGoals) setMonthlyGoals(result.data.monthlyGoals || []);
