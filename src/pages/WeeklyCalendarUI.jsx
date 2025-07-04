@@ -1,4 +1,3 @@
-// WeeklyCalendarUI.jsx - 기존 구조 유지하면서 필요한 기능만 추가
 import React, { useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -759,24 +758,6 @@ export const WeeklyCalendarUI = ({
         handleCopySchedule={handleCopySchedule} 
         handleDeleteSchedule={handleDeleteSchedule} 
       />
-      
-      {/* 🔧 드래그 상태 강제 리셋 버튼 (디버깅용) */}
-      {dragging && (
-        <div className="fixed top-16 left-1/2 transform -translate-x-1/2 bg-red-100 text-red-800 px-4 py-2 rounded-lg shadow-md z-50 flex items-center gap-2">
-          <span>🖱️ 드래그 모드 활성화 중...</span>
-          <button 
-            onClick={() => {
-              console.log('🔧 강제 드래그 리셋');
-              calendarLogic.setDragging(null);
-              document.body.style.cursor = 'default';
-            }}
-            className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
-          >
-            리셋
-          </button>
-          <span className="text-xs">(ESC 키로도 취소 가능)</span>
-        </div>
-      )}
       
       {/* 헤더 및 상단 요약바 */}
       <div className="bg-white shadow-sm p-4 flex flex-col">
