@@ -678,18 +678,19 @@ const MonthlyPlan = ({
                               <div 
                                 className={`${colors.bg} ${colors.border} border rounded-lg p-3 relative cursor-pointer hover:shadow-md transition-shadow hover:bg-opacity-80`}
                                 onClick={(e) => {
-                                  console.log('🖱️ 블럭 클릭됨:', item.tag);
-                                  if (item.tag && !item.tag.includes('목표')) {
+                                  console.log('🖱️ 블럭 클릭됨:', item);
+                                  // 서버에서 불러온 실제 데이터인 경우에만 클릭 허용
+                                  if (item.id && !item.id.toString().startsWith('goal-')) {
                                     handleBlockClick(item, e);
                                   }
                                 }}
                               >
-                                {/* 수정/삭제 버튼 - 모든 실제 계획에 표시 */}
-                                {item.tag && !item.tag.includes('목표') && (
+                                {/* 수정/삭제 버튼 - 서버에서 불러온 실제 계획들에만 표시 */}
+                                {item.id && !item.id.toString().startsWith('goal-') && (
                                   <div className="absolute top-2 right-2 flex gap-1 z-10">
                                     <button
                                       onClick={(e) => {
-                                        console.log('✏️ 수정 버튼 클릭됨');
+                                        console.log('✏️ 수정 버튼 클릭됨', item);
                                         e.stopPropagation();
                                         handleEditPlan(item, e);
                                       }}
@@ -701,7 +702,7 @@ const MonthlyPlan = ({
                                     </button>
                                     <button
                                       onClick={(e) => {
-                                        console.log('🗑️ 삭제 버튼 클릭됨');
+                                        console.log('🗑️ 삭제 버튼 클릭됨', item);
                                         e.stopPropagation();
                                         handleDeleteSinglePlan(item.id, e);
                                       }}
