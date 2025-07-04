@@ -296,10 +296,6 @@ const WeeklyCalendar = ({
   }, [copyingSchedule, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, checkScheduleOverlap, safeSchedules, addSchedule, setShowOverlapMessage, setCopyingSchedule]);
 
   // 🔧 수정된 드래그 핸들러들
-  // 🔧 가장 기본적이고 단순한 드래그 핸들러 - 모든 기능 복구
-
-  // 🔧 드래그 중 드롭 위치 미리보기 그림자가 있는 드래그 핸들러
-
   // 🔧 드래그 중 드롭 위치 미리보기 그림자가 있는 드래그 핸들러
 
   const handleDragStart = useCallback((e, scheduleId) => {
@@ -351,6 +347,54 @@ const WeeklyCalendar = ({
     console.log('✅ 드래그 시작 완료');
   }, [safeSchedules, setDragging, setDragOffset]);
   
+  // 🔧 드롭 위치 계산 함수 (스크롤 문제 해결)
+  const getDropPosition = useCallback((mouseX, mouseY) => {
+    const containers = document.querySelectorAll('[data-day-index]');
+    let targetDayIndex = null;
+    let targetContainer = null;
+    
+    // 🔧 1단계: 마우스 X 위치로 정확한 컨테이너 찾기
+    for (const container of containers) {
+      const rect = container.getBoundingClientRect();
+      if (mouseX >= rect.left && mouseX <= rect.right) {
+        targetDayIndex = parseInt(container.dataset.dayIndex);
+        targetContainer = container;
+        console.log(`🎯 컨테이너 선택: dayIndex=${targetDayIndex}, 요일=${DAYS_OF_WEEK[targetDayIndex]}`);
+        break;
+      }
+    }
+    
+    if (targetDayIndex === null || targetContainer === null) {
+      return null;
+    }
+    
+    // 🔧 2단계: Y 위치 정확한 계산 (스크롤 고려)
+    const containerRect = targetContainer.getBoundingClientRect();
+    const relativeY = mouseY - containerRect.top; // 컨테이너 기준 상대 Y
+    
+    // 스크롤 컨테이너 찾기
+    const scrollContainer = document.querySelector('.overflow-y-auto');
+    const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+    
+    // 절대 Y 위치 (스크롤 + 상대위치)
+    const absoluteY = Math.max(0, relativeY + scrollTop);
+    
+    console.log('📐 Y좌표 계산:', {
+      마우스Y: mouseY,
+      컨테이너상단: containerRect.top,
+      상대Y: relativeY,
+      스크롤: scrollTop,
+      절대Y: absoluteY
+    });
+    
+    return {
+      dayIndex: targetDayIndex,
+      container: targetContainer,
+      absoluteY: absoluteY,
+      relativeY: relativeY
+    };
+  }, [DAYS_OF_WEEK]);
+  
   const handleDragMove = useCallback((e) => {
     if (!calendarLogic.dragging) return;
     
@@ -374,126 +418,110 @@ const WeeklyCalendar = ({
       existingPreview.remove();
     }
     
-    // 🔧 드롭 위치 계산
-    const containers = document.querySelectorAll('[data-day-index]');
-    let targetDayIndex = null;
-    let targetContainer = null;
-    let targetY = null;
+    // 🔧 공통 드롭 위치 계산 함수 사용
+    const dropPos = getDropPosition(e.clientX, e.clientY);
+    if (!dropPos) return;
     
-    for (const container of containers) {
-      const rect = container.getBoundingClientRect();
-      if (e.clientX >= rect.left && e.clientX <= rect.right) {
-        targetDayIndex = parseInt(container.dataset.dayIndex);
-        targetContainer = container;
-        targetY = e.clientY - rect.top;
-        break;
-      }
-    }
+    const { dayIndex: targetDayIndex, container: targetContainer, absoluteY } = dropPos;
     
-    if (targetDayIndex !== null && targetContainer) {
-      // 스크롤 고려한 Y 위치 계산
-      const scrollContainer = document.querySelector('.overflow-y-auto');
-      const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
-      const absoluteY = Math.max(0, targetY + scrollTop);
+    // 예상 시간 계산
+    const newStartTime = pixelToNearestTimeSlot(absoluteY);
+    const newStartMinutes = parseTimeToMinutes(newStartTime);
+    
+    // 기존 지속시간 유지
+    const oldStartMinutes = parseTimeToMinutes(schedule.start);
+    const oldEndMinutes = parseTimeToMinutes(schedule.end);
+    const duration = oldEndMinutes - oldStartMinutes;
+    const newEndMinutes = newStartMinutes + duration;
+    
+    // 24시간 내에 있고 유효한 시간인 경우에만 프리뷰 표시
+    if (newEndMinutes < 24 * 60 && newStartMinutes >= 0) {
+      const newEndTime = minutesToTimeString(newEndMinutes);
+      const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
       
-      // 예상 시간 계산
-      const newStartTime = pixelToNearestTimeSlot(absoluteY);
-      const newStartMinutes = parseTimeToMinutes(newStartTime);
+      // 겹침 체크
+      const hasConflict = safeSchedules.some(s => 
+        s.id !== schedule.id && 
+        s.date === newDate &&
+        ((newStartMinutes >= parseTimeToMinutes(s.start) && newStartMinutes < parseTimeToMinutes(s.end)) ||
+         (newEndMinutes > parseTimeToMinutes(s.start) && newEndMinutes <= parseTimeToMinutes(s.end)) ||
+         (newStartMinutes <= parseTimeToMinutes(s.start) && newEndMinutes >= parseTimeToMinutes(s.end)))
+      );
       
-      // 기존 지속시간 유지
-      const oldStartMinutes = parseTimeToMinutes(schedule.start);
-      const oldEndMinutes = parseTimeToMinutes(schedule.end);
-      const duration = oldEndMinutes - oldStartMinutes;
-      const newEndMinutes = newStartMinutes + duration;
+      // 🔧 드롭 위치 프리뷰 생성 - 시간을 픽셀로 직접 변환
+      const timeToPixel = (time) => {
+        const minutes = parseTimeToMinutes(time);
+        return (minutes / 30) * 24; // 30분당 24픽셀 (SLOT_HEIGHT)
+      };
       
-      // 24시간 내에 있고 유효한 시간인 경우에만 프리뷰 표시
-      if (newEndMinutes < 24 * 60 && newStartMinutes >= 0) {
-        const newEndTime = minutesToTimeString(newEndMinutes);
-        const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
-        
-        // 겹침 체크
-        const hasConflict = safeSchedules.some(s => 
-          s.id !== schedule.id && 
-          s.date === newDate &&
-          ((newStartMinutes >= parseTimeToMinutes(s.start) && newStartMinutes < parseTimeToMinutes(s.end)) ||
-           (newEndMinutes > parseTimeToMinutes(s.start) && newEndMinutes <= parseTimeToMinutes(s.end)) ||
-           (newStartMinutes <= parseTimeToMinutes(s.start) && newEndMinutes >= parseTimeToMinutes(s.end)))
-        );
-        
-        // 🔧 드롭 위치 프리뷰 생성 - 시간을 픽셀로 직접 변환
-        const timeToPixel = (time) => {
-          const minutes = parseTimeToMinutes(time);
-          return (minutes / 30) * 24; // 30분당 24픽셀 (SLOT_HEIGHT)
-        };
-        
-        const previewTop = timeToPixel(newStartTime);
-        const previewHeight = timeToPixel(newEndTime) - previewTop;
-        const containerRect = targetContainer.getBoundingClientRect();
-        
-        const dropPreview = document.createElement('div');
-        dropPreview.id = 'drop-preview';
-        dropPreview.style.cssText = `
-          position: absolute;
-          left: 2px;
-          right: 2px;
-          top: ${previewTop}px;
-          height: ${previewHeight}px;
-          z-index: 40;
-          pointer-events: none;
-          border-radius: 8px;
-          border: 3px dashed ${hasConflict ? '#ef4444' : '#10b981'};
-          background: ${hasConflict ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)'};
-          font-size: 11px;
-          font-weight: bold;
-          color: ${hasConflict ? '#dc2626' : '#059669'};
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          animation: dropPreviewPulse 1s ease-in-out infinite alternate;
+      const previewTop = timeToPixel(newStartTime);
+      const previewHeight = timeToPixel(newEndTime) - previewTop;
+      
+      const dropPreview = document.createElement('div');
+      dropPreview.id = 'drop-preview';
+      dropPreview.style.cssText = `
+        position: absolute;
+        left: 2px;
+        right: 2px;
+        top: ${previewTop}px;
+        height: ${previewHeight}px;
+        z-index: 40;
+        pointer-events: none;
+        border-radius: 8px;
+        border: 3px dashed ${hasConflict ? '#ef4444' : '#10b981'};
+        background: ${hasConflict ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)'};
+        font-size: 11px;
+        font-weight: bold;
+        color: ${hasConflict ? '#dc2626' : '#059669'};
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        animation: dropPreviewPulse 1s ease-in-out infinite alternate;
+      `;
+      
+      // 프리뷰 내용
+      const previewContent = document.createElement('div');
+      previewContent.style.cssText = `
+        text-align: center;
+        padding: 4px;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      `;
+      
+      if (hasConflict) {
+        previewContent.innerHTML = `
+          <div>❌ 겹침 발생</div>
+          <div style="font-size: 10px; margin-top: 2px;">${newStartTime} - ${newEndTime}</div>
         `;
-        
-        // 프리뷰 내용
-        const previewContent = document.createElement('div');
-        previewContent.style.cssText = `
-          text-align: center;
-          padding: 4px;
-          background: rgba(255, 255, 255, 0.9);
-          border-radius: 4px;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      } else {
+        const dayName = DAYS_OF_WEEK[targetDayIndex];
+        previewContent.innerHTML = `
+          <div>✅ ${dayName}</div>
+          <div style="font-size: 10px; margin-top: 2px;">${newStartTime} - ${newEndTime}</div>
         `;
-        
-        if (hasConflict) {
-          previewContent.innerHTML = `
-            <div>❌ 겹침 발생</div>
-            <div style="font-size: 10px; margin-top: 2px;">${newStartTime} - ${newEndTime}</div>
-          `;
-        } else {
-          const dayName = DAYS_OF_WEEK[targetDayIndex];
-          previewContent.innerHTML = `
-            <div>✅ ${dayName}</div>
-            <div style="font-size: 10px; margin-top: 2px;">${newStartTime} - ${newEndTime}</div>
-          `;
-        }
-        
-        dropPreview.appendChild(previewContent);
-        targetContainer.appendChild(dropPreview);
-        
-        // 🔧 CSS 애니메이션 추가 (한 번만)
-        if (!document.getElementById('drop-preview-styles')) {
-          const style = document.createElement('style');
-          style.id = 'drop-preview-styles';
-          style.textContent = `
-            @keyframes dropPreviewPulse {
-              0% { opacity: 0.6; transform: scale(0.98); }
-              100% { opacity: 1; transform: scale(1); }
-            }
-          `;
-          document.head.appendChild(style);
-        }
       }
+      
+      dropPreview.appendChild(previewContent);
+      targetContainer.appendChild(dropPreview);
+      
+      // 🔧 CSS 애니메이션 추가 (한 번만)
+      if (!document.getElementById('drop-preview-styles')) {
+        const style = document.createElement('style');
+        style.id = 'drop-preview-styles';
+        style.textContent = `
+          @keyframes dropPreviewPulse {
+            0% { opacity: 0.6; transform: scale(0.98); }
+            100% { opacity: 1; transform: scale(1); }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      
+      console.log(`📍 프리뷰 위치: ${DAYS_OF_WEEK[targetDayIndex]} ${newStartTime}-${newEndTime}`);
     }
-  }, [calendarLogic.dragging, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, DAYS_OF_WEEK]);
+  }, [calendarLogic.dragging, safeSchedules, getDropPosition, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, DAYS_OF_WEEK]);
   
   const handleDragEnd = useCallback(async (e) => {
     console.log('🖱️ 드래그 종료');
@@ -522,33 +550,18 @@ const WeeklyCalendar = ({
       return;
     }
     
-    // 드롭 위치 계산 (move와 동일한 로직)
-    const containers = document.querySelectorAll('[data-day-index]');
-    let targetDayIndex = null;
-    let targetY = null;
-    
-    for (const container of containers) {
-      const rect = container.getBoundingClientRect();
-      if (e.clientX >= rect.left && e.clientX <= rect.right) {
-        targetDayIndex = parseInt(container.dataset.dayIndex);
-        targetY = e.clientY - rect.top;
-        break;
-      }
-    }
-    
-    if (targetDayIndex === null) {
+    // 🔧 프리뷰와 동일한 계산 로직 사용
+    const dropPos = getDropPosition(e.clientX, e.clientY);
+    if (!dropPos) {
       console.log('유효한 드롭 위치가 아님');
       setDragging(null);
       return;
     }
     
-    // 시간 계산
-    const scrollContainer = document.querySelector('.overflow-y-auto');
-    const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
-    const absoluteY = Math.max(0, targetY + scrollTop);
-    const newStartTime = pixelToNearestTimeSlot(absoluteY);
+    const { dayIndex: targetDayIndex, absoluteY } = dropPos;
     
-    // 기존 지속시간 유지
+    // 시간 계산 (프리뷰와 동일)
+    const newStartTime = pixelToNearestTimeSlot(absoluteY);
     const oldStartMinutes = parseTimeToMinutes(schedule.start);
     const oldEndMinutes = parseTimeToMinutes(schedule.end);
     const duration = oldEndMinutes - oldStartMinutes;
@@ -565,6 +578,8 @@ const WeeklyCalendar = ({
     
     const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
     
+    console.log(`📍 실제 드롭: ${DAYS_OF_WEEK[targetDayIndex]} ${newStartTime}-${newEndTime}`);
+    
     // 변경사항 체크
     if (schedule.date === newDate && schedule.start === newStartTime) {
       console.log('변경사항 없음');
@@ -572,7 +587,7 @@ const WeeklyCalendar = ({
       return;
     }
     
-    // 겹침 체크
+    // 겹침 체크 (프리뷰와 동일)
     const conflicts = safeSchedules.filter(s => 
       s.id !== schedule.id && 
       s.date === newDate &&
@@ -674,7 +689,7 @@ const WeeklyCalendar = ({
     }
     
     setDragging(null);
-  }, [calendarLogic.dragging, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, updateSchedule, setDragging, DAYS_OF_WEEK]);
+  }, [calendarLogic.dragging, safeSchedules, getDropPosition, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, updateSchedule, setDragging, DAYS_OF_WEEK]);
     
   // ✅ 일정 추가 핸들러 (누락된 함수)
   const handleAdd = useCallback(async () => {
