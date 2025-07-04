@@ -671,13 +671,20 @@ const MonthlyPlan = ({
                             <div key={item.id} className="w-[250px] flex-shrink-0">
                               <div 
                                 className={`${colors.bg} ${colors.border} border rounded-lg p-3 relative cursor-pointer hover:shadow-md transition-shadow ${!item.isGoal ? 'hover:bg-opacity-80' : ''}`}
-                                onClick={() => handleBlockClick(item)}
+                                onClick={(e) => {
+                                  console.log('🖱️ 블럭 div 클릭됨');
+                                  handleBlockClick(item, e);
+                                }}
                               >
                                 {/* 수정/삭제 버튼 (실제 계획만) */}
                                 {!item.isGoal && (
-                                  <div className="absolute top-2 right-2 flex gap-1">
+                                  <div className="absolute top-2 right-2 flex gap-1 z-10">
                                     <button
-                                      onClick={(e) => handleEditPlan(item, e)}
+                                      onClick={(e) => {
+                                        console.log('✏️ 수정 버튼 클릭됨');
+                                        e.stopPropagation();
+                                        handleEditPlan(item, e);
+                                      }}
                                       disabled={saving}
                                       className="text-gray-400 hover:text-blue-600 text-xs bg-white rounded px-1 py-0.5 shadow-sm disabled:opacity-50"
                                       title="수정"
@@ -685,7 +692,11 @@ const MonthlyPlan = ({
                                       수정
                                     </button>
                                     <button
-                                      onClick={(e) => handleDeleteSinglePlan(item.id, e)}
+                                      onClick={(e) => {
+                                        console.log('🗑️ 삭제 버튼 클릭됨');
+                                        e.stopPropagation();
+                                        handleDeleteSinglePlan(item.id, e);
+                                      }}
                                       disabled={saving}
                                       className="text-gray-400 hover:text-red-600 text-xs bg-white rounded px-1 py-0.5 shadow-sm disabled:opacity-50"
                                       title="삭제"
