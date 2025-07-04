@@ -395,22 +395,11 @@ const MonthlyPlan = ({
       const relatedPlans = currentMonthPlans.filter(plan => plan.tagType === goal.tagType);
       
       if (relatedPlans.length > 0) {
-        // 실제 계획들이 있으면 각각 표시 (isGoal: false로 설정)
         relatedPlans.forEach(plan => {
           grouped[goal.tagType].push({
             ...plan,
-            isGoal: false  // ✅ 실제 계획은 수정/삭제 가능
+            isGoal: false
           });
-        });
-      } else {
-        // 계획이 없으면 목표만 표시 (isGoal: true로 설정)
-        grouped[goal.tagType].push({
-          id: `goal-${goal.tagType}`,
-          tagType: goal.tagType,
-          tag: goal.tagType + ' 목표',
-          description: '',
-          estimatedTime: parseInt(goal.targetHours.split(':')[0]) || 0,
-          isGoal: true  // ✅ 목표 블럭은 수정/삭제 불가
         });
       }
     });
