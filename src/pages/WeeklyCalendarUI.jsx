@@ -636,51 +636,84 @@ export const WeeklyCalendarUI = ({
     setContextMenu({ ...contextMenu, visible: false });
   }, [contextMenu, setContextMenu]);
 
-  // ✅ 문제 2 해결: 이벤트 리스너 개선
+  // ✅ 문제 2 해결: 이벤트 리스너 개선 - 드래그 종료 문제 해결
   useEffect(() => {
     const cleanup = [];
     
     if (resizing) {
-      const handleMouseMove = (e) => handleResizeMove(e);
-      const handleMouseUp = (e) => handleResizeEnd(e);
+      const handleMouseMove = (e) => {
+        e.preventDefault();
+        handleResizeMove(e);
+      };
+      const handleMouseUp = (e) => {
+        e.preventDefault();
+        handleResizeEnd(e);
+      };
       
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('mousemove', handleMouseMove, { passive: false });
+      document.addEventListener('mouseup', handleMouseUp);
       cleanup.push(
-        () => window.removeEventListener('mousemove', handleMouseMove),
-        () => window.removeEventListener('mouseup', handleMouseUp)
+        () => document.removeEventListener('mousemove', handleMouseMove),
+        () => document.removeEventListener('mouseup', handleMouseUp)
       );
     }
     
     if (copyingSchedule) {
-      const handleMouseMove = (e) => handleCopyMove(e);
-      const handleMouseUp = (e) => handleCopyEnd(e);
+      const handleMouseMove = (e) => {
+        e.preventDefault();
+        handleCopyMove(e);
+      };
+      const handleMouseUp = (e) => {
+        e.preventDefault();
+        handleCopyEnd(e);
+      };
       
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener('mousemove', handleMouseMove, { passive: false });
+      document.addEventListener('mouseup', handleMouseUp);
       cleanup.push(
-        () => window.removeEventListener('mousemove', handleMouseMove),
-        () => window.removeEventListener('mouseup', handleMouseUp)
+        () => document.removeEventListener('mousemove', handleMouseMove),
+        () => document.removeEventListener('mouseup', handleMouseUp)
       );
       console.log('📋 복사 모드 이벤트 리스너 등록');
     }
     
     if (dragging) {
-      const handleMouseMove = (e) => handleDragMove(e);
-      const handleMouseUp = (e) => handleDragEnd(e);
+      const handleMouseMove = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleDragMove(e);
+      };
       
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      const handleMouseUp = (e) => {
+        console.log('🖱️ mouseup 이벤트 감지됨!');
+        e.preventDefault();
+        e.stopPropagation();
+        handleDragEnd(e);
+      };
+      
+      // 🔧 document와 window 둘 다에 이벤트 등록 (브라우저 호환성)
+      document.addEventListener('mousemove', handleMouseMove, { passive: false });
+      document.addEventListener('mouseup', handleMouseUp, { passive: false });
+      window.addEventListener('mouseup', handleMouseUp, { passive: false });
+      
+      // 🔧 추가: 마우스가 브라우저 밖으로 나갔을 때도 처리
+      document.addEventListener('mouseleave', handleMouseUp);
+      
       cleanup.push(
-        () => window.removeEventListener('mousemove', handleMouseMove),
-        () => window.removeEventListener('mouseup', handleMouseUp)
+        () => document.removeEventListener('mousemove', handleMouseMove),
+        () => document.removeEventListener('mouseup', handleMouseUp),
+        () => window.removeEventListener('mouseup', handleMouseUp),
+        () => document.removeEventListener('mouseleave', handleMouseUp)
       );
-      console.log('🖱️ 드래그 모드 이벤트 리스너 등록');
+      console.log('🖱️ 드래그 모드 이벤트 리스너 등록 완료');
     }
     
     if (contextMenu.visible) {
-      window.addEventListener('click', handleClickOutside);
-      cleanup.push(() => window.removeEventListener('click', handleClickOutside));
+      const handleClick = (e) => {
+        handleClickOutside(e);
+      };
+      document.addEventListener('click', handleClick);
+      cleanup.push(() => document.removeEventListener('click', handleClick));
     }
     
     if (autoScrollTimer) {
@@ -688,6 +721,7 @@ export const WeeklyCalendarUI = ({
     }
     
     return () => {
+      console.log('🧹 이벤트 리스너 정리:', cleanup.length, '개');
       cleanup.forEach(fn => fn());
     };
   }, [
@@ -725,6 +759,24 @@ export const WeeklyCalendarUI = ({
         handleCopySchedule={handleCopySchedule} 
         handleDeleteSchedule={handleDeleteSchedule} 
       />
+      
+      {/* 🔧 드래그 상태 강제 리셋 버튼 (디버깅용) */}
+      {dragging && (
+        <div className="fixed top-16 left-1/2 transform -translate-x-1/2 bg-red-100 text-red-800 px-4 py-2 rounded-lg shadow-md z-50 flex items-center gap-2">
+          <span>🖱️ 드래그 모드 활성화 중...</span>
+          <button 
+            onClick={() => {
+              console.log('🔧 강제 드래그 리셋');
+              calendarLogic.setDragging(null);
+              document.body.style.cursor = 'default';
+            }}
+            className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+          >
+            리셋
+          </button>
+          <span className="text-xs">(ESC 키로도 취소 가능)</span>
+        </div>
+      )}
       
       {/* 헤더 및 상단 요약바 */}
       <div className="bg-white shadow-sm p-4 flex flex-col">
@@ -1082,14 +1134,31 @@ export const WeeklyCalendarUI = ({
                 </div>
               )}
 
-              {/* ✅ 문제 2 해결: 사용법 안내 추가 */}
-              <div className="mt-3 p-2 bg-yellow-50 rounded-lg text-xs text-yellow-700">
-                <div className="font-medium mb-1">💡 사용법 안내</div>
+              {/* ✅ 문제 2 해결: 사용법 안내 개선 */}
+              <div className="mt-3 p-3 bg-yellow-50 rounded-lg text-xs text-yellow-700 border border-yellow-200">
+                <div className="font-medium mb-2 flex items-center">
+                  💡 드래그 & 복사 사용법
+                </div>
                 <div className="space-y-1">
-                  <div>• 드래그: 포커스된 날짜(가운데)에서 일정을 드래그하여 이동</div>
-                  <div>• 복사: 우클릭 → 복사 → 원하는 위치에 클릭</div>
-                  <div>• 크기조정: 포커스된 날짜에서 일정 상하단 드래그</div>
-                  <div>• 요일반복: 월,수 선택 후 일정 추가하면 해당 요일에 생성</div>
+                  <div className="flex items-start">
+                    <span className="font-medium mr-2">🖱️ 드래그:</span>
+                    <span>포커스된 날짜(가운데 열)에서 일정 블럭을 잡고 드래그하여 이동</span>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="font-medium mr-2">📋 복사:</span>
+                    <span>일정에 우클릭 → 복사 선택 → 원하는 위치에 클릭하여 붙여넣기</span>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="font-medium mr-2">🔧 크기:</span>
+                    <span>포커스된 날짜에서 일정 상하단 가장자리 드래그로 시간 조정</span>
+                  </div>
+                  <div className="flex items-start">
+                    <span className="font-medium mr-2">📅 반복:</span>
+                    <span>월,수 요일 선택 후 일정 추가하면 해당 요일들에 반복 생성</span>
+                  </div>
+                  <div className="mt-2 text-yellow-600 bg-yellow-100 p-2 rounded text-center">
+                    <strong>TIP:</strong> 포커스된 날짜(가운데 열)에서만 드래그와 리사이즈가 가능합니다!
+                  </div>
                 </div>
               </div>
             </div>
