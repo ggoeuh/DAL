@@ -400,13 +400,21 @@ const ScheduleItem = React.memo(({
   const tagColor = getTagColor(tagTypeForItem);
   const isDragging = dragging === schedule.id;
 
-  // ✅ 문제 2 해결: 마우스 이벤트 핸들러 개선
+  // ✅ 문제 2 해결: 마우스 이벤트 핸들러 개선 - 드래그 기능 강화
   const handleMouseDown = useCallback((e) => {
     if (e.button === 0 && isFocusDay) { // 좌클릭이고 포커스된 날짜에서만
-      console.log('🖱️ 스케줄 마우스 다운:', schedule.id, schedule.title);
-      e.preventDefault();
-      e.stopPropagation();
-      handleDragStart(e, schedule.id);
+      // 리사이즈 핸들 영역이 아닌 경우에만 드래그 시작
+      const target = e.target;
+      const isResizeHandle = target.classList.contains('resize-handle') || 
+                           target.closest('.resize-handle');
+      const isCheckbox = target.type === 'checkbox' || target.closest('input[type="checkbox"]');
+      
+      if (!isResizeHandle && !isCheckbox) {
+        console.log('🖱️ 스케줄 드래그 시작:', schedule.id, schedule.title);
+        e.preventDefault();
+        e.stopPropagation();
+        handleDragStart(e, schedule.id);
+      }
     }
   }, [handleDragStart, schedule.id, schedule.title, isFocusDay]);
 
@@ -460,17 +468,18 @@ const ScheduleItem = React.memo(({
         onMouseDown={handleMouseDown}
         onContextMenu={handleRightClick}
         title={isFocusDay ? '드래그로 이동 가능, 우클릭으로 메뉴' : '포커스된 날짜에서 이동 가능'}
+        draggable={false} // HTML5 드래그 비활성화, 커스텀 드래그 사용
       >
         {/* ✅ 리사이즈 핸들 - 포커스된 날짜에서만 표시 */}
         {isFocusDay && (
           <>
             <div
-              className="absolute top-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-t-lg z-20 hover:bg-opacity-30"
+              className="resize-handle absolute top-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-t-lg z-20 hover:bg-opacity-30"
               onMouseDown={handleTopResize}
               title="상단 드래그로 시작 시간 조정"
             />
             <div
-              className="absolute bottom-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-b-lg z-20 hover:bg-opacity-30"
+              className="resize-handle absolute bottom-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-b-lg z-20 hover:bg-opacity-30"
               onMouseDown={handleBottomResize}
               title="하단 드래그로 종료 시간 조정"
             />
@@ -482,7 +491,7 @@ const ScheduleItem = React.memo(({
           <input
             type="checkbox"
             checked={schedule.done}
-            className="pointer-events-auto flex-shrink-0 cursor-pointer"
+            className="pointer-events-auto flex-shrink-0 cursor-pointer z-30"
             onChange={handleCheckboxClick}
             onClick={handleCheckboxClick}
             title="완료 상태 토글"
@@ -498,18 +507,18 @@ const ScheduleItem = React.memo(({
         </div>
 
         {/* 둘째줄: 시간 표기 */}
-        <div className="text-[12px] mb-1 opacity-80">
+        <div className="text-[12px] mb-1 opacity-80 pointer-events-none">
           {schedule.start} - {schedule.end}
         </div>
 
         {/* 셋째줄: 일정명 */}
-        <div className={`text-[11px] font-bold mb-1 truncate ${schedule.done ? "line-through opacity-60" : ""}`}>
+        <div className={`text-[11px] font-bold mb-1 truncate pointer-events-none ${schedule.done ? "line-through opacity-60" : ""}`}>
           {schedule.title}
         </div>
 
         {/* 넷째줄: 일정 내용 */}
         {schedule.description && (
-          <div className="text-[9px] opacity-70 flex-1 overflow-hidden">
+          <div className="text-[9px] opacity-70 flex-1 overflow-hidden pointer-events-none">
             <div className="line-clamp-2">
               {schedule.description}
             </div>
