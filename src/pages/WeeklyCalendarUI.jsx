@@ -70,31 +70,39 @@ const ContextMenu = React.memo(({ contextMenu, handleCopySchedule, handleDeleteS
   );
 });
 
-const TagSummary = React.memo(({ tagTotals, getTagColor }) => {
+// ✅ 문제 1 해결: 월별 태그 요약 컴포넌트 수정
+const TagSummary = React.memo(({ tagTotals, getTagColor, currentMonth }) => {
   const tagEntries = Object.entries(tagTotals);
+  
+  const monthTitle = currentMonth ? `${currentMonth.year}년 ${currentMonth.month}월` : '이번 달';
   
   if (tagEntries.length === 0) {
     return (
       <div className="text-gray-500 text-sm italic">
-        아직 등록된 일정이 없습니다
+        {monthTitle} 등록된 일정이 없습니다
       </div>
     );
   }
   
   return (
-    <div className="flex gap-4 flex-wrap">
-      {tagEntries.map(([tagType, totalTime]) => {
-        const tagColor = getTagColor(tagType);
-        return (
-          <div 
-            key={tagType} 
-            className={`${tagColor.bg} ${tagColor.text} rounded-lg px-3 py-1 text-sm font-medium flex items-center`}
-          >
-            <span>{tagType}</span>
-            <span className="ml-2 font-bold">{totalTime}</span>
-          </div>
-        );
-      })}
+    <div className="flex flex-col gap-2">
+      <div className="text-sm font-medium text-gray-700">
+        📊 {monthTitle} 태그별 시간 총합
+      </div>
+      <div className="flex gap-4 flex-wrap">
+        {tagEntries.map(([tagType, totalTime]) => {
+          const tagColor = getTagColor(tagType);
+          return (
+            <div 
+              key={tagType} 
+              className={`${tagColor.bg} ${tagColor.text} rounded-lg px-3 py-1 text-sm font-medium flex items-center`}
+            >
+              <span>{tagType}</span>
+              <span className="ml-2 font-bold">{totalTime}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 });
@@ -102,19 +110,9 @@ const TagSummary = React.memo(({ tagTotals, getTagColor }) => {
 // 🔧 요일 선택 컴포넌트 수정 - DAYS_OF_WEEK 기본값 추가
 const WeekdaySelector = React.memo(({ form, setForm, handleWeekdaySelect, DAYS_OF_WEEK }) => {
   // 🔧 DAYS_OF_WEEK가 없거나 빈 배열인 경우 기본값 사용
-  const defaultDaysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const defaultDaysOfWeek = ["일", "월", "화", "수", "목", "금", "토"];
   const daysToUse = (DAYS_OF_WEEK && DAYS_OF_WEEK.length > 0) ? DAYS_OF_WEEK : defaultDaysOfWeek;
   
-  const WEEKDAY_NAMES = {
-    'Sunday': '일',
-    'Monday': '월', 
-    'Tuesday': '화',
-    'Wednesday': '수',
-    'Thursday': '목',
-    'Friday': '금',
-    'Saturday': '토'
-  };
-
   // 🔍 디버깅 로그
   console.log('🔍 WeekdaySelector - DAYS_OF_WEEK:', DAYS_OF_WEEK);
   console.log('🔍 WeekdaySelector - daysToUse:', daysToUse);
@@ -133,13 +131,13 @@ const WeekdaySelector = React.memo(({ form, setForm, handleWeekdaySelect, DAYS_O
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            {WEEKDAY_NAMES[weekday] || weekday}
+            {weekday}
           </button>
         ))}
       </div>
       <div className="text-xs text-gray-500">
         {form.weekdays?.length > 0 
-          ? `선택된 요일: ${form.weekdays.map(day => WEEKDAY_NAMES[day] || day).join(', ')}`
+          ? `선택된 요일: ${form.weekdays.join(', ')}`
           : '선택된 요일이 없으면 현재 요일에만 추가됩니다'
         }
       </div>
@@ -380,6 +378,7 @@ const DayColumn = React.memo(({
   );
 });
 
+// ✅ 문제 2 해결: 드래그 앤 드롭 및 복사 기능 개선
 const ScheduleItem = React.memo(({ 
   schedule,
   isFocusDay,
@@ -401,34 +400,45 @@ const ScheduleItem = React.memo(({
   const tagColor = getTagColor(tagTypeForItem);
   const isDragging = dragging === schedule.id;
 
+  // ✅ 문제 2 해결: 마우스 이벤트 핸들러 개선
   const handleMouseDown = useCallback((e) => {
-    if (e.button === 0) {
+    if (e.button === 0 && isFocusDay) { // 좌클릭이고 포커스된 날짜에서만
+      console.log('🖱️ 스케줄 마우스 다운:', schedule.id, schedule.title);
+      e.preventDefault();
+      e.stopPropagation();
       handleDragStart(e, schedule.id);
     }
-  }, [handleDragStart, schedule.id]);
+  }, [handleDragStart, schedule.id, schedule.title, isFocusDay]);
 
   const handleRightClick = useCallback((e) => {
+    console.log('🖱️ 스케줄 우클릭:', schedule.id, schedule.title);
+    e.preventDefault();
+    e.stopPropagation();
     handleContextMenu(e, schedule.id);
-  }, [handleContextMenu, schedule.id]);
+  }, [handleContextMenu, schedule.id, schedule.title]);
 
   const handleTopResize = useCallback((e) => {
-    if (e.button === 0) {
+    if (e.button === 0 && isFocusDay) {
+      console.log('🔧 상단 리사이즈 시작:', schedule.id);
       e.preventDefault();
       e.stopPropagation();
       handleResizeStart(e, schedule.id, 'top');
     }
-  }, [handleResizeStart, schedule.id]);
+  }, [handleResizeStart, schedule.id, isFocusDay]);
 
   const handleBottomResize = useCallback((e) => {
-    if (e.button === 0) {
+    if (e.button === 0 && isFocusDay) {
+      console.log('🔧 하단 리사이즈 시작:', schedule.id);
       e.preventDefault();
       e.stopPropagation();
       handleResizeStart(e, schedule.id, 'bottom');
     }
-  }, [handleResizeStart, schedule.id]);
+  }, [handleResizeStart, schedule.id, isFocusDay]);
 
   const handleCheckboxClick = useCallback((e) => {
+    console.log('☑️ 체크박스 클릭:', schedule.id, !schedule.done);
     e.stopPropagation();
+    e.preventDefault();
     handleCheckboxChange(schedule.id, schedule.done);
   }, [handleCheckboxChange, schedule.id, schedule.done]);
 
@@ -442,21 +452,27 @@ const ScheduleItem = React.memo(({
       }}
     >
       <div 
-        className={`h-full flex flex-col text-xs rounded-lg px-2 py-1 shadow ${tagColor.bg} ${tagColor.text} relative overflow-hidden cursor-move select-none transition-all ${
+        className={`h-full flex flex-col text-xs rounded-lg px-2 py-1 shadow ${tagColor.bg} ${tagColor.text} relative overflow-hidden select-none transition-all ${
           isDragging ? 'opacity-50 ring-2 ring-blue-400 scale-105' : 'hover:shadow-md hover:scale-105'
-        } ${schedule.done ? 'opacity-70' : ''}`}
+        } ${schedule.done ? 'opacity-70' : ''} ${
+          isFocusDay ? 'cursor-move' : 'cursor-default'
+        }`}
         onMouseDown={handleMouseDown}
         onContextMenu={handleRightClick}
+        title={isFocusDay ? '드래그로 이동 가능, 우클릭으로 메뉴' : '포커스된 날짜에서 이동 가능'}
       >
+        {/* ✅ 리사이즈 핸들 - 포커스된 날짜에서만 표시 */}
         {isFocusDay && (
           <>
             <div
               className="absolute top-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-t-lg z-20 hover:bg-opacity-30"
               onMouseDown={handleTopResize}
+              title="상단 드래그로 시작 시간 조정"
             />
             <div
               className="absolute bottom-0 left-0 right-0 h-3 bg-black bg-opacity-20 cursor-ns-resize rounded-b-lg z-20 hover:bg-opacity-30"
               onMouseDown={handleBottomResize}
+              title="하단 드래그로 종료 시간 조정"
             />
           </>
         )}
@@ -466,8 +482,10 @@ const ScheduleItem = React.memo(({
           <input
             type="checkbox"
             checked={schedule.done}
-            className="pointer-events-auto flex-shrink-0"
+            className="pointer-events-auto flex-shrink-0 cursor-pointer"
             onChange={handleCheckboxClick}
+            onClick={handleCheckboxClick}
+            title="완료 상태 토글"
           />
           {schedule.tag && (
             <span className="px-2 py-0.5 text-[10px] bg-white bg-opacity-30 rounded-md font-bold flex-shrink-0">
@@ -561,6 +579,7 @@ export const WeeklyCalendarUI = ({
     safeTags,
     safeTagItems,
     tagTotals,
+    currentMonth, // ✅ 문제 1 해결용 추가
     SLOT_HEIGHT,
     DAYS_OF_WEEK,
     parseTimeToMinutes,
@@ -578,6 +597,8 @@ export const WeeklyCalendarUI = ({
   } = calendarLogic;
 
   const handleCheckboxChange = useCallback(async (scheduleId, currentDone) => {
+    console.log('☑️ 체크박스 상태 변경:', scheduleId, currentDone, '→', !currentDone);
+    
     const updatedSchedules = safeSchedules.map(item =>
       item.id === scheduleId ? { ...item, done: !currentDone } : item
     );
@@ -595,7 +616,9 @@ export const WeeklyCalendarUI = ({
       }, { silent: true, debounceMs: 0 });
       
       if (!result.success) {
-        console.error('체크박스 상태 저장 실패:', result.error);
+        console.error('❌ 체크박스 상태 저장 실패:', result.error);
+      } else {
+        console.log('✅ 체크박스 상태 저장 완료');
       }
     }
   }, [safeSchedules, safeTags, safeTagItems, calendarLogic, isServerBased, currentUser, saveDataToServer]);
@@ -604,34 +627,46 @@ export const WeeklyCalendarUI = ({
     setContextMenu({ ...contextMenu, visible: false });
   }, [contextMenu, setContextMenu]);
 
+  // ✅ 문제 2 해결: 이벤트 리스너 개선
   useEffect(() => {
     const cleanup = [];
     
     if (resizing) {
-      window.addEventListener('mousemove', handleResizeMove);
-      window.addEventListener('mouseup', handleResizeEnd);
+      const handleMouseMove = (e) => handleResizeMove(e);
+      const handleMouseUp = (e) => handleResizeEnd(e);
+      
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
       cleanup.push(
-        () => window.removeEventListener('mousemove', handleResizeMove),
-        () => window.removeEventListener('mouseup', handleResizeEnd)
+        () => window.removeEventListener('mousemove', handleMouseMove),
+        () => window.removeEventListener('mouseup', handleMouseUp)
       );
     }
     
     if (copyingSchedule) {
-      window.addEventListener('mousemove', handleCopyMove);
-      window.addEventListener('mouseup', handleCopyEnd);
+      const handleMouseMove = (e) => handleCopyMove(e);
+      const handleMouseUp = (e) => handleCopyEnd(e);
+      
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
       cleanup.push(
-        () => window.removeEventListener('mousemove', handleCopyMove),
-        () => window.removeEventListener('mouseup', handleCopyEnd)
+        () => window.removeEventListener('mousemove', handleMouseMove),
+        () => window.removeEventListener('mouseup', handleMouseUp)
       );
+      console.log('📋 복사 모드 이벤트 리스너 등록');
     }
     
     if (dragging) {
-      window.addEventListener('mousemove', handleDragMove);
-      window.addEventListener('mouseup', handleDragEnd);
+      const handleMouseMove = (e) => handleDragMove(e);
+      const handleMouseUp = (e) => handleDragEnd(e);
+      
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
       cleanup.push(
-        () => window.removeEventListener('mousemove', handleDragMove),
-        () => window.removeEventListener('mouseup', handleDragEnd)
+        () => window.removeEventListener('mousemove', handleMouseMove),
+        () => window.removeEventListener('mouseup', handleMouseUp)
       );
+      console.log('🖱️ 드래그 모드 이벤트 리스너 등록');
     }
     
     if (contextMenu.visible) {
@@ -751,7 +786,12 @@ export const WeeklyCalendarUI = ({
           </div>
         </div>
         
-        <TagSummary tagTotals={tagTotals} getTagColor={getTagColor} />
+        {/* ✅ 문제 1 해결: 월별 태그 요약 표시 */}
+        <TagSummary 
+          tagTotals={tagTotals} 
+          getTagColor={getTagColor} 
+          currentMonth={currentMonth}
+        />
       </div>
 
       {/* 메인 컨텐츠 */}
@@ -886,12 +926,12 @@ export const WeeklyCalendarUI = ({
                   onChange={(e) => formHandlers.setDescription(e.target.value)}
                 ></textarea>
                 
-                {/* 🔧 새로 추가: 요일 선택 - DAYS_OF_WEEK 확인 및 전달 */}
+                {/* ✅ 문제 3 해결: 요일 선택 - DAYS_OF_WEEK 확인 및 전달 */}
                 <WeekdaySelector 
                   form={form}
                   setForm={setForm}
                   handleWeekdaySelect={handleWeekdaySelect}
-                  DAYS_OF_WEEK={DAYS_OF_WEEK || ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']}
+                  DAYS_OF_WEEK={DAYS_OF_WEEK || ["일", "월", "화", "수", "목", "금", "토"]}
                 />
                 
                 {/* 🔧 새로 추가: 반복 설정 */}
@@ -1032,6 +1072,17 @@ export const WeeklyCalendarUI = ({
                   </div>
                 </div>
               )}
+
+              {/* ✅ 문제 2 해결: 사용법 안내 추가 */}
+              <div className="mt-3 p-2 bg-yellow-50 rounded-lg text-xs text-yellow-700">
+                <div className="font-medium mb-1">💡 사용법 안내</div>
+                <div className="space-y-1">
+                  <div>• 드래그: 포커스된 날짜(가운데)에서 일정을 드래그하여 이동</div>
+                  <div>• 복사: 우클릭 → 복사 → 원하는 위치에 클릭</div>
+                  <div>• 크기조정: 포커스된 날짜에서 일정 상하단 드래그</div>
+                  <div>• 요일반복: 월,수 선택 후 일정 추가하면 해당 요일에 생성</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
