@@ -300,6 +300,8 @@ const WeeklyCalendar = ({
 
   // 🔧 드래그 중 드롭 위치 미리보기 그림자가 있는 드래그 핸들러
 
+  // 🔧 드래그 중 드롭 위치 미리보기 그림자가 있는 드래그 핸들러
+
   const handleDragStart = useCallback((e, scheduleId) => {
     console.log('🖱️ 드래그 시작:', scheduleId);
     
@@ -418,9 +420,14 @@ const WeeklyCalendar = ({
            (newStartMinutes <= parseTimeToMinutes(s.start) && newEndMinutes >= parseTimeToMinutes(s.end)))
         );
         
-        // 🔧 드롭 위치 프리뷰 생성
-        const previewTop = calculateSlotPosition(newStartTime);
-        const previewHeight = calculateSlotPosition(newEndTime) - previewTop;
+        // 🔧 드롭 위치 프리뷰 생성 - 시간을 픽셀로 직접 변환
+        const timeToPixel = (time) => {
+          const minutes = parseTimeToMinutes(time);
+          return (minutes / 30) * 24; // 30분당 24픽셀 (SLOT_HEIGHT)
+        };
+        
+        const previewTop = timeToPixel(newStartTime);
+        const previewHeight = timeToPixel(newEndTime) - previewTop;
         const containerRect = targetContainer.getBoundingClientRect();
         
         const dropPreview = document.createElement('div');
@@ -486,7 +493,7 @@ const WeeklyCalendar = ({
         }
       }
     }
-  }, [calendarLogic.dragging, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, calculateSlotPosition, DAYS_OF_WEEK]);
+  }, [calendarLogic.dragging, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, DAYS_OF_WEEK]);
   
   const handleDragEnd = useCallback(async (e) => {
     console.log('🖱️ 드래그 종료');
