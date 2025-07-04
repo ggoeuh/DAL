@@ -385,22 +385,15 @@ const MonthlyPlan = ({
   // ✅ 목표를 기반으로 한 그룹화 - isGoal 조건 수정
   const getGroupedGoals = useMemo(() => {
     const grouped = {};
-    
+  
     currentMonthGoals.forEach(goal => {
-      if (!grouped[goal.tagType]) {
-        grouped[goal.tagType] = [];
-      }
-      
-      // 해당 태그타입의 실제 계획들 찾기 (현재 월만)
       const relatedPlans = currentMonthPlans.filter(plan => plan.tagType === goal.tagType);
-      
+  
       if (relatedPlans.length > 0) {
-        relatedPlans.forEach(plan => {
-          grouped[goal.tagType].push({
-            ...plan,
-            isGoal: false
-          });
-        });
+        grouped[goal.tagType] = relatedPlans.map(plan => ({
+          ...plan,
+          isGoal: false
+        }));
       }
     });
     
