@@ -1032,13 +1032,21 @@ const WeeklyCalendar = ({
     }
   }, [isServerBased, loadDataFromServer]);
 
-  // ✅ 🔧 복사 모드 취소 핸들러 (ESC 키)
+  // ✅ 🔧 복사 모드 취소 핸들러 (ESC 키) - 드래그도 포함
   useEffect(() => {
     const handleEscapeKey = (e) => {
-      if (e.key === 'Escape' && copyingSchedule) {
-        console.log('📋 복사 모드 취소 (ESC)');
-        setCopyingSchedule(null);
-        document.body.style.cursor = 'default';
+      if (e.key === 'Escape') {
+        if (copyingSchedule) {
+          console.log('📋 복사 모드 취소 (ESC)');
+          setCopyingSchedule(null);
+          document.body.style.cursor = 'default';
+        }
+        
+        if (calendarLogic.dragging) {
+          console.log('🖱️ 드래그 모드 강제 취소 (ESC)');
+          setDragging(null);
+          document.body.style.cursor = 'default';
+        }
       }
     };
 
@@ -1046,7 +1054,7 @@ const WeeklyCalendar = ({
     return () => {
       document.removeEventListener('keydown', handleEscapeKey);
     };
-  }, [copyingSchedule, setCopyingSchedule]);
+  }, [copyingSchedule, calendarLogic.dragging, setCopyingSchedule, setDragging]);
 
   // ✅ 🔧 전역 클릭 이벤트 (컨텍스트 메뉴 닫기)
   useEffect(() => {
