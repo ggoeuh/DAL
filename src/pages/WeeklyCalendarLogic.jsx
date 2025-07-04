@@ -31,49 +31,31 @@ const minutesToTimeString = (totalMinutes) => {
   return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
-// 🔧 수정된 픽셀을 시간으로 변환하는 함수 - 정확한 계산
+// 🔧 수정된 픽셀을 시간으로 변환하는 함수
 const pixelToNearestTimeSlot = (pixelPosition) => {
-  // 🔧 음수 및 잘못된 값 처리
-  const safePixelPosition = Math.max(0, pixelPosition || 0);
+  // 음수 방지
+  const safePixelPosition = Math.max(0, pixelPosition);
   
-  console.log('🕐 픽셀 → 시간 변환 시작:', {
-    원본픽셀: pixelPosition,
-    안전픽셀: safePixelPosition,
-    SLOT_HEIGHT: SLOT_HEIGHT
-  });
+  // 30분 단위로 스냅
+  const slotIndex = Math.round(safePixelPosition / SLOT_HEIGHT);
   
-  // 🔧 정확한 시간 계산
-  // 각 슬롯은 30분 = SLOT_HEIGHT(24px)
-  // pixelPosition / SLOT_HEIGHT = 슬롯 인덱스 (0.5 단위)
-  const exactSlotIndex = safePixelPosition / SLOT_HEIGHT;
+  // 24시간을 넘지 않도록 제한 (48 슬롯 = 24시간)
+  const limitedSlotIndex = Math.min(47, slotIndex);
   
-  // 가장 가까운 30분 단위로 반올림
-  const roundedSlotIndex = Math.round(exactSlotIndex);
-  
-  // 24시간(48슬롯)을 넘지 않도록 제한
-  const limitedSlotIndex = Math.min(47, roundedSlotIndex);
-  
-  // 슬롯 인덱스를 시간으로 변환
   const totalMinutes = limitedSlotIndex * 30;
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   
-  const timeString = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
-  
-  console.log('🕐 픽셀 → 시간 변환 상세:', {
-    픽셀: safePixelPosition,
-    정확한슬롯: exactSlotIndex,
-    반올림슬롯: roundedSlotIndex,
+  console.log('🕐 픽셀 → 시간 변환:', {
+    픽셀: pixelPosition,
+    안전픽셀: safePixelPosition,
+    슬롯인덱스: slotIndex,
     제한슬롯: limitedSlotIndex,
     총분: totalMinutes,
-    시간: timeString,
-    검증: {
-      '예상픽셀': limitedSlotIndex * SLOT_HEIGHT,
-      '오차': Math.abs(safePixelPosition - (limitedSlotIndex * SLOT_HEIGHT))
-    }
+    시간: `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`
   });
   
-  return timeString;
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 };
 
 const formatDate = (date) => {
