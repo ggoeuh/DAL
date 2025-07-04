@@ -676,14 +676,16 @@ const MonthlyPlan = ({
                           {goalItems.map((item) => (
                             <div key={item.id} className="w-[250px] flex-shrink-0">
                               <div 
-                                className={`${colors.bg} ${colors.border} border rounded-lg p-3 relative cursor-pointer hover:shadow-md transition-shadow ${!item.isGoal ? 'hover:bg-opacity-80' : ''}`}
+                                className={`${colors.bg} ${colors.border} border rounded-lg p-3 relative cursor-pointer hover:shadow-md transition-shadow hover:bg-opacity-80`}
                                 onClick={(e) => {
-                                  console.log('🖱️ 블럭 div 클릭됨');
-                                  handleBlockClick(item, e);
+                                  console.log('🖱️ 블럭 클릭됨:', item.tag);
+                                  if (item.tag && !item.tag.includes('목표')) {
+                                    handleBlockClick(item, e);
+                                  }
                                 }}
                               >
-                                {/* 수정/삭제 버튼 (실제 계획만) */}
-                                {!item.isGoal && (
+                                {/* 수정/삭제 버튼 - 모든 실제 계획에 표시 */}
+                                {item.tag && !item.tag.includes('목표') && (
                                   <div className="absolute top-2 right-2 flex gap-1 z-10">
                                     <button
                                       onClick={(e) => {
@@ -692,7 +694,7 @@ const MonthlyPlan = ({
                                         handleEditPlan(item, e);
                                       }}
                                       disabled={saving}
-                                      className="text-gray-400 hover:text-blue-600 text-xs bg-white rounded px-1 py-0.5 shadow-sm disabled:opacity-50"
+                                      className="text-gray-600 hover:text-blue-600 text-xs bg-white rounded px-2 py-1 shadow-md disabled:opacity-50 border border-gray-200"
                                       title="수정"
                                     >
                                       수정
@@ -704,7 +706,7 @@ const MonthlyPlan = ({
                                         handleDeleteSinglePlan(item.id, e);
                                       }}
                                       disabled={saving}
-                                      className="text-gray-400 hover:text-red-600 text-xs bg-white rounded px-1 py-0.5 shadow-sm disabled:opacity-50"
+                                      className="text-gray-600 hover:text-red-600 text-xs bg-white rounded px-2 py-1 shadow-md disabled:opacity-50 border border-gray-200"
                                       title="삭제"
                                     >
                                       삭제
