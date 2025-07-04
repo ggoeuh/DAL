@@ -343,29 +343,52 @@ const WeeklyCalendar = ({
     setCopyingSchedule(null);
   }, [copyingSchedule, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, checkScheduleOverlap, safeSchedules, addSchedule, getDayOfWeek, setShowOverlapMessage, setCopyingSchedule]);
 
-  // ✅ 드래그 관련 핸들러들 - 문제 2 해결
+  // ✅ 드래그 관련 핸들러들 - 문제 2 해결: 블럭 드래그 기능 강화
   const handleDragStart = useCallback((e, scheduleId) => {
-    e.preventDefault();
-    e.stopPropagation();
+    console.log('🖱️ 드래그 시작 - handleDragStart 호출됨:', scheduleId);
     
     const schedule = safeSchedules.find(s => s.id === scheduleId);
-    if (!schedule) return;
+    if (!schedule) {
+      console.error('❌ 스케줄을 찾을 수 없음:', scheduleId);
+      return;
+    }
     
-    console.log('🖱️ 드래그 시작:', schedule.title);
-    
+    // 드래그 상태 설정
     setDragging(scheduleId);
     
+    // 드래그 오프셋 계산 (마우스 포인터와 엘리먼트 상단 왼쪽 모서리 간의 거리)
     const rect = e.currentTarget.getBoundingClientRect();
-    setDragOffset({
+    const dragOffset = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top
+    };
+    setDragOffset(dragOffset);
+    
+    console.log('✅ 드래그 시작 완료:', {
+      scheduleId,
+      title: schedule.title,
+      dragOffset,
+      mousePos: { x: e.clientX, y: e.clientY },
+      rectPos: { left: rect.left, top: rect.top }
     });
+    
+    // 커서 변경
+    document.body.style.cursor = 'grabbing';
   }, [safeSchedules, setDragging, setDragOffset]);
 
   const handleDragMove = useCallback((e) => {
     if (!calendarLogic.dragging) return;
-    e.preventDefault();
     
+    // 기본 동작 방지
+    e.preventDefault();
+    e.stopPropagation();
+    
+    console.log('🖱️ 드래그 이동 중:', {
+      dragging: calendarLogic.dragging,
+      mousePos: { x: e.clientX, y: e.clientY }
+    });
+    
+    // 화면 가장자리에서 주간 이동 (옵션)
     const screenWidth = window.innerWidth;
     const edgeThreshold = 100;
     
@@ -383,14 +406,20 @@ const WeeklyCalendar = ({
   const handleDragEnd = useCallback(async (e) => {
     if (!calendarLogic.dragging) {
       setDragging(null);
+      document.body.style.cursor = 'default';
       return;
     }
     
-    console.log('🖱️ 드래그 종료:', calendarLogic.dragging);
+    console.log('🖱️ 드래그 종료 시작:', {
+      dragging: calendarLogic.dragging,
+      mousePos: { x: e.clientX, y: e.clientY }
+    });
     
+    // 드롭 위치 계산
     const containers = document.querySelectorAll('[data-day-index]');
     let targetDayIndex = null;
     let targetY = null;
+    let targetContainer = null;
     
     for (const container of containers) {
       const rect = container.getBoundingClientRect();
@@ -398,20 +427,36 @@ const WeeklyCalendar = ({
           e.clientY >= rect.top && e.clientY <= rect.bottom) {
         targetDayIndex = parseInt(container.dataset.dayIndex);
         targetY = e.clientY - rect.top;
+        targetContainer = container;
         break;
       }
     }
     
+    console.log('🎯 드롭 타겟 찾기:', {
+      targetDayIndex,
+      targetY,
+      containerFound: !!targetContainer
+    });
+    
     if (targetDayIndex !== null && targetY !== null) {
       const schedule = safeSchedules.find(s => s.id === calendarLogic.dragging);
       if (!schedule) {
+        console.error('❌ 드래그 중인 스케줄을 찾을 수 없음:', calendarLogic.dragging);
         setDragging(null);
+        document.body.style.cursor = 'default';
         return;
       }
       
-      const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
-      const newStartTime = pixelToNearestTimeSlot(targetY - calendarLogic.dragOffset.y);
+      // 스크롤 위치 고려
+      const scrollContainer = targetContainer.closest('.overflow-y-auto');
+      const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+      const adjustedY = targetY + scrollTop - (calendarLogic.dragOffset?.y || 0);
       
+      // 새로운 날짜와 시간 계산
+      const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
+      const newStartTime = pixelToNearestTimeSlot(adjustedY);
+      
+      // 기존 일정의 지속 시간 유지
       const startMinutes = parseTimeToMinutes(schedule.start);
       const endMinutes = parseTimeToMinutes(schedule.end);
       const duration = endMinutes - startMinutes;
@@ -428,23 +473,63 @@ const WeeklyCalendar = ({
       
       const updatedSchedule = { ...schedule, ...updatedData };
       
+      console.log('📅 일정 이동 시도:', {
+        originalSchedule: {
+          date: schedule.date,
+          start: schedule.start,
+          end: schedule.end
+        },
+        newSchedule: updatedData,
+        targetDay: getDayOfWeek(currentWeek[targetDayIndex])
+      });
+      
+      // 겹침 검사
       if (!checkScheduleOverlap(safeSchedules, updatedSchedule)) {
         const result = await updateSchedule(calendarLogic.dragging, updatedData);
         
         if (result.success) {
-          console.log(`✅ 일정 이동 완료: ${schedule.title}`);
+          console.log(`✅ 일정 이동 완료: ${schedule.title} -> ${getDayOfWeek(currentWeek[targetDayIndex])} ${newStartTime}-${newEndTime}`);
+          
+          // 성공 피드백
+          const message = document.createElement('div');
+          message.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #10b981;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 9999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          `;
+          message.textContent = `일정 이동 완료: ${schedule.title}`;
+          document.body.appendChild(message);
+          
+          setTimeout(() => {
+            if (document.body.contains(message)) {
+              document.body.removeChild(message);
+            }
+          }, 2000);
         } else {
           console.error('❌ 일정 이동 실패:', result.error);
           alert('일정 이동에 실패했습니다: ' + result.error);
         }
       } else {
+        console.warn('⚠️ 일정 겹침 감지');
         setShowOverlapMessage(true);
         setTimeout(() => setShowOverlapMessage(false), 3000);
       }
+    } else {
+      console.log('🚫 유효한 드롭 위치를 찾지 못함');
     }
     
+    // 드래그 상태 초기화
     setDragging(null);
-  }, [calendarLogic.dragging, calendarLogic.dragOffset, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, checkScheduleOverlap, updateSchedule, setShowOverlapMessage, setDragging]);
+    document.body.style.cursor = 'default';
+    console.log('🏁 드래그 종료 완료');
+  }, [calendarLogic.dragging, calendarLogic.dragOffset, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, checkScheduleOverlap, updateSchedule, setShowOverlapMessage, setDragging, getDayOfWeek]);
 
   // ✅ 🔧 개선된 일정 추가 핸들러 (문제 3 해결 - 요일 선택 반복 설정)
   const handleAdd = useCallback(async () => {
