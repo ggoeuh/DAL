@@ -228,15 +228,25 @@ const WeeklyCalendar = ({
     let targetDayIndex = null;
     let targetY = null;
     
+    const ALLOWED_HORIZONTAL_DRIFT = 40;
+
     for (const container of containers) {
       const rect = container.getBoundingClientRect();
-      if (e.clientX >= rect.left && e.clientX <= rect.right &&
-          e.clientY >= rect.top && e.clientY <= rect.bottom) {
-        targetDayIndex = parseInt(container.dataset.dayIndex);
+      const dayIndex = parseInt(container.dataset.dayIndex);
+    
+      const centerX = rect.left + rect.width / 2;
+    
+      if (
+        Math.abs(e.clientX - centerX) <= rect.width / 2 + ALLOWED_HORIZONTAL_DRIFT &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom
+      ) {
+        targetDayIndex = dayIndex;
         targetY = e.clientY - rect.top;
         break;
       }
     }
+
     
     if (targetDayIndex !== null && targetY !== null) {
       const date = currentWeek[targetDayIndex].toISOString().split("T")[0];
@@ -444,10 +454,7 @@ const WeeklyCalendar = ({
     // 🔧 수정: newDate 변수 정의
     const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
     
-    // 스크롤 위치 고려한 절대 Y 위치 계산
-    const scrollContainer = document.querySelector('.overflow-y-auto');
-    const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
-    const absoluteY = targetY + scrollTop;
+    const absoluteY = e.pageY - rect.top;
     
     // 새로운 시간 계산
     const newStartTime = pixelToNearestTimeSlot(absoluteY);
