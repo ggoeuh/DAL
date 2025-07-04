@@ -308,23 +308,15 @@ const WeeklyCalendar = ({
     // 드래그 상태 설정
     setDragging(scheduleId);
     
-    // 🔧 수정: 드래그 시작점을 블록의 시작 시간 기준으로 계산
+    // 간단한 드래그 오프셋 계산
     const rect = e.currentTarget.getBoundingClientRect();
-    const startTimePixel = calculateSlotPosition(schedule.start);
-    
-    // 현재 스크롤 위치 고려
-    const scrollContainer = document.querySelector('.overflow-y-auto');
-    const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
-    
     const dragOffset = {
       x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-      // 🔧 추가: 시작 시간의 절대 픽셀 위치 저장
-      startTimeOffset: startTimePixel - scrollTop
+      y: e.clientY - rect.top
     };
     setDragOffset(dragOffset);
     
-    // 드래그 중 시각적 피드백을 위한 가상 엘리먼트 생성
+    // 드래그 중 시각적 피드백
     const dragGhost = document.createElement('div');
     dragGhost.id = 'drag-ghost';
     dragGhost.style.cssText = `
@@ -348,11 +340,9 @@ const WeeklyCalendar = ({
     dragGhost.textContent = `📦 ${schedule.title} (${schedule.start}-${schedule.end})`;
     document.body.appendChild(dragGhost);
     
-    // 커서 변경
     document.body.style.cursor = 'grabbing';
-    
-    console.log('✅ 드래그 시작 완료 - 오프셋:', dragOffset);
-  }, [safeSchedules, setDragging, setDragOffset, calculateSlotPosition]);
+    console.log('✅ 드래그 시작 완료');
+  }, [safeSchedules, setDragging, setDragOffset]);
 
   const handleDragMove = useCallback((e) => {
     if (!calendarLogic.dragging) return;
@@ -360,7 +350,7 @@ const WeeklyCalendar = ({
     e.preventDefault();
     e.stopPropagation();
     
-    // 🔧 드래그 고스트 실시간 업데이트
+    // 드래그 고스트 업데이트
     const dragGhost = document.getElementById('drag-ghost');
     if (dragGhost && calendarLogic.dragOffset) {
       dragGhost.style.left = `${e.clientX - calendarLogic.dragOffset.x}px`;
@@ -385,13 +375,12 @@ const WeeklyCalendar = ({
   const handleDragEnd = useCallback(async (e) => {
     console.log('🖱️ 드래그 종료 시작');
     
-    // 🔧 드래그 고스트 제거
+    // 드래그 고스트 제거
     const dragGhost = document.getElementById('drag-ghost');
     if (dragGhost) {
       document.body.removeChild(dragGhost);
     }
     
-    // 커서 복원
     document.body.style.cursor = 'default';
     
     if (!calendarLogic.dragging) {
@@ -407,92 +396,69 @@ const WeeklyCalendar = ({
       return;
     }
     
-    // 🔧 수정: 정확한 드롭 위치 계산
+    // 🔧 간단한 드롭 위치 계산
     const containers = document.querySelectorAll('[data-day-index]');
     let targetDayIndex = null;
-    let targetContainer = null;
+    let targetY = null;
     
-    // 마우스 위치에서 가장 적절한 컨테이너 찾기
+    // 마우스 위치에서 컨테이너 찾기
     for (const container of containers) {
       const rect = container.getBoundingClientRect();
-      const dayIndex = parseInt(container.dataset.dayIndex);
-      
-      // 🔧 수정: X축 범위를 더 정확하게 체크
-      if (e.clientX >= rect.left && e.clientX <= rect.right) {
-        targetDayIndex = dayIndex;
-        targetContainer = container;
+      if (e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        targetDayIndex = parseInt(container.dataset.dayIndex);
+        // 🔧 간단한 Y 위치 계산: 컨테이너 내 상대 위치
+        targetY = e.clientY - rect.top;
         break;
       }
     }
     
-    // 타겟 컨테이너를 찾지 못한 경우 - 원본 위치 유지
-    if (targetContainer === null) {
-      console.log('⚠️ 타겟 컨테이너를 찾지 못함 - 원본 위치 유지');
-      
-      // 원본 일정의 날짜로 돌아가기
-      const originalDate = schedule.date;
-      let originalDayIndex = -1;
-      
-      for (let i = 0; i < currentWeek.length; i++) {
-        if (currentWeek[i].toISOString().split("T")[0] === originalDate) {
-          originalDayIndex = i;
-          break;
-        }
-      }
-      
-      if (originalDayIndex !== -1) {
-        targetDayIndex = originalDayIndex;
-        targetContainer = document.querySelector(`[data-day-index="${originalDayIndex}"]`);
-      }
-    }
-    
-    if (targetContainer === null) {
-      console.error('❌ 타겟 컨테이너를 찾을 수 없음');
+    // 컨테이너를 찾지 못한 경우 드래그 취소
+    if (targetDayIndex === null || targetY === null) {
+      console.log('⚠️ 유효한 드롭 위치가 아님 - 드래그 취소');
       setDragging(null);
       return;
     }
     
-    // 🔧 수정: 드롭 Y 위치 계산 - 블록의 시작 시간을 기준으로
-    const containerRect = targetContainer.getBoundingClientRect();
+    // 🔧 스크롤 위치 고려
     const scrollContainer = document.querySelector('.overflow-y-auto');
     const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
-    
-    // 마우스 Y 위치에서 블록의 시작점이 놓일 위치 계산
-    let targetY;
-    if (calendarLogic.dragOffset && calendarLogic.dragOffset.startTimeOffset !== undefined) {
-      // 🔧 드래그 시작할 때 저장한 시작 시간 오프셋을 사용
-      const mouseYRelativeToContainer = e.clientY - containerRect.top;
-      targetY = mouseYRelativeToContainer - calendarLogic.dragOffset.y + calendarLogic.dragOffset.startTimeOffset;
-    } else {
-      // 폴백: 마우스 위치 기준
-      targetY = e.clientY - containerRect.top;
-    }
-    
-    // 스크롤 위치 고려한 절대 Y 위치 계산
     const absoluteY = targetY + scrollTop;
     
-    console.log('📍 드롭 위치 계산:', {
+    console.log('📍 드롭 위치:', {
       마우스Y: e.clientY,
-      컨테이너상단: containerRect.top,
-      상대Y: targetY,
+      타겟Y: targetY,
       스크롤: scrollTop,
       절대Y: absoluteY,
-      드래그오프셋: calendarLogic.dragOffset
+      요일인덱스: targetDayIndex
     });
     
-    // 새로운 시간 계산
+    // 🔧 시간 계산 - 24시간 제한 추가
     const newStartTime = pixelToNearestTimeSlot(absoluteY);
+    const newStartMinutes = parseTimeToMinutes(newStartTime);
+    
+    // 24시간을 넘지 않도록 제한 (23:30까지)
+    if (newStartMinutes >= 24 * 60) {
+      console.log('⚠️ 24시간을 넘는 시간 - 드래그 취소');
+      setDragging(null);
+      return;
+    }
     
     // 기존 일정의 지속 시간 유지
     const startMinutes = parseTimeToMinutes(schedule.start);
     const endMinutes = parseTimeToMinutes(schedule.end);
     const duration = endMinutes - startMinutes;
     
-    const newStartMinutes = parseTimeToMinutes(newStartTime);
     const newEndMinutes = newStartMinutes + duration;
-    const newEndTime = minutesToTimeString(newEndMinutes);
     
-    // 새 날짜 계산
+    // 종료 시간이 24시간을 넘지 않도록 제한
+    if (newEndMinutes >= 24 * 60) {
+      console.log('⚠️ 종료 시간이 24시간을 넘음 - 드래그 취소');
+      setDragging(null);
+      return;
+    }
+    
+    const newEndTime = minutesToTimeString(newEndMinutes);
     const newDate = currentWeek[targetDayIndex].toISOString().split("T")[0];
     
     const updatedData = {
@@ -501,10 +467,9 @@ const WeeklyCalendar = ({
       end: newEndTime
     };
     
-    console.log('📅 일정 이동 상세:', {
+    console.log('📅 일정 이동:', {
       원본: { date: schedule.date, start: schedule.start, end: schedule.end },
-      새위치: { date: newDate, start: newStartTime, end: newEndTime },
-      duration: `${duration}분`
+      새위치: updatedData
     });
     
     // 겹침 검사 (자기 자신 제외)
@@ -514,13 +479,11 @@ const WeeklyCalendar = ({
       
       const sStart = parseTimeToMinutes(s.start);
       const sEnd = parseTimeToMinutes(s.end);
-      const newStart = parseTimeToMinutes(newStartTime);
-      const newEnd = parseTimeToMinutes(newEndTime);
       
       return (
-        (newStart >= sStart && newStart < sEnd) ||
-        (newEnd > sStart && newEnd <= sEnd) ||
-        (newStart <= sStart && newEnd >= sEnd)
+        (newStartMinutes >= sStart && newStartMinutes < sEnd) ||
+        (newEndMinutes > sStart && newEndMinutes <= sEnd) ||
+        (newStartMinutes <= sStart && newEndMinutes >= sEnd)
       );
     });
     
@@ -530,7 +493,7 @@ const WeeklyCalendar = ({
       if (result.success) {
         console.log(`✅ 일정 이동 완료: ${schedule.title}`);
         
-        // 성공 피드백
+        // 성공 메시지
         const message = document.createElement('div');
         message.style.cssText = `
           position: fixed;
@@ -545,15 +508,13 @@ const WeeklyCalendar = ({
           box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         `;
         
-        const originalDate = schedule.date;
-        if (originalDate === newDate) {
-          message.textContent = `시간 변경: ${schedule.title} (${newStartTime}-${newEndTime})`;
+        if (schedule.date === newDate) {
+          message.textContent = `시간 변경: ${schedule.title} → ${newStartTime}`;
         } else {
           message.textContent = `일정 이동: ${schedule.title} → ${getDayOfWeek(currentWeek[targetDayIndex])}`;
         }
         
         document.body.appendChild(message);
-        
         setTimeout(() => {
           if (document.body.contains(message)) {
             document.body.removeChild(message);
@@ -564,7 +525,7 @@ const WeeklyCalendar = ({
         alert('일정 이동에 실패했습니다: ' + result.error);
       }
     } else {
-      console.warn('⚠️ 일정 겹침 감지:', conflictSchedule.title);
+      console.warn('⚠️ 일정 겹침:', conflictSchedule.title);
       
       const message = document.createElement('div');
       message.style.cssText = `
@@ -579,7 +540,7 @@ const WeeklyCalendar = ({
         z-index: 9999;
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       `;
-      message.textContent = `일정 겹침: "${conflictSchedule.title}" (${conflictSchedule.start}-${conflictSchedule.end})`;
+      message.textContent = `일정 겹침: "${conflictSchedule.title}"`;
       document.body.appendChild(message);
       
       setTimeout(() => {
@@ -593,90 +554,6 @@ const WeeklyCalendar = ({
     setDragging(null);
     console.log('🏁 드래그 종료 완료');
   }, [calendarLogic.dragging, calendarLogic.dragOffset, safeSchedules, currentWeek, pixelToNearestTimeSlot, parseTimeToMinutes, minutesToTimeString, updateSchedule, setDragging, getDayOfWeek]);
-
-  // 나머지 핸들러들 (일정 추가, 태그 관리 등)은 기존과 동일하게 유지
-  const handleAdd = useCallback(async () => {
-    if (!form.title || !startSlot || !form.end) {
-      alert('제목, 시작 시간, 종료 시간을 모두 입력해주세요.');
-      return;
-    }
-  
-    const tagInfo = safeTagItems.find(
-      item => item.tagType === selectedTagType && item.tagName === form.tag
-    );
-  
-    const focusedBaseDate = new Date(currentWeek[focusedDayIndex]);
-    
-    const baseSchedule = {
-      id: Date.now(),
-      date: focusedBaseDate.toISOString().split("T")[0],
-      start: startSlot,
-      end: form.end,
-      title: form.title,
-      description: form.description || "",
-      tag: form.tag,
-      tagType: tagInfo ? tagInfo.tagType : "",
-      done: false
-    };
-  
-    const repeatCount = parseInt(form.repeatCount || "1");
-    const interval = parseInt(form.interval || "1");
-    
-    const selectedWeekdays = form.weekdays && form.weekdays.length > 0
-      ? form.weekdays
-      : [DAYS_OF_WEEK[focusedDayIndex]];
-  
-    const newSchedules = [];
-  
-    for (let week = 0; week < repeatCount; week++) {
-      for (const koreanWeekday of selectedWeekdays) {
-        const weekdayIndex = getDayIndexFromKoreanDay(koreanWeekday);
-        if (weekdayIndex === -1) continue;
-  
-        const currentWeekDate = currentWeek[weekdayIndex];
-        const targetDate = new Date(currentWeekDate);
-        targetDate.setDate(currentWeekDate.getDate() + (week * 7 * interval));
-  
-        const schedule = {
-          ...baseSchedule,
-          id: Date.now() + week * 10000 + weekdayIndex * 100 + Math.random() * 100,
-          date: targetDate.toISOString().split("T")[0],
-        };
-  
-        if (checkScheduleOverlap(safeSchedules, schedule)) {
-          alert(`${targetDate.toLocaleDateString()} ${koreanWeekday}에 시간 겹침이 발생하여 일정 추가를 중단합니다.`);
-          return;
-        }
-  
-        newSchedules.push(schedule);
-      }
-    }
-  
-    let addedCount = 0;
-    for (const schedule of newSchedules) {
-      const result = await addSchedule(schedule);
-      if (result.success) {
-        addedCount++;
-      } else {
-        alert(`일정 추가에 실패했습니다: ${result.error}`);
-        return;
-      }
-    }
-  
-    // 폼 초기화
-    setStartSlot("07:00");
-    setForm({
-      title: "",
-      end: "08:00",
-      description: "",
-      tag: "",
-      repeatCount: "1",
-      interval: "1",
-      weekdays: [],
-    });
-    setSelectedTagType("");
-    setActiveTimeSlot(null);
-  }, [form, startSlot, safeTagItems, selectedTagType, currentWeek, focusedDayIndex, DAYS_OF_WEEK, checkScheduleOverlap, safeSchedules, addSchedule, getDayIndexFromKoreanDay, setStartSlot, setForm, setSelectedTagType, setActiveTimeSlot]);
   
   const handleAddTag = useCallback(async () => {
     if (!newTagType.trim() || !newTagName.trim()) {
