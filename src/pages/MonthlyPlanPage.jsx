@@ -30,7 +30,16 @@ const MonthlyPlan = ({
     
     return new Date();
   });
-  const currentMonthKey = format(currentDate, 'yyyy-MM');
+  
+  const currentMonthKey = useMemo(() => {
+    const monthKey = format(currentDate, 'yyyy-MM');
+    console.log('🚨 currentMonthKey 계산:', {
+      currentDate,
+      monthKey,
+      dateString: currentDate.toString()
+    });
+    return monthKey;
+  }, [currentDate]);
   
   // 수정 모달 상태
   const [editingPlan, setEditingPlan] = useState(null);
@@ -94,32 +103,38 @@ const MonthlyPlan = ({
     return 0;
   }, [currentMonthGoals]);
 
-  // ✨ 월 네비게이션 함수들 (URL 업데이트 포함)
+  // ✨ 월 네비게이션 함수들 (URL 업데이트 포함) - 디버깅 강화
   const updateURL = useCallback((date) => {
     const monthKey = format(date, 'yyyy-MM');
+    console.log('🚨 URL 업데이트:', { date, monthKey });
     const url = new URL(window.location);
     url.searchParams.set('month', monthKey);
     window.history.replaceState({}, '', url);
   }, []);
 
   const handlePrevMonth = useCallback(() => {
+    console.log('🚨 이전 월 클릭 - 현재 currentDate:', currentDate);
     setCurrentDate(prev => {
       const newDate = subMonths(prev, 1);
+      console.log('🚨 새로운 날짜:', newDate);
       updateURL(newDate);
       return newDate;
     });
-  }, [updateURL]);
+  }, [updateURL, currentDate]);
 
   const handleNextMonth = useCallback(() => {
+    console.log('🚨 다음 월 클릭 - 현재 currentDate:', currentDate);
     setCurrentDate(prev => {
       const newDate = addMonths(prev, 1);
+      console.log('🚨 새로운 날짜:', newDate);
       updateURL(newDate);
       return newDate;
     });
-  }, [updateURL]);
+  }, [updateURL, currentDate]);
 
   const handleCurrentMonth = useCallback(() => {
     const newDate = new Date();
+    console.log('🚨 현재 월 클릭 - 새로운 날짜:', newDate);
     setCurrentDate(newDate);
     updateURL(newDate);
   }, [updateURL]);
@@ -482,7 +497,7 @@ const MonthlyPlan = ({
     return grouped;
   }, [currentMonthGoals, currentMonthPlans]);
 
-  // ✨ 계획 추가 함수 (월 기반만)
+  // ✨ 계획 추가 함수 (월 기반만) - 디버깅 강화
   const handleAddPlan = useCallback(async () => {
     const firstDesc = form.descriptions[0]?.trim();
 
@@ -490,6 +505,10 @@ const MonthlyPlan = ({
       alert('태그와 일정 이름을 입력해주세요.');
       return;
     }
+
+    console.log('🚨 계획 추가 시작 - currentMonthKey:', currentMonthKey);
+    console.log('🚨 currentDate:', currentDate);
+    console.log('🚨 format(currentDate):', format(currentDate, 'yyyy-MM'));
 
     const combinedDescription = form.descriptions
       .filter(desc => desc && desc.trim())
@@ -506,11 +525,13 @@ const MonthlyPlan = ({
       month: currentMonthKey // 현재 선택된 월에 저장
     };
     
-    console.log('📅 새 계획 추가:', newPlan);
-    console.log('📅 저장될 월:', currentMonthKey);
+    console.log('🚨 새 계획 생성:', newPlan);
+    console.log('🚨 newPlan.month:', newPlan.month);
+    console.log('🚨 저장될 월:', currentMonthKey);
     
     const updatedPlans = [...plans, newPlan];
-    console.log('📅 업데이트된 전체 계획 수:', updatedPlans.length);
+    console.log('🚨 업데이트된 전체 계획 수:', updatedPlans.length);
+    console.log('🚨 마지막 추가된 계획:', updatedPlans[updatedPlans.length - 1]);
     
     setPlans(updatedPlans);
     setMonthlyPlans(updatedPlans);
@@ -534,7 +555,7 @@ const MonthlyPlan = ({
     } else {
       console.error('❌ 저장 실패로 인한 롤백 필요');
     }
-  }, [form, plans, currentMonthKey, updateAndSaveMonthlyGoals]);
+  }, [form, plans, currentMonthKey, currentDate, updateAndSaveMonthlyGoals]);
 
   const handleGoBack = useCallback(() => {
     navigate('/calendar');
