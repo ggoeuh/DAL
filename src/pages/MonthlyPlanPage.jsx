@@ -519,8 +519,9 @@ const MonthlyPlan = ({
       .map(desc => desc.trim())
       .join(', ');
 
-    // 현재 선택된 월의 1일로 날짜 설정
+    // 🔥 수정: 현재 선택된 월의 1일로 날짜 설정 (currentDate 사용)
     const planDate = getFirstDayOfMonth(currentDate);
+    const formattedDate = formatDateForDB(planDate);
 
     const newPlan = {
       id: Date.now(),
@@ -530,12 +531,14 @@ const MonthlyPlan = ({
       description: combinedDescription,
       estimatedTime: parseInt(form.estimatedTime) || 0,
       month: currentMonthKey, // 기존 호환성 유지
-      date: formatDateForDB(planDate) // 새로운 날짜 기반 저장
+      date: formattedDate // 현재 선택된 월의 1일로 저장
     };
     
     console.log('📅 새 계획 추가:', newPlan);
     console.log('📅 현재 선택된 월:', currentMonthKey);
-    console.log('📅 계획 날짜:', formatDateForDB(planDate));
+    console.log('📅 현재 선택된 날짜 객체:', currentDate);
+    console.log('📅 계획 저장할 날짜:', formattedDate);
+    console.log('📅 getFirstDayOfMonth 결과:', planDate);
     
     const updatedPlans = [...plans, newPlan];
     console.log('📅 업데이트된 전체 계획 수:', updatedPlans.length);
@@ -596,9 +599,9 @@ const MonthlyPlan = ({
     return stats;
   }, [plans]);
 
-  // ✨ 기존 데이터 마이그레이션 함수
+  // ✨ 기존 데이터 마이그레이션 함수 (개선)
   const migrateExistingData = useCallback(async () => {
-    if (!currentUser || !window.confirm('기존 데이터를 날짜 기반으로 마이그레이션하시겠습니까?\n(month 속성만 있는 데이터에 date 속성을 추가합니다)')) {
+    if (!currentUser || !window.confirm('🔧 기존 데이터를 올바른 날짜로 수정하시겠습니까?\n\n현재 모든 데이터가 2025-07-07로 저장되어 있는 것 같습니다.\n각 데이터의 month 속성에 맞는 날짜로 수정합니다.')) {
       return;
     }
 
@@ -606,20 +609,23 @@ const MonthlyPlan = ({
       setSaving(true);
       
       const migratedPlans = plans.map(plan => {
-        // 이미 date가 있으면 그대로 유지
-        if (plan.date) return plan;
+        console.log('🔧 마이그레이션 처리 중인 계획:', plan);
         
-        // month만 있는 경우 해당 월의 1일로 변환
+        // month 속성이 있으면 해당 월의 1일로 변환
         if (plan.month) {
           const [year, month] = plan.month.split('-').map(Number);
-          const planDate = new Date(year, month - 1, 1);
+          const correctDate = new Date(year, month - 1, 1);
+          const formattedDate = formatDateForDB(correctDate);
+          
+          console.log(`🔧 Plan ${plan.id}: month=${plan.month} -> date=${formattedDate}`);
+          
           return {
             ...plan,
-            date: formatDateForDB(planDate)
+            date: formattedDate
           };
         }
         
-        // 둘 다 없는 경우 현재 월의 1일로 설정
+        // month가 없으면 현재 월의 1일로 설정
         return {
           ...plan,
           month: currentMonthKey,
@@ -636,7 +642,7 @@ const MonthlyPlan = ({
         monthlyPlans: migratedPlans
       });
       
-      alert('✅ 데이터 마이그레이션이 완료되었습니다.');
+      alert('✅ 데이터 마이그레이션이 완료되었습니다.\n이제 각 월별로 올바르게 분리되어 보일 것입니다.');
       
     } catch (error) {
       console.error('❌ 데이터 마이그레이션 실패:', error);
@@ -847,9 +853,9 @@ const MonthlyPlan = ({
                   onClick={migrateExistingData}
                   disabled={saving}
                   className="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
-                  title="기존 데이터에 날짜 정보 추가"
+                  title="잘못된 날짜로 저장된 데이터를 month 속성에 맞게 수정"
                 >
-                  {saving ? '처리 중...' : '📅 날짜 마이그레이션'}
+                  {saving ? '처리 중...' : '🔧 날짜 수정'}
                 </button>
               </div>
               <div className="grid grid-cols-4 gap-2 text-sm">
