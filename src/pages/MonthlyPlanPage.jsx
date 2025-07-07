@@ -1,7 +1,20 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { format, addMonths, subMonths } from 'date-fns';
+import { format, addMonths, subMonths, parse, isValid } from 'date-fns';
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
+
+// ✨ URL 쿼리에서 month 파라미터를 읽어서 초기 날짜 설정하는 함수
+const getInitialDateFromQuery = () => {
+  const params = new URLSearchParams(window.location.search);
+  const monthParam = params.get('month'); // e.g., "2025-06"
+
+  if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+    const parsed = parse(monthParam, 'yyyy-MM', new Date());
+    if (isValid(parsed)) return parsed;
+  }
+
+  return new Date(); // fallback to 현재 날짜
+};
 
 const MonthlyPlan = ({ 
   currentUser,
@@ -17,28 +30,16 @@ const MonthlyPlan = ({
   const [monthlyGoals, setMonthlyGoals] = useState([]);
   const [monthlyPlans, setMonthlyPlans] = useState([]);
   
-  // 월 네비게이션 상태 (URL 기반으로 복원)
-  const [currentDate, setCurrentDate] = useState(() => {
-    // URL에서 월 정보 복원 시도
-    const urlParams = new URLSearchParams(window.location.search);
-    const monthParam = urlParams.get('month');
-    
-    if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
-      const [year, month] = monthParam.split('-').map(Number);
-      return new Date(year, month - 1, 1);
-    }
-    
-    return new Date();
-  });
+  // ✨ 월 네비게이션 상태 - URL 쿼리에서 초기값 가져오기
+  const [currentDate, setCurrentDate] = useState(getInitialDateFromQuery());
+  const currentMonthKey = format(currentDate, 'yyyy-MM');
   
-  const currentMonthKey = useMemo(() => {
-    const monthKey = format(currentDate, 'yyyy-MM');
-    console.log('🚨 currentMonthKey 계산:', {
-      currentDate,
-      monthKey,
-      dateString: currentDate.toString()
-    });
-    return monthKey;
+  // ✨ currentDate가 변경될 때마다 URL도 업데이트 (선택사항)
+  useEffect(() => {
+    const formatted = format(currentDate, 'yyyy-MM');
+    const url = new URL(window.location.href);
+    url.searchParams.set('month', formatted);
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }, [currentDate]);
   
   // 수정 모달 상태
@@ -76,21 +77,12 @@ const MonthlyPlan = ({
     return currentGoal?.goals || [];
   }, [safeMonthlyGoals, currentMonthKey]);
 
-  // ✨ 현재 선택된 월의 계획 가져오기 (페이지 월 기준)
+  // ✅ 현재 선택된 월의 계획 가져오기
   const currentMonthPlans = useMemo(() => {
-    console.log('🔍 전체 plans:', plans);
-    console.log('🔍 currentMonthKey:', currentMonthKey);
-    
-    const filtered = plans.filter(plan => {
-      // month 속성으로만 필터링 (new Date() 사용 안함)
-      const planMonth = plan.month;
-      const matches = planMonth === currentMonthKey;
-      console.log(`🔍 Plan ${plan.id}: month=${planMonth}, matches=${matches}`);
-      return matches;
+    return plans.filter(plan => {
+      const planMonth = plan.month || format(new Date(), 'yyyy-MM');
+      return planMonth === currentMonthKey;
     });
-    
-    console.log('🔍 필터링된 currentMonthPlans:', filtered);
-    return filtered;
   }, [plans, currentMonthKey]);
 
   // ✅ 태그별 목표 시간을 쉽게 찾는 함수
@@ -103,43 +95,20 @@ const MonthlyPlan = ({
     return 0;
   }, [currentMonthGoals]);
 
-  // ✨ 월 네비게이션 함수들 (URL 업데이트 포함) - 디버깅 강화
-  const updateURL = useCallback((date) => {
-    const monthKey = format(date, 'yyyy-MM');
-    console.log('🚨 URL 업데이트:', { date, monthKey });
-    const url = new URL(window.location);
-    url.searchParams.set('month', monthKey);
-    window.history.replaceState({}, '', url);
+  // ✨ 월 네비게이션 함수들
+  const handlePrevMonth = useCallback(() => {
+    setCurrentDate(prev => subMonths(prev, 1));
   }, []);
 
-  const handlePrevMonth = useCallback(() => {
-    console.log('🚨 이전 월 클릭 - 현재 currentDate:', currentDate);
-    setCurrentDate(prev => {
-      const newDate = subMonths(prev, 1);
-      console.log('🚨 새로운 날짜:', newDate);
-      updateURL(newDate);
-      return newDate;
-    });
-  }, [updateURL, currentDate]);
-
   const handleNextMonth = useCallback(() => {
-    console.log('🚨 다음 월 클릭 - 현재 currentDate:', currentDate);
-    setCurrentDate(prev => {
-      const newDate = addMonths(prev, 1);
-      console.log('🚨 새로운 날짜:', newDate);
-      updateURL(newDate);
-      return newDate;
-    });
-  }, [updateURL, currentDate]);
+    setCurrentDate(prev => addMonths(prev, 1));
+  }, []);
 
   const handleCurrentMonth = useCallback(() => {
-    const newDate = new Date();
-    console.log('🚨 현재 월 클릭 - 새로운 날짜:', newDate);
-    setCurrentDate(newDate);
-    updateURL(newDate);
-  }, [updateURL]);
+    setCurrentDate(new Date());
+  }, []);
 
-  // ✨ 서버 데이터 검증 및 정리 함수 (month 속성 보장)
+  // ✨ 서버 데이터 검증 및 정리 함수
   const validateAndCleanServerData = useCallback((serverData) => {
     if (!serverData) return {};
     
@@ -153,11 +122,10 @@ const MonthlyPlan = ({
       }
       
       return {
-        ...plan, // 기존 모든 속성 유지
+        ...plan,
         description: cleanDescription,
         name: plan.name || '',
-        estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0,
-        month: plan.month || '2025-07' // 🔥 month가 없으면 기본값 설정
+        estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0
       };
     });
     
@@ -167,25 +135,17 @@ const MonthlyPlan = ({
     };
   }, []);
 
-  // ✨ 서버에서 전체 사용자 데이터 로드 (디버깅 강화)
+  // ✨ 서버에서 전체 사용자 데이터 로드
   const loadUserDataFromServer = useCallback(async () => {
     if (!currentUser || !supabase) return;
 
     try {
       setLoading(true);
-      console.log('📡 서버에서 데이터 로드 시작');
 
       const result = await loadUserDataFromDAL(currentUser);
       
-      console.log('📡 서버 응답:', result);
-      
       if (result.success && result.data) {
-        console.log('📡 서버에서 받은 원본 데이터:', result.data);
-        
         const validatedData = validateAndCleanServerData(result.data);
-        
-        console.log('📡 검증된 데이터:', validatedData);
-        console.log('📡 월간 계획 수:', validatedData.monthlyPlans?.length || 0);
         
         setSchedules(validatedData.schedules || []);
         setTags(validatedData.tags || []);
@@ -195,9 +155,7 @@ const MonthlyPlan = ({
         setPlans(validatedData.monthlyPlans || []);
         setLastSyncTime(new Date());
 
-        console.log('📡 상태 업데이트 완료');
       } else {
-        console.log('📡 서버에 데이터가 없어서 초기화');
         setSchedules([]);
         setTags([]);
         setTagItems([]);
@@ -213,14 +171,13 @@ const MonthlyPlan = ({
     }
   }, [currentUser, validateAndCleanServerData]);
 
-  // ✨ 서버에 전체 사용자 데이터 저장 (디버깅 강화)
+  // ✨ 서버에 전체 사용자 데이터 저장
   const saveUserDataToServer = useCallback(async (updatedData) => {
     if (!currentUser || saving) return;
 
     try {
       setSaving(true);
 
-      // 🔍 저장할 데이터 구조 로깅
       const dataToSave = {
         schedules: updatedData.schedules || schedules,
         tags: updatedData.tags || tags,
@@ -229,20 +186,12 @@ const MonthlyPlan = ({
         monthlyPlans: updatedData.monthlyPlans || monthlyPlans
       };
 
-      console.log('🔍 저장할 데이터:', dataToSave);
-      console.log('🔍 monthlyPlans 개수:', dataToSave.monthlyPlans.length);
-      console.log('🔍 monthlyPlans 내용:', dataToSave.monthlyPlans);
-
       const result = await saveUserDataToDAL(currentUser, dataToSave);
-      
-      console.log('🔍 서버 저장 결과:', result);
       
       if (result.success) {
         setLastSyncTime(new Date());
-        console.log('✅ 서버 저장 성공');
         return true;
       } else {
-        console.error('❌ 서버 저장 실패:', result.error);
         throw new Error(result.error || '서버 저장 실패');
       }
     } catch (error) {
@@ -254,22 +203,14 @@ const MonthlyPlan = ({
     }
   }, [currentUser, saving, schedules, tags, tagItems, monthlyGoals, monthlyPlans]);
 
-  // ✨ 월간 목표 업데이트 및 저장 (페이지 월 기준)
+  // ✨ 월간 목표 업데이트 및 저장
   const updateAndSaveMonthlyGoals = useCallback(async (updatedPlans) => {
     if (!currentUser) return;
 
-    console.log('🎯 월간 목표 업데이트 시작');
-    console.log('🎯 입력된 계획 수:', updatedPlans.length);
-    console.log('🎯 현재 월:', currentMonthKey);
-
     const currentMonthFilteredPlans = updatedPlans.filter(plan => {
-      const planMonth = plan.month;
-      const matches = planMonth === currentMonthKey;
-      console.log(`🎯 Plan ${plan.id}: month=${planMonth}, matches=${matches}`);
-      return matches;
+      const planMonth = plan.month || format(new Date(), 'yyyy-MM');
+      return planMonth === currentMonthKey;
     });
-
-    console.log('🎯 현재 월 필터링된 계획 수:', currentMonthFilteredPlans.length);
 
     const goalsByTagType = {};
     currentMonthFilteredPlans.forEach(plan => {
@@ -279,15 +220,12 @@ const MonthlyPlan = ({
       goalsByTagType[plan.tagType] += plan.estimatedTime;
     });
 
-    console.log('🎯 태그별 목표 시간:', goalsByTagType);
-
     let updatedGoals = [...safeMonthlyGoals];
     let currentMonthGoal = updatedGoals.find(goal => goal.month === currentMonthKey);
     
     if (!currentMonthGoal) {
       currentMonthGoal = { month: currentMonthKey, goals: [] };
       updatedGoals.push(currentMonthGoal);
-      console.log('🎯 새로운 월간 목표 생성:', currentMonthGoal);
     }
 
     const planTagTypes = Object.keys(goalsByTagType);
@@ -301,18 +239,11 @@ const MonthlyPlan = ({
     currentMonthGoal.goals = [...existingGoals, ...newGoals];
     setMonthlyGoals(updatedGoals);
     
-    console.log('🎯 최종 월간 목표:', updatedGoals);
-    
-    const dataToSave = {
+    const saveResult = await saveUserDataToServer({
       monthlyGoals: updatedGoals,
       monthlyPlans: updatedPlans
-    };
-    
-    console.log('💾 최종 저장 데이터:', dataToSave);
-    
-    const saveResult = await saveUserDataToServer(dataToSave);
+    });
 
-    console.log('💾 최종 저장 결과:', saveResult);
     return saveResult;
   }, [currentUser, currentMonthKey, safeMonthlyGoals, saveUserDataToServer]);
 
@@ -346,7 +277,7 @@ const MonthlyPlan = ({
     }
   }, [handleEditPlan]);
 
-  // ✨ 계획 수정 저장 (월 기반)
+  // ✨ 계획 수정 저장
   const handleSaveEdit = useCallback(async () => {
     if (!editingPlan) return;
 
@@ -360,11 +291,8 @@ const MonthlyPlan = ({
       tag: editForm.tag,
       name: editForm.name,
       description: combinedDescription,
-      estimatedTime: parseInt(editForm.estimatedTime) || 0,
-      month: currentMonthKey // 현재 월 유지
+      estimatedTime: parseInt(editForm.estimatedTime) || 0
     };
-
-    console.log('📅 계획 수정:', updatedPlan);
 
     const updatedPlans = plans.map(plan => 
       plan.id === editingPlan.id ? updatedPlan : plan
@@ -382,7 +310,7 @@ const MonthlyPlan = ({
       descriptions: ['', '', ''],
       estimatedTime: ''
     });
-  }, [editingPlan, editForm, plans, currentMonthKey, updateAndSaveMonthlyGoals]);
+  }, [editingPlan, editForm, plans, updateAndSaveMonthlyGoals]);
 
   // ✨ 개별 계획 삭제
   const handleDeleteSinglePlan = useCallback(async (planId, e) => {
@@ -399,15 +327,11 @@ const MonthlyPlan = ({
     await updateAndSaveMonthlyGoals(updatedPlans);
   }, [plans, updateAndSaveMonthlyGoals]);
 
-  // ✨ 초기 데이터 로드 및 URL 동기화
+  // ✨ 초기 데이터 로드
   useEffect(() => {
     if (!currentUser) return;
-    
-    // URL 초기 설정
-    updateURL(currentDate);
-    
     loadUserDataFromServer();
-  }, [currentUser, loadUserDataFromServer, updateURL, currentDate]);
+  }, [currentUser, loadUserDataFromServer]);
 
   // ✨ 서버 데이터 새로고침 함수
   const handleRefreshData = useCallback(async () => {
@@ -497,7 +421,7 @@ const MonthlyPlan = ({
     return grouped;
   }, [currentMonthGoals, currentMonthPlans]);
 
-  // ✨ 계획 추가 함수 (강제 수정)
+  // ✨ 계획 추가 함수
   const handleAddPlan = useCallback(async () => {
     const firstDesc = form.descriptions[0]?.trim();
 
@@ -506,23 +430,10 @@ const MonthlyPlan = ({
       return;
     }
 
-    console.log('🚨 계획 추가 시작 - currentMonthKey:', currentMonthKey);
-    console.log('🚨 currentDate:', currentDate);
-
     const combinedDescription = form.descriptions
       .filter(desc => desc && desc.trim())
       .map(desc => desc.trim())
       .join(', ');
-
-    // 🔥 강제로 현재 페이지 월 설정
-    let pageMonth = currentMonthKey;
-    
-    // URL에서 month 파라미터 직접 읽기
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlMonth = urlParams.get('month');
-    if (urlMonth) {
-      pageMonth = urlMonth;
-    }
 
     const newPlan = {
       id: Date.now(),
@@ -531,18 +442,10 @@ const MonthlyPlan = ({
       name: form.name || '',
       description: combinedDescription,
       estimatedTime: parseInt(form.estimatedTime) || 0,
-      month: pageMonth // 🔥 URL에서 직접 가져온 월 사용
+      month: currentMonthKey // ← 이제 URL 쿼리를 기반으로 정확한 월이 설정됨!
     };
     
-    console.log('🚨 새 계획 생성:', newPlan);
-    console.log('🚨 pageMonth:', pageMonth);
-    console.log('🚨 urlMonth:', urlMonth);
-    console.log('🚨 currentMonthKey:', currentMonthKey);
-    
     const updatedPlans = [...plans, newPlan];
-    console.log('🚨 업데이트된 전체 계획 수:', updatedPlans.length);
-    console.log('🚨 마지막 추가된 계획:', updatedPlans[updatedPlans.length - 1]);
-    
     setPlans(updatedPlans);
     setMonthlyPlans(updatedPlans);
 
@@ -558,31 +461,13 @@ const MonthlyPlan = ({
       });
       setSelectedTagType('');
     }
-  }, [form, plans, currentMonthKey, currentDate, updateAndSaveMonthlyGoals]);
+  }, [form, plans, currentMonthKey, updateAndSaveMonthlyGoals]);
 
   const handleGoBack = useCallback(() => {
     navigate('/calendar');
   }, [navigate]);
 
-  // ✨ 월별 데이터 통계 계산 (월 기반)
-  const monthlyStats = useMemo(() => {
-    const stats = {};
-    
-    plans.forEach(plan => {
-      const monthKey = plan.month || format(new Date(), 'yyyy-MM');
-      
-      if (!stats[monthKey]) {
-        stats[monthKey] = { count: 0, totalHours: 0 };
-      }
-      
-      stats[monthKey].count++;
-      stats[monthKey].totalHours += plan.estimatedTime || 0;
-    });
-    
-    return stats;
-  }, [plans]);
-
-  // ✨ 서버 데이터 정리 함수 (페이지 월 기준)
+  // ✨ 서버 데이터 정리 함수
   const handleServerDataCleanup = useCallback(async () => {
     if (!currentUser || !window.confirm('⚠️ 서버에서 잘못된 데이터를 정리하시겠습니까?')) {
       return;
@@ -607,8 +492,7 @@ const MonthlyPlan = ({
         return {
           ...plan,
           description: cleanDescription,
-          estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0,
-          month: plan.month // 기존 month 그대로 유지
+          estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0
         };
       }).filter(plan => plan.tagType && plan.tag && plan.tagType.trim() && plan.tag.trim());
 
@@ -763,69 +647,6 @@ const MonthlyPlan = ({
                 <div className="mt-2 text-green-700 text-sm">
                   <span className="font-medium">🎯 {format(currentDate, 'M월')} 목표:</span> 
                   {currentMonthGoals.map(goal => `${goal.tagType}(${goal.targetHours})`).join(', ')}
-                </div>
-              )}
-            </div>
-
-            {/* 월별 데이터 통계 */}
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="font-medium text-blue-800">📊 월별 계획 통계</h4>
-                <div className="flex gap-2">
-                  <button
-                    onClick={async () => {
-                      if (!window.confirm('모든 계획을 6월로 이동하시겠습니까?')) return;
-                      const updatedPlans = plans.map(plan => ({
-                        ...plan,
-                        month: '2025-06'
-                      }));
-                      setPlans(updatedPlans);
-                      setMonthlyPlans(updatedPlans);
-                      await saveUserDataToServer({ monthlyPlans: updatedPlans });
-                      alert('완료! 모든 계획이 2025-06으로 이동되었습니다.');
-                    }}
-                    disabled={saving}
-                    className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    📅 모든 계획을 6월로
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (!window.confirm('모든 계획을 7월로 복구하시겠습니까?')) return;
-                      const updatedPlans = plans.map(plan => ({
-                        ...plan,
-                        month: '2025-07'
-                      }));
-                      setPlans(updatedPlans);
-                      setMonthlyPlans(updatedPlans);
-                      await saveUserDataToServer({ monthlyPlans: updatedPlans });
-                      alert('완료! 모든 계획이 2025-07로 복구되었습니다.');
-                    }}
-                    disabled={saving}
-                    className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    🚨 긴급 복구 (7월)
-                  </button>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-4 gap-2 text-sm">
-                {Object.entries(monthlyStats)
-                  .sort(([a], [b]) => b.localeCompare(a))
-                  .slice(0, 8)
-                  .map(([month, stat]) => (
-                    <div 
-                      key={month} 
-                      className={`p-2 rounded ${month === currentMonthKey ? 'bg-blue-200 text-blue-900 font-medium' : 'bg-white text-blue-700'}`}
-                    >
-                      <div className="font-medium">{month}</div>
-                      <div className="text-xs">{stat.count}개 · {stat.totalHours}시간</div>
-                    </div>
-                  ))}
-              </div>
-              {Object.keys(monthlyStats).length === 0 && (
-                <div className="text-center text-blue-600 py-2">
-                  아직 계획 데이터가 없습니다.
                 </div>
               )}
             </div>
@@ -1176,37 +997,6 @@ const MonthlyPlan = ({
           </div>
         </div>
       )}
-
-      {/* 실시간 데이터 모니터 (개발용) */}
-      <div className="fixed bottom-4 left-4 bg-white border rounded-lg p-3 shadow-lg text-xs max-w-sm z-40">
-        <h4 className="font-bold mb-2">🔍 데이터 상태 모니터</h4>
-        <div className="space-y-1">
-          <div>전체 계획: {plans.length}개</div>
-          <div>현재 월 계획: {currentMonthPlans.length}개</div>
-          <div>현재 월: {currentMonthKey}</div>
-          <div>저장 상태: {saving ? '저장 중...' : '대기'}</div>
-          {lastSyncTime && (
-            <div>마지막 동기화: {lastSyncTime.toLocaleTimeString()}</div>
-          )}
-        </div>
-        
-        <details className="mt-2">
-          <summary className="cursor-pointer text-blue-600">전체 계획 목록</summary>
-          <div className="mt-1 max-h-32 overflow-auto text-xs bg-gray-50 p-2 rounded">
-            {plans.map(plan => (
-              <div key={plan.id} className="border-b pb-1 mb-1">
-                ID: {plan.id}<br/>
-                태그: {plan.tag}<br/>
-                월: {plan.month}<br/>
-                시간: {plan.estimatedTime}h
-              </div>
-            ))}
-            {plans.length === 0 && (
-              <div className="text-gray-500">계획이 없습니다</div>
-            )}
-          </div>
-        </details>
-      </div>
     </div>
   );
 };
