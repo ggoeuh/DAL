@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { format, addMonths, subMonths, parse, isValid } from 'date-fns';
+import { format, addMonths, subMonths } from 'date-fns';
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
 
 const MonthlyPlan = ({ 
@@ -17,26 +17,8 @@ const MonthlyPlan = ({
   const [monthlyGoals, setMonthlyGoals] = useState([]);
   const [monthlyPlans, setMonthlyPlans] = useState([]);
   
-  // ✨ URL 쿼리에서 초기 월 날짜를 가져오는 useEffect
+  // 월 네비게이션 상태
   const [currentDate, setCurrentDate] = useState(new Date());
-  
-  // ✨ 컴포넌트 마운트 시 URL 쿼리를 읽어서 currentDate 설정 (한 번만!)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const monthParam = params.get('month'); // e.g., "2025-06"
-
-    if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
-      const parsed = parse(monthParam, 'yyyy-MM', new Date());
-      if (isValid(parsed)) {
-        console.log('🎯 URL에서 월 파라미터 읽음:', monthParam, '→', parsed);
-        setCurrentDate(parsed);
-        return;
-      }
-    }
-    
-    console.log('⚠️ URL에 월 파라미터가 없거나 잘못됨, 현재 날짜 사용');
-  }, []); // 빈 배열로 마운트 시 한 번만 실행
-  
   const currentMonthKey = format(currentDate, 'yyyy-MM');
   
   // 수정 모달 상태
@@ -439,7 +421,7 @@ const MonthlyPlan = ({
       name: form.name || '',
       description: combinedDescription,
       estimatedTime: parseInt(form.estimatedTime) || 0,
-      month: currentMonthKey // ← 이제 URL 쿼리를 기반으로 정확한 월이 설정됨!
+      month: currentMonthKey
     };
     
     const updatedPlans = [...plans, newPlan];
