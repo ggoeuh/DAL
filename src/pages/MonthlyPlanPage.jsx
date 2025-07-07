@@ -455,7 +455,20 @@ const MonthlyPlan = ({
     return tag ? tag.color : { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' };
   }, [safeTags]);
 
-  // ✅ 수정된 목표를 기반으로 한 그룹화 - 목표만 있어도 블럭 표시
+  // 🔧 디버깅: 현재 월의 계획과 목표 상태 확인
+  useEffect(() => {
+    console.log('🔍 디버깅 정보:', {
+      currentMonthKey,
+      totalPlans: plans.length,
+      currentMonthPlans: currentMonthPlans.length,
+      currentMonthGoals: currentMonthGoals.length,
+      plansDetail: plans.map(p => ({ id: p.id, month: p.month, tagType: p.tagType, tag: p.tag })),
+      currentMonthPlansDetail: currentMonthPlans.map(p => ({ id: p.id, month: p.month, tagType: p.tagType, tag: p.tag })),
+      goalsDetail: currentMonthGoals.map(g => ({ tagType: g.tagType, targetHours: g.targetHours }))
+    });
+  }, [currentMonthKey, plans, currentMonthPlans, currentMonthGoals]);
+
+  // ✅ 수정된 목표를 기반으로 한 그룹화 - 원래 로직으로 복원
   const getGroupedGoals = useMemo(() => {
     const grouped = {};
   
@@ -469,7 +482,8 @@ const MonthlyPlan = ({
           isGoal: false
         }));
       } else {
-        // 🔧 수정: 계획이 없어도 목표 블럭만이라도 표시
+        // 계획이 없으면 목표 블럭만 표시 (임시로 유지하되 로그로 확인)
+        console.log('⚠️ 목표만 있고 계획이 없는 태그:', goal.tagType);
         grouped[goal.tagType] = [{
           id: `goal-${goal.tagType}-${currentMonthKey}`,
           tagType: goal.tagType,
@@ -484,6 +498,7 @@ const MonthlyPlan = ({
       }
     });
     
+    console.log('📊 그룹화된 목표들:', grouped);
     return grouped;
   }, [currentMonthGoals, currentMonthPlans, currentMonthKey]);
 
