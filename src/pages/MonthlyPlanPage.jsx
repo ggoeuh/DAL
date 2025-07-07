@@ -522,12 +522,14 @@ const MonthlyPlan = ({
       name: form.name || '',
       description: combinedDescription,
       estimatedTime: parseInt(form.estimatedTime) || 0,
-      month: format(currentDate, 'yyyy-MM') // 🔥 강제로 currentDate에서 직접 계산
+      month: format(currentDate, 'yyyy-MM') // 🔥 무조건 currentDate에서 계산
     };
     
     console.log('🚨 새 계획 생성:', newPlan);
     console.log('🚨 newPlan.month:', newPlan.month);
-    console.log('🚨 저장될 월:', currentMonthKey);
+    console.log('🚨 currentDate:', currentDate);
+    console.log('🚨 format(currentDate):', format(currentDate, 'yyyy-MM'));
+    console.log('🚨 currentMonthKey:', currentMonthKey);
     
     const updatedPlans = [...plans, newPlan];
     console.log('🚨 업데이트된 전체 계획 수:', updatedPlans.length);
