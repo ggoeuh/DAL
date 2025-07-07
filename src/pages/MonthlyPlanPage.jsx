@@ -17,8 +17,19 @@ const MonthlyPlan = ({
   const [monthlyGoals, setMonthlyGoals] = useState([]);
   const [monthlyPlans, setMonthlyPlans] = useState([]);
   
-  // 월 네비게이션 상태
-  const [currentDate, setCurrentDate] = useState(new Date());
+  // 월 네비게이션 상태 (URL 기반으로 복원)
+  const [currentDate, setCurrentDate] = useState(() => {
+    // URL에서 월 정보 복원 시도
+    const urlParams = new URLSearchParams(window.location.search);
+    const monthParam = urlParams.get('month');
+    
+    if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+      const [year, month] = monthParam.split('-').map(Number);
+      return new Date(year, month - 1, 1);
+    }
+    
+    return new Date();
+  });
   const currentMonthKey = format(currentDate, 'yyyy-MM');
   
   // 수정 모달 상태
@@ -107,18 +118,35 @@ const MonthlyPlan = ({
     return 0;
   }, [currentMonthGoals]);
 
-  // ✨ 월 네비게이션 함수들
-  const handlePrevMonth = useCallback(() => {
-    setCurrentDate(prev => subMonths(prev, 1));
+  // ✨ 월 네비게이션 함수들 (URL 업데이트 포함)
+  const updateURL = useCallback((date) => {
+    const monthKey = format(date, 'yyyy-MM');
+    const url = new URL(window.location);
+    url.searchParams.set('month', monthKey);
+    window.history.replaceState({}, '', url);
   }, []);
+
+  const handlePrevMonth = useCallback(() => {
+    setCurrentDate(prev => {
+      const newDate = subMonths(prev, 1);
+      updateURL(newDate);
+      return newDate;
+    });
+  }, [updateURL]);
 
   const handleNextMonth = useCallback(() => {
-    setCurrentDate(prev => addMonths(prev, 1));
-  }, []);
+    setCurrentDate(prev => {
+      const newDate = addMonths(prev, 1);
+      updateURL(newDate);
+      return newDate;
+    });
+  }, [updateURL]);
 
   const handleCurrentMonth = useCallback(() => {
-    setCurrentDate(new Date());
-  }, []);
+    const newDate = new Date();
+    setCurrentDate(newDate);
+    updateURL(newDate);
+  }, [updateURL]);
 
   // ✨ 서버 데이터 검증 및 정리 함수 (날짜 기반 개선)
   const validateAndCleanServerData = useCallback((serverData) => {
