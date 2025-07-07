@@ -19,12 +19,9 @@ const MonthlyPlan = ({
   
   // ✨ URL 쿼리에서 초기 월 날짜를 가져오는 useEffect
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [isInitialized, setIsInitialized] = useState(false);
   
   // ✨ 컴포넌트 마운트 시 URL 쿼리를 읽어서 currentDate 설정 (한 번만!)
   useEffect(() => {
-    if (isInitialized) return; // 이미 초기화되었으면 실행하지 않음
-    
     const params = new URLSearchParams(window.location.search);
     const monthParam = params.get('month'); // e.g., "2025-06"
 
@@ -33,32 +30,14 @@ const MonthlyPlan = ({
       if (isValid(parsed)) {
         console.log('🎯 URL에서 월 파라미터 읽음:', monthParam, '→', parsed);
         setCurrentDate(parsed);
-        setIsInitialized(true);
         return;
       }
     }
     
     console.log('⚠️ URL에 월 파라미터가 없거나 잘못됨, 현재 날짜 사용');
-    setIsInitialized(true);
-  }, [isInitialized]); // isInitialized를 의존성에 추가
+  }, []); // 빈 배열로 마운트 시 한 번만 실행
   
   const currentMonthKey = format(currentDate, 'yyyy-MM');
-  
-  // ✨ currentDate가 변경될 때마다 URL도 업데이트 (초기화 완료 후에만)
-  useEffect(() => {
-    if (!isInitialized) return; // 초기화 완료 전에는 URL 업데이트 안 함
-    
-    const formatted = format(currentDate, 'yyyy-MM');
-    const currentParam = new URLSearchParams(window.location.search).get('month');
-    
-    // 현재 URL과 다를 때만 업데이트
-    if (currentParam !== formatted) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('month', formatted);
-      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-      console.log('🔄 URL 업데이트:', formatted);
-    }
-  }, [currentDate, isInitialized]);
   
   // 수정 모달 상태
   const [editingPlan, setEditingPlan] = useState(null);
