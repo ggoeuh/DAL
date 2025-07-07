@@ -1,4 +1,4 @@
-// pages/DetailedCalendar.jsx - 서버 기반 태그 색상 버전
+// pages/DetailedCalendar.jsx - 서버 기반 태그 색상 버전 (활동 요약 업데이트)
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
@@ -322,12 +322,6 @@ const DetailedCalendar = ({
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedSchedule, setSelectedSchedule] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [dataStats, setDataStats] = useState({
-    totalSchedules: 0,
-    currentMonthSchedules: 0,
-    tagTypes: 0,
-    totalTime: '00:00'
-  });
   const navigate = useNavigate();
 
   // ✅ 서버 기반 태그 색상 가져오기 함수
@@ -506,34 +500,6 @@ const DetailedCalendar = ({
       onRefresh();
     }
   };
-
-  // 데이터 통계 계산
-  useEffect(() => {
-    const currentMonth = formatDate(currentDate, 'yyyy-MM').substring(0, 7);
-    const currentMonthSchedules = schedules.filter(schedule => {
-      const scheduleDate = new Date(schedule.date);
-      const scheduleMonth = formatDate(scheduleDate, 'yyyy-MM').substring(0, 7);
-      return scheduleMonth === currentMonth;
-    });
-
-    // 총 활동 시간 계산
-    const totalMinutes = currentMonthSchedules.reduce((sum, schedule) => {
-      const startMinutes = parseTimeToMinutes(schedule.start);
-      const endMinutes = parseTimeToMinutes(schedule.end);
-      return sum + (endMinutes - startMinutes);
-    }, 0);
-
-    // 사용된 태그 타입 수 계산
-    const usedTagTypes = new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"));
-
-    setDataStats({
-      totalSchedules: schedules.length,
-      currentMonthSchedules: currentMonthSchedules.length,
-      tagTypes: usedTagTypes.size,
-      totalTime: minutesToTimeString(totalMinutes)
-    });
-
-  }, [schedules, tags, tagItems, monthlyGoals, currentDate]);
 
   // 안전한 배열 보장
   const safeSchedules = Array.isArray(schedules) ? schedules : [];
@@ -807,7 +773,7 @@ const DetailedCalendar = ({
             <div className="text-sm text-gray-600 text-right">
               <div>{isAdminView ? `조회 대상: ${currentUser}` : `사용자: ${currentUser}`}</div>
               <div className="text-xs text-gray-500">
-                이번 달: {dataStats.currentMonthSchedules}개 일정 | 총 {dataStats.totalTime}
+                이번 달: {currentMonthSchedules.length}개 일정
                 {isServerBased && ' | 서버 기반 (색상 동기화)'}
               </div>
             </div>
@@ -829,55 +795,99 @@ const DetailedCalendar = ({
           </div>
         </div>
 
-        {/* 데이터 요약 카드 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <span className="text-blue-600 text-sm">📅</span>
-              </div>
-              <div className="ml-3">
-                <div className="text-sm font-medium text-gray-500">총 일정</div>
-                <div className="text-2xl font-bold text-gray-900">{dataStats.totalSchedules}</div>
-              </div>
-            </div>
-          </div>
+        {/* ✅ 이번 달 활동 요약 - CalendarPage 스타일 적용 */}
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold mb-4 text-gray-700 flex items-center">
+            <span className="mr-2">📊</span>
+            {formatDate(currentDate, 'yyyy년 M월')} 활동 요약
+            {isServerBased && (
+              <span className="ml-2 text-sm text-gray-500">(서버 데이터 기반 - 태그 색상 동기화)</span>
+            )}
+          </h2>
           
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center">
-              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                <span className="text-green-600 text-sm">📊</span>
-              </div>
-              <div className="ml-3">
-                <div className="text-sm font-medium text-gray-500">이번 달</div>
-                <div className="text-2xl font-bold text-gray-900">{dataStats.currentMonthSchedules}</div>
-              </div>
+          {allTagTypes.length > 0 ? (
+            <div className="flex flex-wrap gap-4">
+              {allTagTypes.map((tagType) => {
+                const tagColor = getTagColor(tagType); // ✅ 서버 기반 색상 함수 사용
+                const actualMinutes = monthlyTagTotals[tagType] || 0;
+                const actualTime = minutesToTimeString(actualMinutes);
+                
+                // 목표 시간 찾기
+                const goal = currentMonthGoalsData.find(g => g.tagType === tagType);
+                const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
+                const goalTime = goal ? goal.targetHours : "00:00";
+                
+                // 퍼센테이지 계산
+                const percentage = calculatePercentage(actualMinutes, goalMinutes);
+                
+                // 진행률에 따른 색상 결정
+                const getProgressColor = (percent) => {
+                  if (percent >= 100) return "text-green-600";
+                  if (percent >= 75) return "text-blue-600";
+                  if (percent >= 50) return "text-yellow-600";
+                  return "text-red-600";
+                };
+                
+                return (
+                  <div
+                    key={tagType}
+                    className={`p-4 w-60 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow flex-shrink-0`}
+                  >
+                    <div className="mb-2">
+                      <span className={`font-medium ${tagColor.text}`}>{tagType}</span>
+                    </div>
+                    
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">실제:</span>
+                        <span className={`font-semibold ${tagColor.text}`}>{actualTime}</span>
+                      </div>
+                      
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">목표:</span>
+                        <span className={`font-semibold ${tagColor.text}`}>{goalTime}</span>
+                      </div>
+                      
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">달성률:</span>
+                        <span className={`font-bold text-lg ${getProgressColor(percentage)}`}>
+                          {percentage}%
+                        </span>
+                      </div>
+                      
+                      {/* 진행률 바 */}
+                      <div className="w-full bg-white rounded-full h-2 mt-2">
+                        <div 
+                          className={`h-2 rounded-full transition-all duration-300 ${
+                            percentage >= 100 ? 'bg-green-500' :
+                            percentage >= 75 ? 'bg-blue-500' :
+                            percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(percentage, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                    
+                    {/* ✅ 서버 색상 표시 */}
+                    <div className="mt-2 text-xs text-gray-500 opacity-70 text-center">
+                      🌐 서버 기반 색상
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center">
-              <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                <span className="text-purple-600 text-sm">🏷️</span>
-              </div>
-              <div className="ml-3">
-                <div className="text-sm font-medium text-gray-500">활동 유형</div>
-                <div className="text-2xl font-bold text-gray-900">{dataStats.tagTypes}</div>
-              </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500 bg-white rounded-lg shadow-sm">
+              <div className="text-4xl mb-3">📅</div>
+              <p className="text-lg font-medium">아직 등록된 일정이 없습니다.</p>
+              <p className="text-sm mt-2">일정을 추가하여 월별 활동을 확인해보세요!</p>
+              {isAdminView && (
+                <p className="text-xs mt-2 text-blue-600">
+                  관리자 모드: {currentUser}님의 서버 데이터를 조회 중입니다.
+                </p>
+              )}
             </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="flex items-center">
-              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
-                <span className="text-orange-600 text-sm">⏰</span>
-              </div>
-              <div className="ml-3">
-                <div className="text-sm font-medium text-gray-500">활동 시간</div>
-                <div className="text-2xl font-bold text-gray-900">{dataStats.totalTime}</div>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* 캘린더 */}
@@ -977,99 +987,6 @@ const DetailedCalendar = ({
           getTagColor={getTagColor}
         />
         
-        {/* ✅ 월간 목표 달성률 표시 - 서버 기반 색상 사용 */}
-        {allTagTypes.length > 0 && (
-          <div className="mt-6 bg-white rounded-lg shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-              <span className="mr-2">🎯</span>
-              {formatDate(currentDate, 'yyyy년 M월')} 목표 달성률
-              {isServerBased && (
-                <span className="ml-2 text-sm text-gray-500">(서버 데이터 기반 - 태그 색상 동기화)</span>
-              )}
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {allTagTypes.map((tagType) => {
-                const tagColor = getTagColor(tagType); // ✅ 서버 기반 색상 함수 사용
-                const actualMinutes = monthlyTagTotals[tagType] || 0;
-                const actualTime = minutesToTimeString(actualMinutes);
-                
-                const goal = currentMonthGoalsData.find(g => g.tagType === tagType);
-                const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
-                const goalTime = goal ? goal.targetHours : "00:00";
-                
-                const percentage = calculatePercentage(actualMinutes, goalMinutes);
-                
-                if (goalTime === "00:00" && actualTime === "00:00") return null;
-                
-                return (
-                  <div key={tagType} className={`${tagColor.bg} ${tagColor.border} rounded-lg p-4 border-2`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className={`text-sm font-semibold ${tagColor.text}`}>
-                        {tagType}
-                      </span>
-                      <span className={`text-lg font-bold ${
-                        percentage >= 100 ? 'text-green-600' :
-                        percentage >= 70 ? 'text-blue-600' :
-                        percentage >= 30 ? 'text-yellow-600' : 'text-red-600'
-                      }`}>
-                        {percentage}%
-                      </span>
-                    </div>
-                    
-                    <div className="space-y-1 mb-3">
-                      <div className="flex justify-between text-sm text-gray-600">
-                        <span>실제:</span>
-                        <span className={`font-semibold ${tagColor.text}`}>{actualTime}</span>
-                      </div>
-                      <div className="flex justify-between text-sm text-gray-600">
-                        <span>목표:</span>
-                        <span className={`font-semibold ${tagColor.text}`}>{goalTime}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="w-full bg-white rounded-full h-2">
-                      <div 
-                        className={`h-2 rounded-full transition-all duration-300 ${
-                          percentage >= 100 ? 'bg-green-500' :
-                          percentage >= 75 ? 'bg-blue-500' :
-                          percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}
-                        style={{ width: `${Math.min(percentage, 100)}%` }}
-                      ></div>
-                    </div>
-                    
-                    {/* ✅ 서버 색상 표시 */}
-                    <div className="mt-2 text-xs text-gray-500 opacity-70 text-center">
-                      🌐 서버 기반 색상
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            
-            {allTagTypes.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 flex items-center">
-                    <span className="mr-2">📈</span>
-                    평균 달성률
-                  </span>
-                  <span className="font-bold text-xl text-gray-800">
-                    {Math.round(allTagTypes.reduce((sum, tagType) => {
-                      const actualMinutes = monthlyTagTotals[tagType] || 0;
-                      const goal = currentMonthGoalsData.find(g => g.tagType === tagType);
-                      const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
-                      const percentage = calculatePercentage(actualMinutes, goalMinutes);
-                      return sum + percentage;
-                    }, 0) / allTagTypes.length)}%
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* 안내 메시지 */}
         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
@@ -1088,9 +1005,8 @@ const DetailedCalendar = ({
               {isServerBased && ' (서버 기반 - 색상 동기화)'}
             </h4>
             <div className="text-green-700 text-sm space-y-1">
-              <div>총 일정: {dataStats.currentMonthSchedules}개</div>
-              <div>활동 시간: {dataStats.totalTime}</div>
-              <div>활동 유형: {dataStats.tagTypes}개</div>
+              <div>총 일정: {currentMonthSchedules.length}개</div>
+              <div>활동 유형: {allTagTypes.length}개</div>
               <div>태그 색상: 서버 동기화</div>
               {lastRefresh && (
                 <div className="text-xs text-green-600">
