@@ -600,12 +600,29 @@ const DetailedCalendar = ({
   // 현재 월의 날짜들
   const days = getMonthDays(currentDate);
   
-  // 현재 월의 일정들만 필터링
+  // 현재 월의 일정들만 필터링 - 수정된 로직
   const currentMonthSchedules = safeSchedules.filter(schedule => {
-    const scheduleDate = new Date(schedule.date);
-    const currentMonth = formatDate(currentDate, 'yyyy-MM').substring(0, 7);
-    const scheduleMonth = formatDate(scheduleDate, 'yyyy-MM').substring(0, 7);
-    return scheduleMonth === currentMonth;
+    try {
+      const scheduleDate = new Date(schedule.date);
+      const currentYear = currentDate.getFullYear();
+      const currentMonth = currentDate.getMonth();
+      const scheduleYear = scheduleDate.getFullYear();
+      const scheduleMonth = scheduleDate.getMonth();
+      
+      console.log('일정 필터링:', {
+        schedule: schedule.date,
+        currentYear,
+        currentMonth,
+        scheduleYear,
+        scheduleMonth,
+        match: currentYear === scheduleYear && currentMonth === scheduleMonth
+      });
+      
+      return currentYear === scheduleYear && currentMonth === scheduleMonth;
+    } catch (error) {
+      console.warn('일정 날짜 파싱 실패:', schedule.date, error);
+      return false;
+    }
   });
 
   // 태그별 총 시간 계산
@@ -629,9 +646,18 @@ const DetailedCalendar = ({
     return totals;
   };
 
-  // 월간 목표 불러오기
+  // 월간 목표 불러오기 - 수정된 로직
   const getCurrentMonthGoals = () => {
-    const currentMonthKey = formatDate(currentDate, 'yyyy-MM').substring(0, 7);
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth();
+    const currentMonthKey = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}`;
+    
+    console.log('월간 목표 조회:', {
+      currentMonthKey,
+      monthlyGoals: safeMonthlyGoals,
+      found: safeMonthlyGoals.find(goal => goal.month === currentMonthKey)
+    });
+    
     const found = safeMonthlyGoals.find(goal => goal.month === currentMonthKey);
     return found?.goals || [];
   };
@@ -672,6 +698,15 @@ const DetailedCalendar = ({
 
   const monthlyTagTotals = calculateMonthlyTagTotals();
   const currentMonthGoalsData = getCurrentMonthGoals();
+  
+  // 디버깅 로그 추가
+  console.log('📊 활동 요약 데이터:', {
+    currentMonthSchedules: currentMonthSchedules.length,
+    monthlyTagTotals,
+    currentMonthGoalsData,
+    safeSchedules: safeSchedules.length,
+    currentDate: formatDate(currentDate, 'yyyy년 M월')
+  });
   
   // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
   const goalTagTypes = currentMonthGoalsData.map(goal => goal.tagType);
