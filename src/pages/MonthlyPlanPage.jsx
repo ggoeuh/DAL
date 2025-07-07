@@ -455,7 +455,7 @@ const MonthlyPlan = ({
     return tag ? tag.color : { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' };
   }, [safeTags]);
 
-  // ✅ 목표를 기반으로 한 그룹화 - isGoal 조건 수정
+  // ✅ 수정된 목표를 기반으로 한 그룹화 - 목표만 있어도 블럭 표시
   const getGroupedGoals = useMemo(() => {
     const grouped = {};
   
@@ -463,15 +463,29 @@ const MonthlyPlan = ({
       const relatedPlans = currentMonthPlans.filter(plan => plan.tagType === goal.tagType);
   
       if (relatedPlans.length > 0) {
+        // 계획이 있으면 계획들을 표시
         grouped[goal.tagType] = relatedPlans.map(plan => ({
           ...plan,
           isGoal: false
         }));
+      } else {
+        // 🔧 수정: 계획이 없어도 목표 블럭만이라도 표시
+        grouped[goal.tagType] = [{
+          id: `goal-${goal.tagType}-${currentMonthKey}`,
+          tagType: goal.tagType,
+          tag: goal.tagType,
+          name: '',
+          description: '',
+          estimatedTime: 0,
+          month: currentMonthKey,
+          isGoal: true,
+          targetHours: goal.targetHours
+        }];
       }
     });
     
     return grouped;
-  }, [currentMonthGoals, currentMonthPlans]);
+  }, [currentMonthGoals, currentMonthPlans, currentMonthKey]);
 
   // ✨ 수정된 계획 추가 함수
   const handleAddPlan = useCallback(async () => {
@@ -777,32 +791,63 @@ const MonthlyPlan = ({
                                   handleBlockClick(item, e);
                                 }}
                               >
-                                {/* 수정/삭제 버튼 */}
+                                {/* 수정/삭제 버튼 - 목표 전용 블럭에는 삭제 버튼만 */}
                                 <div className="absolute top-2 right-2 flex gap-1 z-20">
-                                  <button
-                                    onClick={(e) => {
-                                      console.log('✏️ 수정 버튼 클릭됨', item);
-                                      e.stopPropagation();
-                                      handleEditPlan(item, e);
-                                    }}
-                                    disabled={saving}
-                                    className="bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-blue-300 font-medium"
-                                    title="수정"
-                                  >
-                                    수정
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      console.log('🗑️ 삭제 버튼 클릭됨', item);
-                                      e.stopPropagation();
-                                      handleDeleteSinglePlan(item.id, e);
-                                    }}
-                                    disabled={saving}
-                                    className="bg-red-100 hover:bg-red-200 text-red-800 text-xs rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-red-300 font-medium"
-                                    title="삭제"
-                                  >
-                                    삭제
-                                  </button>
+                                  {!item.isGoal && (
+                                    <button
+                                      onClick={(e) => {
+                                        console.log('✏️ 수정 버튼 클릭됨', item);
+                                        e.stopPropagation();
+                                        handleEditPlan(item, e);
+                                      }}
+                                      disabled={saving}
+                                      className="bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-blue-300 font-medium"
+                                      title="수정"
+                                    >
+                                      수정
+                                    </button>
+                                  )}
+                                  {!item.isGoal && (
+                                    <button
+                                      onClick={(e) => {
+                                        console.log('🗑️ 삭제 버튼 클릭됨', item);
+                                        e.stopPropagation();
+                                        handleDeleteSinglePlan(item.id, e);
+                                      }}
+                                      disabled={saving}
+                                      className="bg-red-100 hover:bg-red-200 text-red-800 text-xs rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-red-300 font-medium"
+                                      title="삭제"
+                                    >
+                                      삭제
+                                    </button>
+                                  )}
+                                  {item.isGoal && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (window.confirm('이 목표를 삭제하시겠습니까?')) {
+                                          // 목표 삭제 로직
+                                          const updatedGoals = monthlyGoals.map(monthGoal => {
+                                            if (monthGoal.month === currentMonthKey) {
+                                              return {
+                                                ...monthGoal,
+                                                goals: monthGoal.goals.filter(g => g.tagType !== item.tagType)
+                                              };
+                                            }
+                                            return monthGoal;
+                                          }).filter(monthGoal => monthGoal.goals.length > 0);
+                                          
+                                          setMonthlyGoals(updatedGoals);
+                                          saveUserDataToServer({ monthlyGoals: updatedGoals });
+                                        }
+                                      }}
+                                      disabled={saving}
+                                      className="bg-orange-100 hover:bg-orange-200 text-orange-800 text-xs rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-orange-300 font-medium"
+                                      title="목표 삭제"
+                                    >
+                                      목표삭제
+                                    </button>
+                                  )}
                                 </div>
                                 
                                 <div className="flex justify-between items-center mb-2 pr-20">
@@ -815,6 +860,14 @@ const MonthlyPlan = ({
                                     {item.description.split(', ').filter(desc => desc.trim()).map((desc, idx) => (
                                       <div key={idx}>• {desc.trim()}</div>
                                     ))}
+                                  </div>
+                                )}
+                                
+                                {!item.description && item.isGoal && (
+                                  <div className={`text-sm ${colors.text} opacity-75 italic`}>
+                                    🎯 목표만 설정됨 (목표: {item.targetHours})
+                                    <br />
+                                    <span className="text-xs opacity-50">오른쪽 패널에서 계획을 추가해보세요!</span>
                                   </div>
                                 )}
                                 
