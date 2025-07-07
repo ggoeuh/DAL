@@ -50,19 +50,52 @@ const MonthlyPlan = ({
   const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
   const safeMonthlyGoals = Array.isArray(monthlyGoals) ? monthlyGoals : [];
 
+  // ✨ 날짜 관련 헬퍼 함수들
+  const getFirstDayOfMonth = useCallback((date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    return new Date(year, month, 1);
+  }, []);
+
+  const formatDateForDB = useCallback((date) => {
+    return format(date, 'yyyy-MM-dd');
+  }, []);
+
   // ✅ 현재 선택된 월의 목표 가져오기
   const currentMonthGoals = useMemo(() => {
     const currentGoal = safeMonthlyGoals.find(goal => goal.month === currentMonthKey);
     return currentGoal?.goals || [];
   }, [safeMonthlyGoals, currentMonthKey]);
 
-  // ✅ 현재 선택된 월의 계획 가져오기
+  // ✅ 현재 선택된 월의 계획 가져오기 (날짜 기반)
   const currentMonthPlans = useMemo(() => {
-    return plans.filter(plan => {
-      const planMonth = plan.month || format(new Date(), 'yyyy-MM');
-      return planMonth === currentMonthKey;
+    console.log('🔍 전체 plans:', plans);
+    console.log('🔍 currentDate:', currentDate);
+    console.log('🔍 currentMonthKey:', currentMonthKey);
+    
+    const filtered = plans.filter(plan => {
+      // plan에 date가 있는 경우 해당 날짜의 월 확인
+      if (plan.date) {
+        const planDate = new Date(plan.date);
+        const planMonthKey = format(planDate, 'yyyy-MM');
+        console.log(`🔍 Plan ${plan.id}: date=${plan.date}, planMonthKey=${planMonthKey}, matches=${planMonthKey === currentMonthKey}`);
+        return planMonthKey === currentMonthKey;
+      }
+      
+      // date가 없고 month가 있는 경우 (기존 데이터 호환성)
+      if (plan.month) {
+        console.log(`🔍 Plan ${plan.id}: month=${plan.month}, matches=${plan.month === currentMonthKey}`);
+        return plan.month === currentMonthKey;
+      }
+      
+      // 둘 다 없는 경우 현재 월로 간주
+      console.log(`🔍 Plan ${plan.id}: no date/month, defaulting to current month`);
+      return true;
     });
-  }, [plans, currentMonthKey]);
+    
+    console.log('🔍 필터링된 currentMonthPlans:', filtered);
+    return filtered;
+  }, [plans, currentDate, currentMonthKey]);
 
   // ✅ 태그별 목표 시간을 쉽게 찾는 함수
   const getTargetHoursForTagType = useCallback((tagType) => {
@@ -87,39 +120,40 @@ const MonthlyPlan = ({
     setCurrentDate(new Date());
   }, []);
 
-  // ✨ 수정된 서버 데이터 검증 및 정리 함수
+  // ✨ 서버 데이터 검증 및 정리 함수 (날짜 기반 개선)
   const validateAndCleanServerData = useCallback((serverData) => {
     if (!serverData) return {};
     
     const cleanedPlans = (serverData.monthlyPlans || []).map(plan => {
       let cleanDescription = plan.description || '';
       
-      // 🔧 수정: 더 신중한 데이터 정리 - 명확히 잘못된 데이터만 제거
-      if (cleanDescription.trim() === '목표 시간:' || 
-          cleanDescription.match(/^목표\s*시간\s*:?\s*$/) ||
-          (cleanDescription.match(/^\d{1,3}:\d{2}$/) && !cleanDescription.includes(','))) {
+      if (cleanDescription.includes('목표 시간:') || 
+          cleanDescription.match(/^\d{1,3}:\d{2}$/) ||
+          cleanDescription.match(/^목표\s*시간/)) {
         cleanDescription = '';
       }
       
+      // 날짜 처리: date가 없으면 month 기반으로 생성
+      let planDate = plan.date;
+      if (!planDate && plan.month) {
+        // month가 'yyyy-MM' 형식인 경우 해당 월의 1일로 변환
+        const [year, month] = plan.month.split('-').map(Number);
+        planDate = format(new Date(year, month - 1, 1), 'yyyy-MM-dd');
+      }
+      
       return {
-        ...plan,
+        ...plan, // 기존 모든 속성 유지
         description: cleanDescription,
         name: plan.name || '',
         estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0,
-        // 🔧 추가: month 필드가 없으면 현재 월로 설정하지 않고 빈 값으로 유지
-        month: plan.month || undefined
+        month: plan.month || format(new Date(planDate || new Date()), 'yyyy-MM'), // 기존 호환성
+        date: planDate || format(new Date(), 'yyyy-MM-dd') // 날짜 필드 확실히 설정
       };
-    });
-    
-    // 🔧 수정: monthlyGoals도 검증
-    const cleanedMonthlyGoals = (serverData.monthlyGoals || []).filter(goal => {
-      return goal.month && goal.goals && Array.isArray(goal.goals);
     });
     
     return {
       ...serverData,
-      monthlyPlans: cleanedPlans,
-      monthlyGoals: cleanedMonthlyGoals
+      monthlyPlans: cleanedPlans
     };
   }, []);
 
@@ -142,21 +176,6 @@ const MonthlyPlan = ({
         setMonthlyPlans(validatedData.monthlyPlans || []);
         setPlans(validatedData.monthlyPlans || []);
         setLastSyncTime(new Date());
-
-        // 🔧 추가: 로드 후 데이터 상태 로그
-        console.log('📥 서버에서 로드된 데이터:', {
-          monthlyGoals: validatedData.monthlyGoals?.length || 0,
-          monthlyPlans: validatedData.monthlyPlans?.length || 0,
-          goalsByMonth: (validatedData.monthlyGoals || []).reduce((acc, goal) => {
-            acc[goal.month] = goal.goals.length;
-            return acc;
-          }, {}),
-          plansByMonth: (validatedData.monthlyPlans || []).reduce((acc, plan) => {
-            const month = plan.month || 'no-month';
-            acc[month] = (acc[month] || 0) + 1;
-            return acc;
-          }, {})
-        });
 
       } else {
         setSchedules([]);
@@ -189,26 +208,10 @@ const MonthlyPlan = ({
         monthlyPlans: updatedData.monthlyPlans || monthlyPlans
       };
 
-      // 🔧 추가: 저장 전 데이터 상태 로그
-      console.log('💾 서버에 저장할 데이터:', {
-        monthlyGoals: dataToSave.monthlyGoals?.length || 0,
-        monthlyPlans: dataToSave.monthlyPlans?.length || 0,
-        goalsByMonth: (dataToSave.monthlyGoals || []).reduce((acc, goal) => {
-          acc[goal.month] = goal.goals.length;
-          return acc;
-        }, {}),
-        plansByMonth: (dataToSave.monthlyPlans || []).reduce((acc, plan) => {
-          const month = plan.month || 'no-month';
-          acc[month] = (acc[month] || 0) + 1;
-          return acc;
-        }, {})
-      });
-
       const result = await saveUserDataToDAL(currentUser, dataToSave);
       
       if (result.success) {
         setLastSyncTime(new Date());
-        console.log('✅ 서버 저장 성공');
         return true;
       } else {
         throw new Error(result.error || '서버 저장 실패');
@@ -222,21 +225,20 @@ const MonthlyPlan = ({
     }
   }, [currentUser, saving, schedules, tags, tagItems, monthlyGoals, monthlyPlans]);
 
-  // ✨ 수정된 월간 목표 업데이트 및 저장 함수
+  // ✨ 월간 목표 업데이트 및 저장
   const updateAndSaveMonthlyGoals = useCallback(async (updatedPlans) => {
     if (!currentUser) return;
 
-    console.log('🎯 월간 목표 업데이트 시작:', { currentMonthKey, plansCount: updatedPlans.length });
-
-    // 🔧 수정: 현재 월의 계획만 필터링하되, 전체 계획 목록을 유지
     const currentMonthFilteredPlans = updatedPlans.filter(plan => {
+      if (plan.date) {
+        const planDate = new Date(plan.date);
+        const planMonthKey = format(planDate, 'yyyy-MM');
+        return planMonthKey === currentMonthKey;
+      }
       const planMonth = plan.month || format(new Date(), 'yyyy-MM');
       return planMonth === currentMonthKey;
     });
 
-    console.log('📅 현재 월 계획:', currentMonthFilteredPlans.length);
-
-    // 현재 월의 태그별 시간 집계
     const goalsByTagType = {};
     currentMonthFilteredPlans.forEach(plan => {
       if (!goalsByTagType[plan.tagType]) {
@@ -245,47 +247,29 @@ const MonthlyPlan = ({
       goalsByTagType[plan.tagType] += plan.estimatedTime;
     });
 
-    console.log('📊 태그별 목표 시간:', goalsByTagType);
-
-    // 🔧 수정: 기존 monthlyGoals를 복사하여 다른 월 데이터 보존
     let updatedGoals = [...safeMonthlyGoals];
-    let currentMonthGoalIndex = updatedGoals.findIndex(goal => goal.month === currentMonthKey);
+    let currentMonthGoal = updatedGoals.find(goal => goal.month === currentMonthKey);
     
-    if (currentMonthGoalIndex === -1) {
-      // 현재 월 목표가 없으면 새로 추가
-      updatedGoals.push({ month: currentMonthKey, goals: [] });
-      currentMonthGoalIndex = updatedGoals.length - 1;
-      console.log('➕ 새로운 월 목표 추가:', currentMonthKey);
+    if (!currentMonthGoal) {
+      currentMonthGoal = { month: currentMonthKey, goals: [] };
+      updatedGoals.push(currentMonthGoal);
     }
 
-    // 🔧 수정: 현재 월의 목표만 업데이트, 다른 월은 그대로 유지
-    const currentMonthGoal = updatedGoals[currentMonthGoalIndex];
     const planTagTypes = Object.keys(goalsByTagType);
-    
-    // 현재 계획에 없는 태그 타입의 기존 목표는 유지
     const existingGoals = currentMonthGoal.goals.filter(goal => !planTagTypes.includes(goal.tagType));
     
-    // 새로운 목표 생성
     const newGoals = Object.entries(goalsByTagType).map(([tagType, totalHours]) => ({
       tagType,
       targetHours: `${totalHours.toString().padStart(2, '0')}:00`
     }));
 
-    console.log('🔄 기존 목표 유지:', existingGoals.length);
-    console.log('🆕 새로운 목표:', newGoals.length);
-
-    // 현재 월의 목표 업데이트
-    updatedGoals[currentMonthGoalIndex].goals = [...existingGoals, ...newGoals];
-    
+    currentMonthGoal.goals = [...existingGoals, ...newGoals];
     setMonthlyGoals(updatedGoals);
     
-    // 🔧 수정: 전체 계획 목록과 목표를 함께 저장
     const saveResult = await saveUserDataToServer({
       monthlyGoals: updatedGoals,
-      monthlyPlans: updatedPlans // 전체 계획 목록 저장
+      monthlyPlans: updatedPlans
     });
-
-    console.log('💾 목표 업데이트 완료:', saveResult ? '성공' : '실패');
 
     return saveResult;
   }, [currentUser, currentMonthKey, safeMonthlyGoals, saveUserDataToServer]);
@@ -320,7 +304,7 @@ const MonthlyPlan = ({
     }
   }, [handleEditPlan]);
 
-  // ✨ 수정된 계획 수정 저장 함수
+  // ✨ 계획 수정 저장 (날짜 기반)
   const handleSaveEdit = useCallback(async () => {
     if (!editingPlan) return;
 
@@ -329,18 +313,24 @@ const MonthlyPlan = ({
       .map(desc => desc.trim())
       .join(', ');
 
+    // 기존 날짜 유지, 없으면 현재 선택된 월의 1일로 설정
+    let planDate = editingPlan.date;
+    if (!planDate) {
+      planDate = formatDateForDB(getFirstDayOfMonth(currentDate));
+    }
+
     const updatedPlan = {
       ...editingPlan,
       tag: editForm.tag,
       name: editForm.name,
       description: combinedDescription,
-      estimatedTime: parseInt(editForm.estimatedTime) || 0
-      // 🔧 수정: month 필드는 변경하지 않음 (기존 월 유지)
+      estimatedTime: parseInt(editForm.estimatedTime) || 0,
+      month: currentMonthKey, // 기존 호환성 유지
+      date: planDate // 날짜 유지 또는 새로 설정
     };
 
-    console.log('✏️ 계획 수정:', { planId: editingPlan.id, month: editingPlan.month });
+    console.log('📅 계획 수정:', updatedPlan);
 
-    // 🔧 수정: 전체 계획 목록에서 업데이트
     const updatedPlans = plans.map(plan => 
       plan.id === editingPlan.id ? updatedPlan : plan
     );
@@ -348,7 +338,6 @@ const MonthlyPlan = ({
     setPlans(updatedPlans);
     setMonthlyPlans(updatedPlans);
 
-    // 🔧 수정: 전체 계획 목록을 전달
     await updateAndSaveMonthlyGoals(updatedPlans);
     
     setEditingPlan(null);
@@ -358,9 +347,9 @@ const MonthlyPlan = ({
       descriptions: ['', '', ''],
       estimatedTime: ''
     });
-  }, [editingPlan, editForm, plans, updateAndSaveMonthlyGoals]);
+  }, [editingPlan, editForm, plans, currentDate, currentMonthKey, getFirstDayOfMonth, formatDateForDB, updateAndSaveMonthlyGoals]);
 
-  // ✨ 수정된 개별 계획 삭제 함수
+  // ✨ 개별 계획 삭제
   const handleDeleteSinglePlan = useCallback(async (planId, e) => {
     e.stopPropagation();
     
@@ -368,14 +357,10 @@ const MonthlyPlan = ({
       return;
     }
 
-    console.log('🗑️ 계획 삭제:', planId);
-
-    // 🔧 수정: 전체 계획 목록에서 삭제
     const updatedPlans = plans.filter(plan => plan.id !== planId);
     setPlans(updatedPlans);
     setMonthlyPlans(updatedPlans);
 
-    // 🔧 수정: 전체 계획 목록을 전달
     await updateAndSaveMonthlyGoals(updatedPlans);
   }, [plans, updateAndSaveMonthlyGoals]);
 
@@ -455,20 +440,7 @@ const MonthlyPlan = ({
     return tag ? tag.color : { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' };
   }, [safeTags]);
 
-  // 🔧 디버깅: 현재 월의 계획과 목표 상태 확인
-  useEffect(() => {
-    console.log('🔍 디버깅 정보:', {
-      currentMonthKey,
-      totalPlans: plans.length,
-      currentMonthPlans: currentMonthPlans.length,
-      currentMonthGoals: currentMonthGoals.length,
-      plansDetail: plans.map(p => ({ id: p.id, month: p.month, tagType: p.tagType, tag: p.tag })),
-      currentMonthPlansDetail: currentMonthPlans.map(p => ({ id: p.id, month: p.month, tagType: p.tagType, tag: p.tag })),
-      goalsDetail: currentMonthGoals.map(g => ({ tagType: g.tagType, targetHours: g.targetHours }))
-    });
-  }, [currentMonthKey, plans, currentMonthPlans, currentMonthGoals]);
-
-  // ✅ 수정된 목표를 기반으로 한 그룹화 - 원래 로직으로 복원
+  // ✅ 목표를 기반으로 한 그룹화 - isGoal 조건 수정
   const getGroupedGoals = useMemo(() => {
     const grouped = {};
   
@@ -476,33 +448,17 @@ const MonthlyPlan = ({
       const relatedPlans = currentMonthPlans.filter(plan => plan.tagType === goal.tagType);
   
       if (relatedPlans.length > 0) {
-        // 계획이 있으면 계획들을 표시
         grouped[goal.tagType] = relatedPlans.map(plan => ({
           ...plan,
           isGoal: false
         }));
-      } else {
-        // 계획이 없으면 목표 블럭만 표시 (임시로 유지하되 로그로 확인)
-        console.log('⚠️ 목표만 있고 계획이 없는 태그:', goal.tagType);
-        grouped[goal.tagType] = [{
-          id: `goal-${goal.tagType}-${currentMonthKey}`,
-          tagType: goal.tagType,
-          tag: goal.tagType,
-          name: '',
-          description: '',
-          estimatedTime: 0,
-          month: currentMonthKey,
-          isGoal: true,
-          targetHours: goal.targetHours
-        }];
       }
     });
     
-    console.log('📊 그룹화된 목표들:', grouped);
     return grouped;
-  }, [currentMonthGoals, currentMonthPlans, currentMonthKey]);
+  }, [currentMonthGoals, currentMonthPlans]);
 
-  // ✨ 수정된 계획 추가 함수
+  // ✨ 계획 추가 함수 (날짜 기반)
   const handleAddPlan = useCallback(async () => {
     const firstDesc = form.descriptions[0]?.trim();
 
@@ -516,6 +472,9 @@ const MonthlyPlan = ({
       .map(desc => desc.trim())
       .join(', ');
 
+    // 현재 선택된 월의 1일로 날짜 설정
+    const planDate = getFirstDayOfMonth(currentDate);
+
     const newPlan = {
       id: Date.now(),
       tagType: form.tagType,
@@ -523,17 +482,16 @@ const MonthlyPlan = ({
       name: form.name || '',
       description: combinedDescription,
       estimatedTime: parseInt(form.estimatedTime) || 0,
-      month: currentMonthKey // 🔧 수정: 명확히 현재 월 지정
+      month: currentMonthKey, // 기존 호환성 유지
+      date: formatDateForDB(planDate) // 새로운 날짜 기반 저장
     };
     
-    console.log('➕ 새 계획 추가:', { month: currentMonthKey, tagType: form.tagType });
-
-    // 🔧 수정: 전체 계획 목록에 추가
+    console.log('📅 새 계획 추가:', newPlan);
+    
     const updatedPlans = [...plans, newPlan];
     setPlans(updatedPlans);
     setMonthlyPlans(updatedPlans);
 
-    // 🔧 수정: 전체 계획 목록을 전달하여 다른 월 데이터 보존
     const saveResult = await updateAndSaveMonthlyGoals(updatedPlans);
     
     if (saveResult !== false) {
@@ -546,13 +504,90 @@ const MonthlyPlan = ({
       });
       setSelectedTagType('');
     }
-  }, [form, plans, currentMonthKey, updateAndSaveMonthlyGoals]);
+  }, [form, plans, currentDate, currentMonthKey, getFirstDayOfMonth, formatDateForDB, updateAndSaveMonthlyGoals]);
 
   const handleGoBack = useCallback(() => {
     navigate('/calendar');
   }, [navigate]);
 
-  // ✨ 수정된 서버 데이터 정리 함수
+  // ✨ 월별 데이터 통계 계산
+  const monthlyStats = useMemo(() => {
+    const stats = {};
+    
+    plans.forEach(plan => {
+      let monthKey;
+      
+      if (plan.date) {
+        const planDate = new Date(plan.date);
+        monthKey = format(planDate, 'yyyy-MM');
+      } else if (plan.month) {
+        monthKey = plan.month;
+      } else {
+        monthKey = format(new Date(), 'yyyy-MM');
+      }
+      
+      if (!stats[monthKey]) {
+        stats[monthKey] = { count: 0, totalHours: 0 };
+      }
+      
+      stats[monthKey].count++;
+      stats[monthKey].totalHours += plan.estimatedTime || 0;
+    });
+    
+    return stats;
+  }, [plans]);
+
+  // ✨ 기존 데이터 마이그레이션 함수
+  const migrateExistingData = useCallback(async () => {
+    if (!currentUser || !window.confirm('기존 데이터를 날짜 기반으로 마이그레이션하시겠습니까?\n(month 속성만 있는 데이터에 date 속성을 추가합니다)')) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      const migratedPlans = plans.map(plan => {
+        // 이미 date가 있으면 그대로 유지
+        if (plan.date) return plan;
+        
+        // month만 있는 경우 해당 월의 1일로 변환
+        if (plan.month) {
+          const [year, month] = plan.month.split('-').map(Number);
+          const planDate = new Date(year, month - 1, 1);
+          return {
+            ...plan,
+            date: formatDateForDB(planDate)
+          };
+        }
+        
+        // 둘 다 없는 경우 현재 월의 1일로 설정
+        return {
+          ...plan,
+          month: currentMonthKey,
+          date: formatDateForDB(getFirstDayOfMonth(new Date()))
+        };
+      });
+      
+      console.log('🔄 데이터 마이그레이션:', migratedPlans);
+      
+      setPlans(migratedPlans);
+      setMonthlyPlans(migratedPlans);
+      
+      await saveUserDataToServer({
+        monthlyPlans: migratedPlans
+      });
+      
+      alert('✅ 데이터 마이그레이션이 완료되었습니다.');
+      
+    } catch (error) {
+      console.error('❌ 데이터 마이그레이션 실패:', error);
+      alert('❌ 데이터 마이그레이션 중 오류가 발생했습니다: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  }, [currentUser, plans, currentMonthKey, getFirstDayOfMonth, formatDateForDB, saveUserDataToServer]);
+
+  // ✨ 서버 데이터 정리 함수 (날짜 기반 개선)
   const handleServerDataCleanup = useCallback(async () => {
     if (!currentUser || !window.confirm('⚠️ 서버에서 잘못된 데이터를 정리하시겠습니까?')) {
       return;
@@ -568,36 +603,34 @@ const MonthlyPlan = ({
       const cleanedPlans = plans.map(plan => {
         let cleanDescription = plan.description || '';
         
-        // 🔧 수정: 더 신중한 데이터 정리
-        if (cleanDescription.trim() === '목표 시간:' || 
-            cleanDescription.match(/^목표\s*시간\s*:?\s*$/) ||
-            (cleanDescription.match(/^\d{1,3}:\d{2}$/) && !cleanDescription.includes(','))) {
+        if (cleanDescription.includes('목표 시간:') || 
+            cleanDescription.match(/^\d{1,3}:\d{2}$/) ||
+            cleanDescription.match(/^목표\s*시간/)) {
           cleanDescription = '';
+        }
+
+        // 날짜 처리 개선
+        let planDate = plan.date;
+        if (!planDate && plan.month) {
+          const [year, month] = plan.month.split('-').map(Number);
+          planDate = format(new Date(year, month - 1, 1), 'yyyy-MM-dd');
         }
         
         return {
-          ...plan,
+          ...plan, // ✅ 기존 모든 속성 유지
           description: cleanDescription,
-          estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0
+          estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0,
+          month: plan.month || format(new Date(planDate || new Date()), 'yyyy-MM'), // 기존 호환성
+          date: planDate || format(new Date(), 'yyyy-MM-dd') // 날짜 필드 확실히 설정
         };
       }).filter(plan => plan.tagType && plan.tag && plan.tagType.trim() && plan.tag.trim());
-
-      // 🔧 수정: monthlyGoals도 정리
-      const cleanedGoals = monthlyGoals.filter(goal => goal.month && goal.goals && Array.isArray(goal.goals));
 
       setTags(cleanedTags);
       setTagItems(cleanedTagItems);
       setPlans(cleanedPlans);
       setMonthlyPlans(cleanedPlans);
-      setMonthlyGoals(cleanedGoals);
 
-      // 🔧 수정: 정리된 전체 데이터를 저장
-      await saveUserDataToServer({
-        tags: cleanedTags,
-        tagItems: cleanedTagItems,
-        monthlyPlans: cleanedPlans,
-        monthlyGoals: cleanedGoals
-      });
+      await updateAndSaveMonthlyGoals(cleanedPlans);
 
       alert('✅ 서버 데이터 정리가 완료되었습니다.');
       
@@ -607,32 +640,7 @@ const MonthlyPlan = ({
     } finally {
       setSaving(false);
     }
-  }, [currentUser, tags, tagItems, plans, monthlyGoals, loadUserDataFromServer, saveUserDataToServer]);
-
-  // 🔧 추가: 디버깅을 위한 로그 함수
-  const logDataState = useCallback(() => {
-    console.log('📊 현재 데이터 상태:', {
-      currentMonthKey,
-      totalPlans: plans.length,
-      currentMonthPlans: currentMonthPlans.length,
-      totalGoals: safeMonthlyGoals.length,
-      currentMonthGoals: currentMonthGoals.length,
-      plansByMonth: plans.reduce((acc, plan) => {
-        const month = plan.month || 'no-month';
-        acc[month] = (acc[month] || 0) + 1;
-        return acc;
-      }, {}),
-      goalsByMonth: safeMonthlyGoals.reduce((acc, goal) => {
-        acc[goal.month] = goal.goals.length;
-        return acc;
-      }, {})
-    });
-  }, [currentMonthKey, plans, currentMonthPlans, safeMonthlyGoals, currentMonthGoals]);
-
-  // 🔧 추가: 개발 모드에서 데이터 상태 로그
-  useEffect(() => {
-    logDataState();
-  }, [logDataState, currentMonthKey, plans, safeMonthlyGoals]);
+  }, [currentUser, tags, tagItems, plans, loadUserDataFromServer, updateAndSaveMonthlyGoals]);
 
   if (loading) {
     return (
@@ -772,6 +780,40 @@ const MonthlyPlan = ({
               )}
             </div>
 
+            {/* 월별 데이터 통계 */}
+            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-medium text-blue-800">📊 월별 계획 통계</h4>
+                <button
+                  onClick={migrateExistingData}
+                  disabled={saving}
+                  className="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                  title="기존 데이터에 날짜 정보 추가"
+                >
+                  {saving ? '처리 중...' : '📅 날짜 마이그레이션'}
+                </button>
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-sm">
+                {Object.entries(monthlyStats)
+                  .sort(([a], [b]) => b.localeCompare(a))
+                  .slice(0, 8)
+                  .map(([month, stat]) => (
+                    <div 
+                      key={month} 
+                      className={`p-2 rounded ${month === currentMonthKey ? 'bg-blue-200 text-blue-900 font-medium' : 'bg-white text-blue-700'}`}
+                    >
+                      <div className="font-medium">{month}</div>
+                      <div className="text-xs">{stat.count}개 · {stat.totalHours}시간</div>
+                    </div>
+                  ))}
+              </div>
+              {Object.keys(monthlyStats).length === 0 && (
+                <div className="text-center text-blue-600 py-2">
+                  아직 계획 데이터가 없습니다.
+                </div>
+              )}
+            </div>
+
             {/* 태그별 그룹화된 목표들 */}
             <div className="space-y-6">
               {Object.entries(getGroupedGoals).map(([tagType, goalItems]) => {
@@ -806,63 +848,32 @@ const MonthlyPlan = ({
                                   handleBlockClick(item, e);
                                 }}
                               >
-                                {/* 수정/삭제 버튼 - 목표 전용 블럭에는 삭제 버튼만 */}
+                                {/* 수정/삭제 버튼 */}
                                 <div className="absolute top-2 right-2 flex gap-1 z-20">
-                                  {!item.isGoal && (
-                                    <button
-                                      onClick={(e) => {
-                                        console.log('✏️ 수정 버튼 클릭됨', item);
-                                        e.stopPropagation();
-                                        handleEditPlan(item, e);
-                                      }}
-                                      disabled={saving}
-                                      className="bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-blue-300 font-medium"
-                                      title="수정"
-                                    >
-                                      수정
-                                    </button>
-                                  )}
-                                  {!item.isGoal && (
-                                    <button
-                                      onClick={(e) => {
-                                        console.log('🗑️ 삭제 버튼 클릭됨', item);
-                                        e.stopPropagation();
-                                        handleDeleteSinglePlan(item.id, e);
-                                      }}
-                                      disabled={saving}
-                                      className="bg-red-100 hover:bg-red-200 text-red-800 text-xs rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-red-300 font-medium"
-                                      title="삭제"
-                                    >
-                                      삭제
-                                    </button>
-                                  )}
-                                  {item.isGoal && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (window.confirm('이 목표를 삭제하시겠습니까?')) {
-                                          // 목표 삭제 로직
-                                          const updatedGoals = monthlyGoals.map(monthGoal => {
-                                            if (monthGoal.month === currentMonthKey) {
-                                              return {
-                                                ...monthGoal,
-                                                goals: monthGoal.goals.filter(g => g.tagType !== item.tagType)
-                                              };
-                                            }
-                                            return monthGoal;
-                                          }).filter(monthGoal => monthGoal.goals.length > 0);
-                                          
-                                          setMonthlyGoals(updatedGoals);
-                                          saveUserDataToServer({ monthlyGoals: updatedGoals });
-                                        }
-                                      }}
-                                      disabled={saving}
-                                      className="bg-orange-100 hover:bg-orange-200 text-orange-800 text-xs rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-orange-300 font-medium"
-                                      title="목표 삭제"
-                                    >
-                                      목표삭제
-                                    </button>
-                                  )}
+                                  <button
+                                    onClick={(e) => {
+                                      console.log('✏️ 수정 버튼 클릭됨', item);
+                                      e.stopPropagation();
+                                      handleEditPlan(item, e);
+                                    }}
+                                    disabled={saving}
+                                    className="bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-blue-300 font-medium"
+                                    title="수정"
+                                  >
+                                    수정
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      console.log('🗑️ 삭제 버튼 클릭됨', item);
+                                      e.stopPropagation();
+                                      handleDeleteSinglePlan(item.id, e);
+                                    }}
+                                    disabled={saving}
+                                    className="bg-red-100 hover:bg-red-200 text-red-800 text-xs rounded px-2 py-1 shadow-lg disabled:opacity-50 border border-red-300 font-medium"
+                                    title="삭제"
+                                  >
+                                    삭제
+                                  </button>
                                 </div>
                                 
                                 <div className="flex justify-between items-center mb-2 pr-20">
@@ -875,14 +886,6 @@ const MonthlyPlan = ({
                                     {item.description.split(', ').filter(desc => desc.trim()).map((desc, idx) => (
                                       <div key={idx}>• {desc.trim()}</div>
                                     ))}
-                                  </div>
-                                )}
-                                
-                                {!item.description && item.isGoal && (
-                                  <div className={`text-sm ${colors.text} opacity-75 italic`}>
-                                    🎯 목표만 설정됨 (목표: {item.targetHours})
-                                    <br />
-                                    <span className="text-xs opacity-50">오른쪽 패널에서 계획을 추가해보세요!</span>
                                   </div>
                                 )}
                                 
