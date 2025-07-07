@@ -1,4 +1,8 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+// ✨ 계획 수정 저장 (월 기반)
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingPlan) return;
+
+    const combinedDescription = editForm.descriptionsimport React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, addMonths, subMonths } from 'date-fns';
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
@@ -61,52 +65,28 @@ const MonthlyPlan = ({
   const safeTagItems = Array.isArray(tagItems) ? tagItems : [];
   const safeMonthlyGoals = Array.isArray(monthlyGoals) ? monthlyGoals : [];
 
-  // ✨ 날짜 관련 헬퍼 함수들
-  const getFirstDayOfMonth = useCallback((date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    return new Date(year, month, 1);
-  }, []);
-
-  const formatDateForDB = useCallback((date) => {
-    return format(date, 'yyyy-MM-dd');
-  }, []);
-
   // ✅ 현재 선택된 월의 목표 가져오기
   const currentMonthGoals = useMemo(() => {
     const currentGoal = safeMonthlyGoals.find(goal => goal.month === currentMonthKey);
     return currentGoal?.goals || [];
   }, [safeMonthlyGoals, currentMonthKey]);
 
-  // ✅ 현재 선택된 월의 계획 가져오기 (날짜 기반)
+  // ✅ 현재 선택된 월의 계획 가져오기 (월 기반)
   const currentMonthPlans = useMemo(() => {
     console.log('🔍 전체 plans:', plans);
-    console.log('🔍 currentDate:', currentDate);
     console.log('🔍 currentMonthKey:', currentMonthKey);
     
     const filtered = plans.filter(plan => {
-      // plan에 date가 있는 경우 해당 날짜의 월 확인
-      if (plan.date) {
-        const planDate = new Date(plan.date);
-        const planMonthKey = format(planDate, 'yyyy-MM');
-        console.log(`🔍 Plan ${plan.id}: date=${plan.date}, planMonthKey=${planMonthKey}, matches=${planMonthKey === currentMonthKey}`);
-        return planMonthKey === currentMonthKey;
-      }
-      
-      // date가 없고 month가 있는 경우 (기존 데이터 호환성)
-      if (plan.month) {
-        console.log(`🔍 Plan ${plan.id}: month=${plan.month}, matches=${plan.month === currentMonthKey}`);
-        return plan.month === currentMonthKey;
-      }
-      
-      // 둘 다 없는 경우 현재 월로 간주
-      console.log(`🔍 Plan ${plan.id}: no date/month, defaulting to current month`);
-      return true;
+      // month 속성으로만 필터링
+      const planMonth = plan.month || format(new Date(), 'yyyy-MM');
+      const matches = planMonth === currentMonthKey;
+      console.log(`🔍 Plan ${plan.id}: month=${planMonth}, matches=${matches}`);
+      return matches;
     });
     
     console.log('🔍 필터링된 currentMonthPlans:', filtered);
     return filtered;
-  }, [plans, currentDate, currentMonthKey]);
+  }, [plans, currentMonthKey]);
 
   // ✅ 태그별 목표 시간을 쉽게 찾는 함수
   const getTargetHoursForTagType = useCallback((tagType) => {
@@ -148,7 +128,7 @@ const MonthlyPlan = ({
     updateURL(newDate);
   }, [updateURL]);
 
-  // ✨ 서버 데이터 검증 및 정리 함수 (날짜 기반 개선)
+  // ✨ 서버 데이터 검증 및 정리 함수 (월 기반만)
   const validateAndCleanServerData = useCallback((serverData) => {
     if (!serverData) return {};
     
@@ -161,21 +141,12 @@ const MonthlyPlan = ({
         cleanDescription = '';
       }
       
-      // 날짜 처리: date가 없으면 month 기반으로 생성
-      let planDate = plan.date;
-      if (!planDate && plan.month) {
-        // month가 'yyyy-MM' 형식인 경우 해당 월의 1일로 변환
-        const [year, month] = plan.month.split('-').map(Number);
-        planDate = format(new Date(year, month - 1, 1), 'yyyy-MM-dd');
-      }
-      
       return {
         ...plan, // 기존 모든 속성 유지
         description: cleanDescription,
         name: plan.name || '',
         estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0,
-        month: plan.month || format(new Date(planDate || new Date()), 'yyyy-MM'), // 기존 호환성
-        date: planDate || format(new Date(), 'yyyy-MM-dd') // 날짜 필드 확실히 설정
+        month: plan.month || format(new Date(), 'yyyy-MM') // month만 사용
       };
     });
     
@@ -272,7 +243,7 @@ const MonthlyPlan = ({
     }
   }, [currentUser, saving, schedules, tags, tagItems, monthlyGoals, monthlyPlans]);
 
-  // ✨ 월간 목표 업데이트 및 저장 (디버깅 강화)
+  // ✨ 월간 목표 업데이트 및 저장 (월 기반)
   const updateAndSaveMonthlyGoals = useCallback(async (updatedPlans) => {
     if (!currentUser) return;
 
@@ -281,13 +252,6 @@ const MonthlyPlan = ({
     console.log('🎯 현재 월:', currentMonthKey);
 
     const currentMonthFilteredPlans = updatedPlans.filter(plan => {
-      if (plan.date) {
-        const planDate = new Date(plan.date);
-        const planMonthKey = format(planDate, 'yyyy-MM');
-        const matches = planMonthKey === currentMonthKey;
-        console.log(`🎯 Plan ${plan.id}: date=${plan.date}, planMonthKey=${planMonthKey}, matches=${matches}`);
-        return matches;
-      }
       const planMonth = plan.month || format(new Date(), 'yyyy-MM');
       const matches = planMonth === currentMonthKey;
       console.log(`🎯 Plan ${plan.id}: month=${planMonth}, matches=${matches}`);
@@ -328,20 +292,12 @@ const MonthlyPlan = ({
     
     console.log('🎯 최종 월간 목표:', updatedGoals);
     
-    // 🔍 저장할 데이터 확인
     const dataToSave = {
       monthlyGoals: updatedGoals,
       monthlyPlans: updatedPlans
     };
     
     console.log('💾 최종 저장 데이터:', dataToSave);
-    console.log('💾 monthlyPlans 내용 상세:', updatedPlans.map(p => ({
-      id: p.id,
-      tag: p.tag,
-      month: p.month,
-      date: p.date,
-      estimatedTime: p.estimatedTime
-    })));
     
     const saveResult = await saveUserDataToServer(dataToSave);
 
@@ -379,7 +335,7 @@ const MonthlyPlan = ({
     }
   }, [handleEditPlan]);
 
-  // ✨ 계획 수정 저장 (날짜 기반)
+  // ✨ 계획 수정 저장 (월 기반)
   const handleSaveEdit = useCallback(async () => {
     if (!editingPlan) return;
 
@@ -388,20 +344,13 @@ const MonthlyPlan = ({
       .map(desc => desc.trim())
       .join(', ');
 
-    // 기존 날짜 유지, 없으면 현재 선택된 월의 1일로 설정
-    let planDate = editingPlan.date;
-    if (!planDate) {
-      planDate = formatDateForDB(getFirstDayOfMonth(currentDate));
-    }
-
     const updatedPlan = {
       ...editingPlan,
       tag: editForm.tag,
       name: editForm.name,
       description: combinedDescription,
       estimatedTime: parseInt(editForm.estimatedTime) || 0,
-      month: currentMonthKey, // 기존 호환성 유지
-      date: planDate // 날짜 유지 또는 새로 설정
+      month: currentMonthKey // 현재 월 유지
     };
 
     console.log('📅 계획 수정:', updatedPlan);
@@ -422,7 +371,7 @@ const MonthlyPlan = ({
       descriptions: ['', '', ''],
       estimatedTime: ''
     });
-  }, [editingPlan, editForm, plans, currentDate, currentMonthKey, getFirstDayOfMonth, formatDateForDB, updateAndSaveMonthlyGoals]);
+  }, [editingPlan, editForm, plans, currentMonthKey, updateAndSaveMonthlyGoals]);
 
   // ✨ 개별 계획 삭제
   const handleDeleteSinglePlan = useCallback(async (planId, e) => {
@@ -439,11 +388,15 @@ const MonthlyPlan = ({
     await updateAndSaveMonthlyGoals(updatedPlans);
   }, [plans, updateAndSaveMonthlyGoals]);
 
-  // ✨ 초기 데이터 로드
+  // ✨ 초기 데이터 로드 및 URL 동기화
   useEffect(() => {
     if (!currentUser) return;
+    
+    // URL 초기 설정
+    updateURL(currentDate);
+    
     loadUserDataFromServer();
-  }, [currentUser, loadUserDataFromServer]);
+  }, [currentUser, loadUserDataFromServer, updateURL, currentDate]);
 
   // ✨ 서버 데이터 새로고침 함수
   const handleRefreshData = useCallback(async () => {
@@ -533,7 +486,7 @@ const MonthlyPlan = ({
     return grouped;
   }, [currentMonthGoals, currentMonthPlans]);
 
-  // ✨ 계획 추가 함수 (날짜 기반, 디버깅 강화)
+  // ✨ 계획 추가 함수 (월 기반만)
   const handleAddPlan = useCallback(async () => {
     const firstDesc = form.descriptions[0]?.trim();
 
@@ -547,10 +500,6 @@ const MonthlyPlan = ({
       .map(desc => desc.trim())
       .join(', ');
 
-    // 🔥 수정: 현재 선택된 월의 1일로 날짜 설정 (currentDate 사용)
-    const planDate = getFirstDayOfMonth(currentDate);
-    const formattedDate = formatDateForDB(planDate);
-
     const newPlan = {
       id: Date.now(),
       tagType: form.tagType,
@@ -558,15 +507,11 @@ const MonthlyPlan = ({
       name: form.name || '',
       description: combinedDescription,
       estimatedTime: parseInt(form.estimatedTime) || 0,
-      month: currentMonthKey, // 기존 호환성 유지
-      date: formattedDate // 현재 선택된 월의 1일로 저장
+      month: currentMonthKey // 현재 선택된 월에 저장
     };
     
     console.log('📅 새 계획 추가:', newPlan);
-    console.log('📅 현재 선택된 월:', currentMonthKey);
-    console.log('📅 현재 선택된 날짜 객체:', currentDate);
-    console.log('📅 계획 저장할 날짜:', formattedDate);
-    console.log('📅 getFirstDayOfMonth 결과:', planDate);
+    console.log('📅 저장될 월:', currentMonthKey);
     
     const updatedPlans = [...plans, newPlan];
     console.log('📅 업데이트된 전체 계획 수:', updatedPlans.length);
@@ -574,7 +519,6 @@ const MonthlyPlan = ({
     setPlans(updatedPlans);
     setMonthlyPlans(updatedPlans);
 
-    // 🔍 저장 전 상태 확인
     console.log('💾 저장 시작 - 계획 수:', updatedPlans.length);
     
     const saveResult = await updateAndSaveMonthlyGoals(updatedPlans);
@@ -594,27 +538,18 @@ const MonthlyPlan = ({
     } else {
       console.error('❌ 저장 실패로 인한 롤백 필요');
     }
-  }, [form, plans, currentDate, currentMonthKey, getFirstDayOfMonth, formatDateForDB, updateAndSaveMonthlyGoals]);
+  }, [form, plans, currentMonthKey, updateAndSaveMonthlyGoals]);
 
   const handleGoBack = useCallback(() => {
     navigate('/calendar');
   }, [navigate]);
 
-  // ✨ 월별 데이터 통계 계산
+  // ✨ 월별 데이터 통계 계산 (월 기반)
   const monthlyStats = useMemo(() => {
     const stats = {};
     
     plans.forEach(plan => {
-      let monthKey;
-      
-      if (plan.date) {
-        const planDate = new Date(plan.date);
-        monthKey = format(planDate, 'yyyy-MM');
-      } else if (plan.month) {
-        monthKey = plan.month;
-      } else {
-        monthKey = format(new Date(), 'yyyy-MM');
-      }
+      const monthKey = plan.month || format(new Date(), 'yyyy-MM');
       
       if (!stats[monthKey]) {
         stats[monthKey] = { count: 0, totalHours: 0 };
@@ -680,7 +615,7 @@ const MonthlyPlan = ({
     }
   }, [currentUser, plans, currentMonthKey, getFirstDayOfMonth, formatDateForDB, saveUserDataToServer]);
 
-  // ✨ 서버 데이터 정리 함수 (날짜 기반 개선)
+  // ✨ 서버 데이터 정리 함수 (날짜 보존)
   const handleServerDataCleanup = useCallback(async () => {
     if (!currentUser || !window.confirm('⚠️ 서버에서 잘못된 데이터를 정리하시겠습니까?')) {
       return;
@@ -702,7 +637,7 @@ const MonthlyPlan = ({
           cleanDescription = '';
         }
 
-        // 날짜 처리 개선
+        // 🔥 수정: 기존 date 보존
         let planDate = plan.date;
         if (!planDate && plan.month) {
           const [year, month] = plan.month.split('-').map(Number);
@@ -714,7 +649,7 @@ const MonthlyPlan = ({
           description: cleanDescription,
           estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0,
           month: plan.month || format(new Date(planDate || new Date()), 'yyyy-MM'), // 기존 호환성
-          date: planDate || format(new Date(), 'yyyy-MM-dd') // 날짜 필드 확실히 설정
+          date: planDate // 🔥 기존 date 유지
         };
       }).filter(plan => plan.tagType && plan.tag && plan.tagType.trim() && plan.tag.trim());
 
@@ -877,15 +812,8 @@ const MonthlyPlan = ({
             <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-medium text-blue-800">📊 월별 계획 통계</h4>
-                <button
-                  onClick={migrateExistingData}
-                  disabled={saving}
-                  className="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
-                  title="잘못된 날짜로 저장된 데이터를 month 속성에 맞게 수정"
-                >
-                  {saving ? '처리 중...' : '🔧 날짜 수정'}
-                </button>
               </div>
+              
               <div className="grid grid-cols-4 gap-2 text-sm">
                 {Object.entries(monthlyStats)
                   .sort(([a], [b]) => b.localeCompare(a))
@@ -1275,7 +1203,6 @@ const MonthlyPlan = ({
                 ID: {plan.id}<br/>
                 태그: {plan.tag}<br/>
                 월: {plan.month}<br/>
-                날짜: {plan.date}<br/>
                 시간: {plan.estimatedTime}h
               </div>
             ))}
