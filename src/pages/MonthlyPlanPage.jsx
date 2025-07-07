@@ -1,8 +1,4 @@
-// ✨ 계획 수정 저장 (월 기반)
-  const handleSaveEdit = useCallback(async () => {
-    if (!editingPlan) return;
-
-    const combinedDescription = editForm.descriptionsimport React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, addMonths, subMonths } from 'date-fns';
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
@@ -562,60 +558,7 @@ const MonthlyPlan = ({
     return stats;
   }, [plans]);
 
-  // ✨ 기존 데이터 마이그레이션 함수 (개선)
-  const migrateExistingData = useCallback(async () => {
-    if (!currentUser || !window.confirm('🔧 기존 데이터를 올바른 날짜로 수정하시겠습니까?\n\n현재 모든 데이터가 2025-07-07로 저장되어 있는 것 같습니다.\n각 데이터의 month 속성에 맞는 날짜로 수정합니다.')) {
-      return;
-    }
-
-    try {
-      setSaving(true);
-      
-      const migratedPlans = plans.map(plan => {
-        console.log('🔧 마이그레이션 처리 중인 계획:', plan);
-        
-        // month 속성이 있으면 해당 월의 1일로 변환
-        if (plan.month) {
-          const [year, month] = plan.month.split('-').map(Number);
-          const correctDate = new Date(year, month - 1, 1);
-          const formattedDate = formatDateForDB(correctDate);
-          
-          console.log(`🔧 Plan ${plan.id}: month=${plan.month} -> date=${formattedDate}`);
-          
-          return {
-            ...plan,
-            date: formattedDate
-          };
-        }
-        
-        // month가 없으면 현재 월의 1일로 설정
-        return {
-          ...plan,
-          month: currentMonthKey,
-          date: formatDateForDB(getFirstDayOfMonth(new Date()))
-        };
-      });
-      
-      console.log('🔄 데이터 마이그레이션:', migratedPlans);
-      
-      setPlans(migratedPlans);
-      setMonthlyPlans(migratedPlans);
-      
-      await saveUserDataToServer({
-        monthlyPlans: migratedPlans
-      });
-      
-      alert('✅ 데이터 마이그레이션이 완료되었습니다.\n이제 각 월별로 올바르게 분리되어 보일 것입니다.');
-      
-    } catch (error) {
-      console.error('❌ 데이터 마이그레이션 실패:', error);
-      alert('❌ 데이터 마이그레이션 중 오류가 발생했습니다: ' + error.message);
-    } finally {
-      setSaving(false);
-    }
-  }, [currentUser, plans, currentMonthKey, getFirstDayOfMonth, formatDateForDB, saveUserDataToServer]);
-
-  // ✨ 서버 데이터 정리 함수 (날짜 보존)
+  // ✨ 서버 데이터 정리 함수 (월 기반)
   const handleServerDataCleanup = useCallback(async () => {
     if (!currentUser || !window.confirm('⚠️ 서버에서 잘못된 데이터를 정리하시겠습니까?')) {
       return;
@@ -636,20 +579,12 @@ const MonthlyPlan = ({
             cleanDescription.match(/^목표\s*시간/)) {
           cleanDescription = '';
         }
-
-        // 🔥 수정: 기존 date 보존
-        let planDate = plan.date;
-        if (!planDate && plan.month) {
-          const [year, month] = plan.month.split('-').map(Number);
-          planDate = format(new Date(year, month - 1, 1), 'yyyy-MM-dd');
-        }
         
         return {
-          ...plan, // ✅ 기존 모든 속성 유지
+          ...plan,
           description: cleanDescription,
           estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0,
-          month: plan.month || format(new Date(planDate || new Date()), 'yyyy-MM'), // 기존 호환성
-          date: planDate // 🔥 기존 date 유지
+          month: plan.month || format(new Date(), 'yyyy-MM')
         };
       }).filter(plan => plan.tagType && plan.tag && plan.tagType.trim() && plan.tag.trim());
 
