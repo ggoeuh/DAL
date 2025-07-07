@@ -497,7 +497,7 @@ const MonthlyPlan = ({
     return grouped;
   }, [currentMonthGoals, currentMonthPlans]);
 
-  // ✨ 계획 추가 함수 (월 기반만) - 디버깅 강화
+  // ✨ 계획 추가 함수 (강제 수정)
   const handleAddPlan = useCallback(async () => {
     const firstDesc = form.descriptions[0]?.trim();
 
@@ -508,12 +508,21 @@ const MonthlyPlan = ({
 
     console.log('🚨 계획 추가 시작 - currentMonthKey:', currentMonthKey);
     console.log('🚨 currentDate:', currentDate);
-    console.log('🚨 format(currentDate):', format(currentDate, 'yyyy-MM'));
 
     const combinedDescription = form.descriptions
       .filter(desc => desc && desc.trim())
       .map(desc => desc.trim())
       .join(', ');
+
+    // 🔥 강제로 현재 페이지 월 설정
+    let pageMonth = currentMonthKey;
+    
+    // URL에서 month 파라미터 직접 읽기
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlMonth = urlParams.get('month');
+    if (urlMonth) {
+      pageMonth = urlMonth;
+    }
 
     const newPlan = {
       id: Date.now(),
@@ -522,13 +531,12 @@ const MonthlyPlan = ({
       name: form.name || '',
       description: combinedDescription,
       estimatedTime: parseInt(form.estimatedTime) || 0,
-      month: format(currentDate, 'yyyy-MM') // 🔥 무조건 currentDate에서 계산
+      month: pageMonth // 🔥 URL에서 직접 가져온 월 사용
     };
     
     console.log('🚨 새 계획 생성:', newPlan);
-    console.log('🚨 newPlan.month:', newPlan.month);
-    console.log('🚨 currentDate:', currentDate);
-    console.log('🚨 format(currentDate):', format(currentDate, 'yyyy-MM'));
+    console.log('🚨 pageMonth:', pageMonth);
+    console.log('🚨 urlMonth:', urlMonth);
     console.log('🚨 currentMonthKey:', currentMonthKey);
     
     const updatedPlans = [...plans, newPlan];
@@ -538,11 +546,7 @@ const MonthlyPlan = ({
     setPlans(updatedPlans);
     setMonthlyPlans(updatedPlans);
 
-    console.log('💾 저장 시작 - 계획 수:', updatedPlans.length);
-    
     const saveResult = await updateAndSaveMonthlyGoals(updatedPlans);
-    
-    console.log('💾 저장 완료 - 결과:', saveResult);
     
     if (saveResult !== false) {
       setForm({
@@ -553,9 +557,6 @@ const MonthlyPlan = ({
         estimatedTime: ''
       });
       setSelectedTagType('');
-      console.log('✅ 폼 초기화 완료');
-    } else {
-      console.error('❌ 저장 실패로 인한 롤백 필요');
     }
   }, [form, plans, currentMonthKey, currentDate, updateAndSaveMonthlyGoals]);
 
@@ -771,6 +772,23 @@ const MonthlyPlan = ({
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-medium text-blue-800">📊 월별 계획 통계</h4>
                 <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm('모든 계획을 6월로 이동하시겠습니까?')) return;
+                      const updatedPlans = plans.map(plan => ({
+                        ...plan,
+                        month: '2025-06'
+                      }));
+                      setPlans(updatedPlans);
+                      setMonthlyPlans(updatedPlans);
+                      await saveUserDataToServer({ monthlyPlans: updatedPlans });
+                      alert('완료! 모든 계획이 2025-06으로 이동되었습니다.');
+                    }}
+                    disabled={saving}
+                    className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    📅 모든 계획을 6월로
+                  </button>
                   <button
                     onClick={async () => {
                       if (!window.confirm('모든 계획을 7월로 복구하시겠습니까?')) return;
