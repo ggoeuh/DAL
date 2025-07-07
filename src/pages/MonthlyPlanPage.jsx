@@ -1,44 +1,4 @@
-// ✨ 서버에서 전체 사용자 데이터 로드 (디버깅 강화)
-  const loadUserDataFromServer = useCallback(async () => {
-    if (!currentUser || !supabase) return;
-
-    try {
-      setLoading(true);
-      console.log('📡 서버에서 데이터 로드 시작');
-
-      const result = await loadUserDataFromDAL(currentUser);
-      
-      console.log('📡 서버 응답:', result);
-      
-      if (result.success && result.data) {
-        console.log('📡 서버에서 받은 원본 데이터:', result.data);
-        
-        const validatedData = validateAndCleanServerData(result.data);
-        
-        console.log('📡 검증된 데이터:', validatedData);
-        console.log('📡 월간 계획 수:', validatedData.monthlyPlans?.length || 0);
-        
-        setSchedules(validatedData.schedules || []);
-        setTags(validatedData.tags || []);
-        setTagItems(validatedData.tagItems || []);
-        setMonthlyGoals(validatedData.monthlyGoals || []);
-        setMonthlyPlans(validatedData.monthlyPlans || []);
-        setPlans(validatedData.monthlyPlans || []);
-        setLastSyncTime(new Date());
-
-        console.log('📡 상태 업데이트 완료');
-      } else {
-        console.log('📡 서버에 데이터가 없어서 초기화');
-        setSchedules([]);
-        setTags([]);
-        setTagItems([]);
-        setMonthlyGoals([]);
-        setMonthlyPlans([]);
-        setPlans([]);
-      }
-    } catch (error) {
-      console.error('❌ 서버 데이터 로드 실패:', error);
-      alert('서버에서 데이터를 불러오는 중 오류가 발생했습니다: ' + error.import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, addMonths, subMonths } from 'date-fns';
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
@@ -1259,38 +1219,38 @@ const MonthlyPlan = ({
           </div>
         </div>
       )}
-    </div>
 
-    {/* 실시간 데이터 모니터 (개발용) */}
-    <div className="fixed bottom-4 left-4 bg-white border rounded-lg p-3 shadow-lg text-xs max-w-sm z-40">
-      <h4 className="font-bold mb-2">🔍 데이터 상태 모니터</h4>
-      <div className="space-y-1">
-        <div>전체 계획: {plans.length}개</div>
-        <div>현재 월 계획: {currentMonthPlans.length}개</div>
-        <div>현재 월: {currentMonthKey}</div>
-        <div>저장 상태: {saving ? '저장 중...' : '대기'}</div>
-        {lastSyncTime && (
-          <div>마지막 동기화: {lastSyncTime.toLocaleTimeString()}</div>
-        )}
-      </div>
-      
-      <details className="mt-2">
-        <summary className="cursor-pointer text-blue-600">전체 계획 목록</summary>
-        <div className="mt-1 max-h-32 overflow-auto text-xs bg-gray-50 p-2 rounded">
-          {plans.map(plan => (
-            <div key={plan.id} className="border-b pb-1 mb-1">
-              ID: {plan.id}<br/>
-              태그: {plan.tag}<br/>
-              월: {plan.month}<br/>
-              날짜: {plan.date}<br/>
-              시간: {plan.estimatedTime}h
-            </div>
-          ))}
-          {plans.length === 0 && (
-            <div className="text-gray-500">계획이 없습니다</div>
+      {/* 실시간 데이터 모니터 (개발용) */}
+      <div className="fixed bottom-4 left-4 bg-white border rounded-lg p-3 shadow-lg text-xs max-w-sm z-40">
+        <h4 className="font-bold mb-2">🔍 데이터 상태 모니터</h4>
+        <div className="space-y-1">
+          <div>전체 계획: {plans.length}개</div>
+          <div>현재 월 계획: {currentMonthPlans.length}개</div>
+          <div>현재 월: {currentMonthKey}</div>
+          <div>저장 상태: {saving ? '저장 중...' : '대기'}</div>
+          {lastSyncTime && (
+            <div>마지막 동기화: {lastSyncTime.toLocaleTimeString()}</div>
           )}
         </div>
-      </details>
+        
+        <details className="mt-2">
+          <summary className="cursor-pointer text-blue-600">전체 계획 목록</summary>
+          <div className="mt-1 max-h-32 overflow-auto text-xs bg-gray-50 p-2 rounded">
+            {plans.map(plan => (
+              <div key={plan.id} className="border-b pb-1 mb-1">
+                ID: {plan.id}<br/>
+                태그: {plan.tag}<br/>
+                월: {plan.month}<br/>
+                날짜: {plan.date}<br/>
+                시간: {plan.estimatedTime}h
+              </div>
+            ))}
+            {plans.length === 0 && (
+              <div className="text-gray-500">계획이 없습니다</div>
+            )}
+          </div>
+        </details>
+      </div>
     </div>
   );
 };
