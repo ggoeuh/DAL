@@ -76,14 +76,14 @@ const MonthlyPlan = ({
     return currentGoal?.goals || [];
   }, [safeMonthlyGoals, currentMonthKey]);
 
-  // ✅ 현재 선택된 월의 계획 가져오기 (월 기반)
+  // ✨ 현재 선택된 월의 계획 가져오기 (페이지 월 기준)
   const currentMonthPlans = useMemo(() => {
     console.log('🔍 전체 plans:', plans);
     console.log('🔍 currentMonthKey:', currentMonthKey);
     
     const filtered = plans.filter(plan => {
-      // month 속성으로만 필터링
-      const planMonth = plan.month || format(new Date(), 'yyyy-MM');
+      // month 속성으로만 필터링 (new Date() 사용 안함)
+      const planMonth = plan.month;
       const matches = planMonth === currentMonthKey;
       console.log(`🔍 Plan ${plan.id}: month=${planMonth}, matches=${matches}`);
       return matches;
@@ -139,7 +139,7 @@ const MonthlyPlan = ({
     updateURL(newDate);
   }, [updateURL]);
 
-  // ✨ 서버 데이터 검증 및 정리 함수 (월 기반만)
+  // ✨ 서버 데이터 검증 및 정리 함수 (페이지 월 기준)
   const validateAndCleanServerData = useCallback((serverData) => {
     if (!serverData) return {};
     
@@ -157,7 +157,7 @@ const MonthlyPlan = ({
         description: cleanDescription,
         name: plan.name || '',
         estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0,
-        month: plan.month || format(new Date(), 'yyyy-MM') // month만 사용
+        month: plan.month // 기존 month 그대로 유지
       };
     });
     
@@ -254,7 +254,7 @@ const MonthlyPlan = ({
     }
   }, [currentUser, saving, schedules, tags, tagItems, monthlyGoals, monthlyPlans]);
 
-  // ✨ 월간 목표 업데이트 및 저장 (월 기반)
+  // ✨ 월간 목표 업데이트 및 저장 (페이지 월 기준)
   const updateAndSaveMonthlyGoals = useCallback(async (updatedPlans) => {
     if (!currentUser) return;
 
@@ -263,7 +263,7 @@ const MonthlyPlan = ({
     console.log('🎯 현재 월:', currentMonthKey);
 
     const currentMonthFilteredPlans = updatedPlans.filter(plan => {
-      const planMonth = plan.month || format(new Date(), 'yyyy-MM');
+      const planMonth = plan.month;
       const matches = planMonth === currentMonthKey;
       console.log(`🎯 Plan ${plan.id}: month=${planMonth}, matches=${matches}`);
       return matches;
@@ -522,7 +522,7 @@ const MonthlyPlan = ({
       name: form.name || '',
       description: combinedDescription,
       estimatedTime: parseInt(form.estimatedTime) || 0,
-      month: currentMonthKey // 현재 선택된 월에 저장
+      month: format(currentDate, 'yyyy-MM') // 🔥 강제로 currentDate에서 직접 계산
     };
     
     console.log('🚨 새 계획 생성:', newPlan);
@@ -579,7 +579,7 @@ const MonthlyPlan = ({
     return stats;
   }, [plans]);
 
-  // ✨ 서버 데이터 정리 함수 (월 기반)
+  // ✨ 서버 데이터 정리 함수 (페이지 월 기준)
   const handleServerDataCleanup = useCallback(async () => {
     if (!currentUser || !window.confirm('⚠️ 서버에서 잘못된 데이터를 정리하시겠습니까?')) {
       return;
@@ -605,7 +605,7 @@ const MonthlyPlan = ({
           ...plan,
           description: cleanDescription,
           estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0,
-          month: plan.month || format(new Date(), 'yyyy-MM')
+          month: plan.month // 기존 month 그대로 유지
         };
       }).filter(plan => plan.tagType && plan.tag && plan.tagType.trim() && plan.tag.trim());
 
@@ -768,6 +768,25 @@ const MonthlyPlan = ({
             <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-medium text-blue-800">📊 월별 계획 통계</h4>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm('모든 기존 계획을 현재 선택된 월로 이동시키겠습니까?')) return;
+                      const updatedPlans = plans.map(plan => ({
+                        ...plan,
+                        month: currentMonthKey
+                      }));
+                      setPlans(updatedPlans);
+                      setMonthlyPlans(updatedPlans);
+                      await saveUserDataToServer({ monthlyPlans: updatedPlans });
+                      alert('완료! 모든 계획이 ' + currentMonthKey + '로 이동되었습니다.');
+                    }}
+                    disabled={saving}
+                    className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    🚨 강제로 현재 월로 이동
+                  </button>
+                </div>
               </div>
               
               <div className="grid grid-cols-4 gap-2 text-sm">
