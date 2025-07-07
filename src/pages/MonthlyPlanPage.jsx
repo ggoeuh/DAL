@@ -3,19 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { format, addMonths, subMonths, parse, isValid } from 'date-fns';
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
 
-// ✨ URL 쿼리에서 month 파라미터를 읽어서 초기 날짜 설정하는 함수
-const getInitialDateFromQuery = () => {
-  const params = new URLSearchParams(window.location.search);
-  const monthParam = params.get('month'); // e.g., "2025-06"
-
-  if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
-    const parsed = parse(monthParam, 'yyyy-MM', new Date());
-    if (isValid(parsed)) return parsed;
-  }
-
-  return new Date(); // fallback to 현재 날짜
-};
-
 const MonthlyPlan = ({ 
   currentUser,
   onLogout 
@@ -30,8 +17,26 @@ const MonthlyPlan = ({
   const [monthlyGoals, setMonthlyGoals] = useState([]);
   const [monthlyPlans, setMonthlyPlans] = useState([]);
   
-  // ✨ 월 네비게이션 상태 - URL 쿼리에서 초기값 가져오기
-  const [currentDate, setCurrentDate] = useState(getInitialDateFromQuery());
+  // ✨ URL 쿼리에서 초기 월 날짜를 가져오는 useEffect
+  const [currentDate, setCurrentDate] = useState(new Date());
+  
+  // ✨ 컴포넌트 마운트 시 URL 쿼리를 읽어서 currentDate 설정
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const monthParam = params.get('month'); // e.g., "2025-06"
+
+    if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+      const parsed = parse(monthParam, 'yyyy-MM', new Date());
+      if (isValid(parsed)) {
+        console.log('🎯 URL에서 월 파라미터 읽음:', monthParam, '→', parsed);
+        setCurrentDate(parsed);
+        return;
+      }
+    }
+    
+    console.log('⚠️ URL에 월 파라미터가 없거나 잘못됨, 현재 날짜 사용');
+  }, []); // 마운트 시 한 번만 실행
+  
   const currentMonthKey = format(currentDate, 'yyyy-MM');
   
   // ✨ currentDate가 변경될 때마다 URL도 업데이트 (선택사항)
@@ -40,6 +45,7 @@ const MonthlyPlan = ({
     const url = new URL(window.location.href);
     url.searchParams.set('month', formatted);
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    console.log('🔄 URL 업데이트:', formatted);
   }, [currentDate]);
   
   // 수정 모달 상태
