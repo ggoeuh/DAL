@@ -139,7 +139,7 @@ const MonthlyPlan = ({
     updateURL(newDate);
   }, [updateURL]);
 
-  // ✨ 서버 데이터 검증 및 정리 함수 (페이지 월 기준)
+  // ✨ 서버 데이터 검증 및 정리 함수 (month 속성 보장)
   const validateAndCleanServerData = useCallback((serverData) => {
     if (!serverData) return {};
     
@@ -157,7 +157,7 @@ const MonthlyPlan = ({
         description: cleanDescription,
         name: plan.name || '',
         estimatedTime: typeof plan.estimatedTime === 'number' ? plan.estimatedTime : parseInt(plan.estimatedTime) || 0,
-        month: plan.month // 기존 month 그대로 유지
+        month: plan.month || '2025-07' // 🔥 month가 없으면 기본값 설정
       };
     });
     
@@ -771,20 +771,20 @@ const MonthlyPlan = ({
                 <div className="flex gap-2">
                   <button
                     onClick={async () => {
-                      if (!window.confirm('모든 기존 계획을 현재 선택된 월로 이동시키겠습니까?')) return;
+                      if (!window.confirm('모든 계획을 7월로 복구하시겠습니까?')) return;
                       const updatedPlans = plans.map(plan => ({
                         ...plan,
-                        month: currentMonthKey
+                        month: '2025-07'
                       }));
                       setPlans(updatedPlans);
                       setMonthlyPlans(updatedPlans);
                       await saveUserDataToServer({ monthlyPlans: updatedPlans });
-                      alert('완료! 모든 계획이 ' + currentMonthKey + '로 이동되었습니다.');
+                      alert('완료! 모든 계획이 2025-07로 복구되었습니다.');
                     }}
                     disabled={saving}
                     className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded text-sm font-medium transition-colors disabled:opacity-50"
                   >
-                    🚨 강제로 현재 월로 이동
+                    🚨 긴급 복구 (7월)
                   </button>
                 </div>
               </div>
