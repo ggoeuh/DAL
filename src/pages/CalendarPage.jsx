@@ -250,32 +250,35 @@ const CalendarPage = ({
     return monthlyGoals.find(mg => mg.month === currentMonth)?.goals || [];
   }, [monthlyGoals, currentDate]);
 
-  // ✅ 태그별 총 시간 계산 - useMemo로 최적화
+  // ✅ 하위 태그별 총 시간 계산 - useMemo로 최적화
   const monthlyTagTotals = useMemo(() => {
     const totals = {};
     
     currentMonthSchedules.forEach(schedule => {
-      const tagType = schedule.tagType || "기타";
+      // tag 속성을 우선 사용 (하위 태그), 없으면 tagType 사용
+      const subTag = schedule.tag || schedule.tagType || "기타";
       
-      if (!totals[tagType]) {
-        totals[tagType] = 0;
+      if (!totals[subTag]) {
+        totals[subTag] = 0;
       }
       
       const startMinutes = parseTimeToMinutes(schedule.start);
       const endMinutes = parseTimeToMinutes(schedule.end);
       const duration = endMinutes - startMinutes;
       
-      totals[tagType] += duration;
+      totals[subTag] += duration;
     });
     
     return totals;
   }, [currentMonthSchedules]);
 
-  // ✅ 태그 타입들 - useMemo로 최적화
-  const allTagTypes = useMemo(() => {
-    const goalTagTypes = currentMonthGoals.map(goal => goal.tagType);
-    const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"))];
-    return [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
+  // ✅ 하위 태그들 - useMemo로 최적화
+  const allSubTags = useMemo(() => {
+    // 월간 목표에서 하위 태그들 추출
+    const goalSubTags = currentMonthGoals.map(goal => goal.tag || goal.tagType);
+    // 현재 월 일정에서 사용된 하위 태그들 추출 (tag 우선, tagType 대체)
+    const currentMonthUsedSubTags = [...new Set(currentMonthSchedules.map(schedule => schedule.tag || schedule.tagType || "기타"))];
+    return [...new Set([...goalSubTags, ...currentMonthUsedSubTags])];
   }, [currentMonthGoals, currentMonthSchedules]);
 
   // ✅ 서버 태그 색상을 우선 사용하고, 없으면 기본 색상 생성하는 함수
@@ -622,15 +625,15 @@ const CalendarPage = ({
       {/* 월별 하위 태그 요약 */}
       <div className="mb-8">
         <h2 className="text-xl font-semibold mb-4 text-gray-700">이번 달 활동 요약</h2>
-        {allTagTypes.length > 0 ? (
+        {allSubTags.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {allTagTypes.map((tagType) => {
-              const tagColor = getTagColor(tagType); // ✅ 서버 색상 우선 사용
-              const actualMinutes = monthlyTagTotals[tagType] || 0;
+            {allSubTags.map((subTag) => {
+              const tagColor = getSubTagColor(subTag); // ✅ 하위 태그 색상 사용
+              const actualMinutes = monthlyTagTotals[subTag] || 0;
               const actualTime = minutesToTimeString(actualMinutes);
               
-              // 목표 시간 찾기
-              const goal = currentMonthGoals.find(g => g.tagType === tagType);
+              // 목표 시간 찾기 (tag 또는 tagType으로 검색)
+              const goal = currentMonthGoals.find(g => g.tag === subTag || g.tagType === subTag);
               const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
               const goalTime = goal ? goal.targetHours : "00:00";
               
@@ -647,11 +650,11 @@ const CalendarPage = ({
               
               return (
                 <div
-                  key={tagType}
+                  key={subTag}
                   className={`p-4 w-60 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow flex-shrink-0`}
                 >
                   <div className="mb-2">
-                    <span className={`font-medium ${tagColor.text}`}>{tagType}</span>
+                    <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
                   </div>
                   
                   <div className="space-y-1 text-sm">
@@ -804,7 +807,7 @@ const CalendarPage = ({
                             e.stopPropagation();
                             navigate(`/day/${formatDate(day)}`);
                           }}
-                          title={`${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}`}
+                          title={`${schedule.start} - ${schedule.end}\n${schedule.tag || schedule.tagType} - ${schedule.title}\n${schedule.description || ''}`}
                         >
                           <div className="space-y-1">
                             <div className={`font-bold ${tagColor.text} text-left`}>
@@ -813,7 +816,7 @@ const CalendarPage = ({
                             <div className="flex items-center gap-1">
                               <div className={`w-2 h-2 rounded-full ${tagColor.bg.replace('100', '500')} flex-shrink-0`}></div>
                               <div className={`font-medium ${tagColor.text} truncate flex-1`}>
-                                {schedule.tag} | {schedule.title}
+                                {schedule.tag || schedule.tagType} | {schedule.title}
                               </div>
                             </div>
                             {schedule.description && (
@@ -851,28 +854,29 @@ const CalendarPage = ({
         
         <div className="mt-2 text-xs text-green-600">
           <span className="font-medium">🎨 하위 태그 관리:</span> 
-          서버에서 {tags?.length || 0}개의 태그 색상 정보를 불러왔습니다.
-          구체적인 활동별로 목표를 설정하고 진행률을 추적할 수 있습니다.
+          서버에서 {tags?.length || 0}개의 하위 태그 색상 정보를 불러왔습니다.
+          구체적인 하위 활동별로 목표를 설정하고 진행률을 추적할 수 있습니다.
         </div>
         
-        {/* ✅ 태그 색상 정보 표시 */}
+        {/* ✅ 하위 태그 색상 정보 표시 */}
         {tags && tags.length > 0 && (
           <div className="mt-2 text-xs text-green-600">
-            <span className="font-medium">🎨 태그 색상:</span> 
-            서버에서 {tags.length}개의 태그 색상 정보를 불러왔습니다.
-            {tags.map(tag => tag.tagType).join(', ')}
+            <span className="font-medium">🎨 하위 태그 색상:</span> 
+            서버에서 {tags.length}개의 하위 태그 색상 정보를 불러왔습니다.
+            {tags.map(tag => tag.tag || tag.tagType).filter(Boolean).join(', ')}
           </div>
         )}
         
         {/* ✅ 디버깅 정보 출력 */}
         {React.useEffect(() => {
-          console.log('🏷️ 태그 정보 상태:', {
+          console.log('🏷️ 하위 태그 정보 상태:', {
             tags: tags?.length || 0,
             tagItems: tagItems?.length || 0,
             tagsData: tags,
-            tagItemsData: tagItems
+            tagItemsData: tagItems,
+            allSubTags: allSubTags
           });
-        }, [tags, tagItems])}
+        }, [tags, tagItems, allSubTags])}
       </div>
     </div>
   );
