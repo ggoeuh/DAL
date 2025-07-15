@@ -628,7 +628,7 @@ const CalendarPage = ({
         {allSubTags.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {allSubTags.map((subTag) => {
-              const tagColor = getSubTagColor(subTag); // ✅ 하위 태그 색상 사용
+              const tagColor = getTagColor(subTag); // ✅ 통일된 함수 사용
               const actualMinutes = monthlyTagTotals[subTag] || 0;
               const actualTime = minutesToTimeString(actualMinutes);
               
