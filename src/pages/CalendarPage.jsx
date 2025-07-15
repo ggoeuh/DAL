@@ -872,11 +872,24 @@ const CalendarPage = ({
           console.log('🏷️ 하위 태그 정보 상태:', {
             tags: tags?.length || 0,
             tagItems: tagItems?.length || 0,
+            schedules: schedules?.length || 0,
+            monthlyGoals: monthlyGoals?.length || 0,
+            currentMonthGoals: currentMonthGoals?.length || 0,
+            allSubTags: allSubTags,
+            monthlyTagTotals: monthlyTagTotals,
             tagsData: tags,
             tagItemsData: tagItems,
-            allSubTags: allSubTags
+            schedulesData: schedules?.slice(0, 3), // 처음 3개만 확인
+            monthlyGoalsData: monthlyGoals
           });
-        }, [tags, tagItems, allSubTags])}
+        }, [tags, tagItems, schedules, monthlyGoals, currentMonthGoals, allSubTags, monthlyTagTotals])}
+        
+        {/* 🔍 서버 연결 상태 디버깅 */}
+        <div className="mt-2 text-xs text-blue-600">
+          <span className="font-medium">📊 데이터 현황:</span> 
+          일정 {schedules?.length || 0}개, 월간목표 {currentMonthGoals?.length || 0}개, 
+          하위태그 {allSubTags?.length || 0}개 표시 중
+        </div>
       </div>
     </div>
   );
