@@ -182,7 +182,7 @@ const MonthlyPlan = ({
     }
   }, [currentUser, saving, schedules, tags, tagItems, monthlyGoals, monthlyPlans]);
 
-  // ✅ 월간 목표 업데이트 및 저장 (디버깅 강화)
+  // ✅ 월간 목표 업데이트 및 저장 (중복 방지 + 완전 대체)
   const updateAndSaveMonthlyGoals = useCallback(async (updatedPlans) => {
     if (!currentUser) return;
 
@@ -199,8 +199,8 @@ const MonthlyPlan = ({
       const subTag = plan.tag; // 하위태그 (NGV, 포스코, 학위연구 등)
       console.log('🏷️ 처리 중인 태그:', subTag, 'from plan:', plan);
       
-      if (!subTag || subTag.trim() === '') {
-        console.warn('⚠️ 빈 태그 발견:', plan);
+      if (!subTag || subTag.trim() === '' || subTag === 'Unknown') {
+        console.warn('⚠️ 잘못된 태그 무시:', plan);
         return;
       }
       
@@ -220,11 +220,7 @@ const MonthlyPlan = ({
       updatedGoals.push(currentMonthGoal);
     }
 
-    const planTags = Object.keys(goalsByTag);
-    // ✅ 기존 목표에서 현재 계획에 없는 하위태그들만 유지
-    const existingGoals = currentMonthGoal.goals.filter(goal => !planTags.includes(goal.tag));
-    
-    // ✅ 하위태그별 새 목표 생성 (tag로 저장, tagType 없음)
+    // ✅ 기존 목표를 완전히 대체 (중복 방지)
     const newGoals = Object.entries(goalsByTag).map(([tag, totalHours]) => ({
       tag, // 하위태그 (NGV, 포스코, 학위연구 등)
       targetHours: `${totalHours.toString().padStart(2, '0')}:00`
@@ -232,7 +228,8 @@ const MonthlyPlan = ({
 
     console.log('🎯 생성할 새 목표들:', newGoals);
 
-    currentMonthGoal.goals = [...existingGoals, ...newGoals];
+    // ✅ 현재 월의 목표를 완전히 새로 대체
+    currentMonthGoal.goals = newGoals;
     setMonthlyGoals(updatedGoals);
     
     const saveResult = await saveUserDataToServer({
