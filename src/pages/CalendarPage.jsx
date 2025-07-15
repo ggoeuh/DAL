@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -194,22 +194,67 @@ const ServerDataResetButton = React.memo(({ currentUser, onDataChanged, classNam
 });
 
 const CalendarPage = ({ 
-  schedules = [], 
-  setSchedules,
-  tags = [], // 서버에서 받아온 태그와 색상 정보
-  setTags,
-  tagItems = [],
-  setTagItems,
-  monthlyGoals = [],
-  setMonthlyGoals,
   currentUser, 
-  onLogout, 
-  lastSyncTime 
+  onLogout
 }) => {
   const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+
+  // ✅ 서버에서 직접 데이터 관리
+  const [schedules, setSchedules] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [tagItems, setTagItems] = useState([]);
+  const [monthlyGoals, setMonthlyGoals] = useState([]);
+
+  // ✅ 서버에서 사용자 데이터 로드
+  const loadUserDataFromServer = useCallback(async () => {
+    if (!currentUser || !supabase) return;
+
+    try {
+      setIsLoading(true);
+      console.log('📥 캘린더 페이지에서 서버 데이터 로드 시작:', currentUser);
+
+      const result = await loadUserDataFromDAL(currentUser);
+      
+      if (result.success && result.data) {
+        console.log('📥 서버에서 받은 데이터:', {
+          schedules: result.data.schedules?.length || 0,
+          tags: result.data.tags?.length || 0,
+          tagItems: result.data.tagItems?.length || 0,
+          monthlyGoals: result.data.monthlyGoals?.length || 0
+        });
+        
+        setSchedules(result.data.schedules || []);
+        setTags(result.data.tags || []);
+        setTagItems(result.data.tagItems || []);
+        setMonthlyGoals(result.data.monthlyGoals || []);
+        setLastSyncTime(new Date());
+
+        console.log('📥 monthlyGoals 데이터 상세:', result.data.monthlyGoals);
+      } else {
+        console.warn('⚠️ 서버에서 데이터를 받아오지 못했습니다');
+        setSchedules([]);
+        setTags([]);
+        setTagItems([]);
+        setMonthlyGoals([]);
+      }
+    } catch (error) {
+      console.error('❌ 서버 데이터 로드 실패:', error);
+      alert('서버에서 데이터를 불러오는 중 오류가 발생했습니다: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentUser]);
+
+  // ✅ 초기 데이터 로드
+  useEffect(() => {
+    if (currentUser) {
+      loadUserDataFromServer();
+    }
+  }, [currentUser, loadUserDataFromServer]);
 
   // 월 네비게이션 함수들
   const goToPreviousMonth = useCallback(() => {
@@ -242,12 +287,22 @@ const CalendarPage = ({
     });
   }, [schedules, currentDate]);
 
-  // 현재 월의 월간 목표 가져오기
+  // ✅ 현재 월의 월간 목표 가져오기 (수정됨 - tag 필드로 검색)
   const currentMonthGoals = useMemo(() => {
     if (!monthlyGoals) return [];
     
     const currentMonth = formatMonth(currentDate);
-    return monthlyGoals.find(mg => mg.month === currentMonth)?.goals || [];
+    const currentGoal = monthlyGoals.find(mg => mg.month === currentMonth);
+    const goals = currentGoal?.goals || [];
+    
+    console.log('🎯 현재 월 목표 계산:', {
+      currentMonth,
+      monthlyGoals,
+      currentGoal,
+      goals
+    });
+    
+    return goals;
   }, [monthlyGoals, currentDate]);
 
   // ✅ 하위 태그별 총 시간 계산 - useMemo로 최적화
@@ -269,30 +324,40 @@ const CalendarPage = ({
       totals[subTag] += duration;
     });
     
+    console.log('📊 월간 태그별 실제 시간:', totals);
     return totals;
   }, [currentMonthSchedules]);
 
   // ✅ 하위 태그들 - useMemo로 최적화
   const allSubTags = useMemo(() => {
-    // 월간 목표에서 하위 태그들 추출 (원본 구조에 맞게)
-    const goalSubTags = currentMonthGoals.map(goal => goal.tagType); // 원본은 tagType 사용
+    // ✅ 월간 목표에서 하위 태그들 추출 (수정됨 - tag 필드 사용)
+    const goalSubTags = currentMonthGoals.map(goal => goal.tag);
     // 현재 월 일정에서 사용된 하위 태그들 추출
     const currentMonthUsedSubTags = [...new Set(currentMonthSchedules.map(schedule => schedule.tag || "기타"))];
-    return [...new Set([...goalSubTags, ...currentMonthUsedSubTags])];
+    const result = [...new Set([...goalSubTags, ...currentMonthUsedSubTags])];
+    
+    console.log('🏷️ 전체 하위 태그 목록:', {
+      goalSubTags,
+      currentMonthUsedSubTags,
+      result
+    });
+    
+    return result;
   }, [currentMonthGoals, currentMonthSchedules]);
 
   // ✅ 서버 태그 색상을 우선 사용하고, 없으면 기본 색상 생성하는 함수
-  // 🎨 정의된 태그(tagItems에 있는 태그)에 자동으로 색상 할당하는 로직
   const getTagColor = useCallback((tagType) => {
-    // 1. 서버에서 받아온 태그 색상 정보 확인 (기존 로직)
-    const serverTag = tags?.find(t => t.tagType === tagType);
+    // 1. 서버에서 받아온 태그 색상 정보 확인 (tag 또는 tagType으로 검색)
+    const serverTag = tags?.find(t => t.tagType === tagType || t.tag === tagType);
     if (serverTag && serverTag.color) {
       console.log(`🎨 서버에서 받은 색상 사용: ${tagType}`, serverTag.color);
       return serverTag.color;
     }
     
     // 2. ✨ 새로운 로직: tagItems에 정의된 태그인지 확인
-    const isDefinedTag = tagItems?.some(item => item.tagType === tagType);
+    const isDefinedTag = tagItems?.some(item => 
+      item.tagType === tagType || item.tagName === tagType || item.tag === tagType
+    );
     
     if (isDefinedTag) {
       // 정의된 태그라면 서버에 색상이 없어도 자동으로 색상 할당
@@ -338,24 +403,21 @@ const CalendarPage = ({
       
       // 현재 tags 배열에 새 태그 추가
       const updatedTags = [...(tags || [])];
-      const existingIndex = updatedTags.findIndex(t => t.tagType === tagType);
+      const existingIndex = updatedTags.findIndex(t => t.tagType === tagType || t.tag === tagType);
       
       if (existingIndex >= 0) {
         // 기존 태그 업데이트
         updatedTags[existingIndex] = { ...updatedTags[existingIndex], color };
       } else {
         // 새 태그 추가
-        updatedTags.push({ tagType, color });
+        updatedTags.push({ tag: tagType, tagType, color });
       }
       
       // 로컬 상태 즉시 업데이트
-      if (setTags) {
-        setTags(updatedTags);
-      }
+      setTags(updatedTags);
       
       // 서버 저장 (비동기)
       if (currentUser) {
-        // saveUserDataToDAL 함수를 사용하여 전체 데이터 저장
         const userData = {
           schedules: schedules || [],
           tags: updatedTags,
@@ -373,127 +435,30 @@ const CalendarPage = ({
     } catch (error) {
       console.error(`❌ 태그 색상 저장 중 오류: ${tagType}`, error);
     }
-  }, [tags, setTags, schedules, tagItems, monthlyGoals, currentUser]);
-  
-  // 🔧 모든 정의된 하위 태그에 색상을 일괄 할당하는 함수
-  const assignColorsToAllDefinedTags = useCallback(async () => {
-    console.log('🎨 모든 정의된 하위 태그에 색상 일괄 할당 시작');
-    
-    if (!tagItems || tagItems.length === 0) {
-      console.log('⚠️ 정의된 태그가 없습니다');
-      return;
-    }
-    
-    // 정의된 모든 하위 태그들 추출 (tag 또는 tagType)
-    const definedSubTags = [...new Set(tagItems.map(item => item.tag || item.tagType))];
-    console.log('🏷️ 정의된 하위 태그들:', definedSubTags);
-    
-    // 현재 서버에 색상이 없는 하위 태그들만 필터링
-    const tagsWithoutColors = definedSubTags.filter(subTag => {
-      const serverTag = tags?.find(t => t.tag === subTag || t.tagType === subTag);
-      return !serverTag || !serverTag.color;
-    });
-    
-    console.log('🎯 색상이 필요한 하위 태그들:', tagsWithoutColors);
-    
-    if (tagsWithoutColors.length === 0) {
-      console.log('✅ 모든 정의된 하위 태그에 이미 색상이 있습니다');
-      return;
-    }
-    
-    // 각 하위 태그에 색상 할당
-    const updatedTags = [...(tags || [])];
-    const usedColors = new Set(updatedTags.map(t => t.color?.bg).filter(Boolean));
-    
-    tagsWithoutColors.forEach((subTag, index) => {
-      // 사용되지 않은 색상 찾기
-      let assignedColor;
-      const availableColors = PASTEL_COLORS.filter(color => !usedColors.has(color.bg));
-      
-      if (availableColors.length > 0) {
-        assignedColor = availableColors[0];
-        usedColors.add(assignedColor.bg);
-      } else {
-        // 모든 색상이 사용되었으면 순환
-        assignedColor = PASTEL_COLORS[index % PASTEL_COLORS.length];
-      }
-      
-      // 태그 목록에 추가 (tag 속성으로 저장)
-      const existingIndex = updatedTags.findIndex(t => t.tag === subTag || t.tagType === subTag);
-      if (existingIndex >= 0) {
-        updatedTags[existingIndex] = { ...updatedTags[existingIndex], color: assignedColor };
-      } else {
-        updatedTags.push({ tag: subTag, color: assignedColor });
-      }
-      
-      console.log(`🎨 ${subTag} → ${assignedColor.bg}`);
-    });
-    
-    // 상태 업데이트
-    if (setTags) {
-      setTags(updatedTags);
-    }
-    
-    // 서버 저장
-    if (currentUser) {
-      const userData = {
-        schedules: schedules || [],
-        tags: updatedTags,
-        tagItems: tagItems || [],
-        monthlyGoals: monthlyGoals || []
-      };
-      
-      try {
-        const result = await saveUserDataToDAL(currentUser, userData);
-        if (result.success) {
-          console.log('✅ 모든 하위 태그 색상 서버 저장 완료');
-        } else {
-          console.warn('⚠️ 서버 저장 실패:', result.error);
-        }
-      } catch (error) {
-        console.error('❌ 서버 저장 중 오류:', error);
-      }
-    }
-    
-    console.log(`🎨 총 ${tagsWithoutColors.length}개 하위 태그에 색상 할당 완료`);
-  }, [tags, setTags, tagItems, schedules, monthlyGoals, currentUser]);
-  
-  // 🚀 컴포넌트 마운트 시 자동으로 정의된 하위 태그들에 색상 할당
-  React.useEffect(() => {
-    // 데이터가 모두 로드되고 tagItems가 있을 때 실행
-    if (tagItems && tagItems.length > 0 && tags !== undefined) {
-      console.log('🔍 정의된 하위 태그 색상 자동 할당 체크 시작');
-      
-      // 색상이 없는 정의된 하위 태그가 있는지 확인
-      const definedSubTags = [...new Set(tagItems.map(item => item.tag || item.tagType))];
-      const tagsWithoutColors = definedSubTags.filter(subTag => {
-        const serverTag = tags?.find(t => t.tag === subTag || t.tagType === subTag);
-        return !serverTag || !serverTag.color;
-      });
-      
-      if (tagsWithoutColors.length > 0) {
-        console.log('🎯 색상이 없는 정의된 하위 태그들 발견:', tagsWithoutColors);
-        
-        // 약간의 지연 후 자동 할당 (UI 로딩 완료 후)
-        setTimeout(() => {
-          assignColorsToAllDefinedTags();
-        }, 1000);
-      } else {
-        console.log('✅ 모든 정의된 하위 태그에 색상이 이미 할당되어 있음');
-      }
-    }
-  }, [tagItems, tags, assignColorsToAllDefinedTags]);
-  
-  // 전역에서 접근 가능하도록 (개발/디버깅용)
-  if (typeof window !== 'undefined') {
-    window.assignColorsToAllDefinedTags = assignColorsToAllDefinedTags;
-  }
+  }, [tags, schedules, tagItems, monthlyGoals, currentUser]);
 
   // 퍼센테이지 계산 함수
   const calculatePercentage = useCallback((actual, goal) => {
     if (goal === 0) return 0;
     return Math.round((actual / goal) * 100);
   }, []);
+
+  // ✅ 특정 하위 태그의 목표 시간 찾기 (수정됨 - tag 필드로 검색)
+  const getGoalHoursForSubTag = useCallback((subTag) => {
+    const goal = currentMonthGoals.find(g => g.tag === subTag);
+    console.log(`🎯 ${subTag} 태그의 목표 찾기:`, {
+      subTag,
+      currentMonthGoals,
+      foundGoal: goal,
+      targetHours: goal?.targetHours
+    });
+    
+    if (goal && goal.targetHours) {
+      const [hours] = goal.targetHours.split(':').map(Number);
+      return hours * 60; // 분으로 변환
+    }
+    return 0;
+  }, [currentMonthGoals]);
 
   // 특정 날짜의 총 시간 계산
   const getDayTotalHours = useCallback((date) => {
@@ -521,48 +486,9 @@ const CalendarPage = ({
     if (isLoading || isSaving || !currentUser) return;
     
     console.log('🔄 수동 새로고침 시작');
-    setIsLoading(true);
-    
-    try {
-      const result = await loadUserDataFromDAL(currentUser);
-      
-      if (result.success && result.data) {
-        console.log('📥 서버에서 받은 데이터:', {
-          schedules: result.data.schedules?.length || 0,
-          tags: result.data.tags?.length || 0,
-          tagItems: result.data.tagItems?.length || 0,
-          monthlyGoals: result.data.monthlyGoals?.length || 0
-        });
-        
-        // 중복 제거 함수
-        const removeDuplicateSchedules = (scheduleList) => {
-          const seen = new Set();
-          return scheduleList.filter((s) => {
-            const key = `${s.date}-${s.start}-${s.end}-${s.tagType}-${s.title}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-        };
-        
-        // 중복 제거 후 저장
-        const cleanedSchedules = removeDuplicateSchedules(result.data.schedules || []);
-        if (setSchedules) setSchedules(cleanedSchedules);
-        if (setTags) setTags(result.data.tags || []);
-        if (setTagItems) setTagItems(result.data.tagItems || []);
-        if (setMonthlyGoals) setMonthlyGoals(result.data.monthlyGoals || []);
-        
-        console.log('✅ 수동 새로고침 완료');
-      } else {
-        console.warn('⚠️ 새로고침 데이터 없음');
-      }
-    } catch (error) {
-      console.error('❌ 수동 새로고침 실패:', error);
-      alert('새로고침 중 오류가 발생했습니다: ' + error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentUser, isLoading, isSaving, setSchedules, setTags, setTagItems, setMonthlyGoals]);
+    await loadUserDataFromServer();
+    console.log('✅ 수동 새로고침 완료');
+  }, [currentUser, isLoading, isSaving, loadUserDataFromServer]);
 
   const handleDataChanged = useCallback(async () => {
     console.log('🔄 서버 데이터 변경 후 새로고침');
@@ -628,14 +554,13 @@ const CalendarPage = ({
         {allSubTags.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {allSubTags.map((subTag) => {
-              const tagColor = getTagColor(subTag); // ✅ 통일된 함수 사용
+              const tagColor = getTagColor(subTag);
               const actualMinutes = monthlyTagTotals[subTag] || 0;
               const actualTime = minutesToTimeString(actualMinutes);
               
-              // 목표 시간 찾기 (원본 구조: goal.tagType으로 검색)
-              const goal = currentMonthGoals.find(g => g.tagType === subTag);
-              const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
-              const goalTime = goal ? goal.targetHours : "00:00";
+              // ✅ 목표 시간 찾기 (수정됨 - tag 필드로 검색)
+              const goalMinutes = getGoalHoursForSubTag(subTag);
+              const goalTime = goalMinutes > 0 ? minutesToTimeString(goalMinutes) : "00:00";
               
               // 퍼센테이지 계산
               const percentage = calculatePercentage(actualMinutes, goalMinutes);
@@ -647,6 +572,14 @@ const CalendarPage = ({
                 if (percent >= 50) return "text-yellow-600";
                 return "text-red-600";
               };
+              
+              console.log(`📊 ${subTag} 요약:`, {
+                actualMinutes,
+                goalMinutes,
+                actualTime,
+                goalTime,
+                percentage
+              });
               
               return (
                 <div
@@ -841,16 +774,16 @@ const CalendarPage = ({
           <span className="font-medium">💡 팁:</span> 날짜를 클릭하면 해당 날짜의 상세 일정을 확인할 수 있습니다.
         </p>
         
-      {lastSyncTime && (
-        <div className="mt-2 text-xs text-blue-600">
-          <span className="font-medium">🌐 서버 연동:</span> 
-          모든 데이터가 Supabase 서버에 저장됩니다. 
-          페이지를 새로고침하거나 다시 접속해도 데이터가 유지됩니다.
-          <span className="ml-2 text-gray-500">
-            (마지막 동기화: {format(lastSyncTime, 'yyyy-MM-dd HH:mm:ss')})
-          </span>
-        </div>
-      )}
+        {lastSyncTime && (
+          <div className="mt-2 text-xs text-blue-600">
+            <span className="font-medium">🌐 서버 연동:</span> 
+            모든 데이터가 Supabase 서버에 저장됩니다. 
+            페이지를 새로고침하거나 다시 접속해도 데이터가 유지됩니다.
+            <span className="ml-2 text-gray-500">
+              (마지막 동기화: {format(lastSyncTime, 'yyyy-MM-dd HH:mm:ss')})
+            </span>
+          </div>
+        )}
         
         <div className="mt-2 text-xs text-green-600">
           <span className="font-medium">🎨 하위 태그 관리:</span> 
@@ -867,28 +800,22 @@ const CalendarPage = ({
           </div>
         )}
         
-        {/* ✅ 디버깅 정보 출력 */}
-        {React.useEffect(() => {
-          console.log('🏷️ 하위 태그 정보 상태:', {
-            tags: tags?.length || 0,
-            tagItems: tagItems?.length || 0,
-            schedules: schedules?.length || 0,
-            monthlyGoals: monthlyGoals?.length || 0,
-            currentMonthGoals: currentMonthGoals?.length || 0,
-            allSubTags: allSubTags,
-            monthlyTagTotals: monthlyTagTotals,
-            tagsData: tags,
-            tagItemsData: tagItems,
-            schedulesData: schedules?.slice(0, 3), // 처음 3개만 확인
-            monthlyGoalsData: monthlyGoals
-          });
-        }, [tags, tagItems, schedules, monthlyGoals, currentMonthGoals, allSubTags, monthlyTagTotals])}
-        
         {/* 🔍 서버 연결 상태 디버깅 */}
         <div className="mt-2 text-xs text-blue-600">
           <span className="font-medium">📊 데이터 현황:</span> 
           일정 {schedules?.length || 0}개, 월간목표 {currentMonthGoals?.length || 0}개, 
           하위태그 {allSubTags?.length || 0}개 표시 중
+        </div>
+        
+        {/* ✅ 디버깅 정보 - 목표 연동 상태 */}
+        <div className="mt-2 text-xs text-purple-600">
+          <span className="font-medium">🎯 목표 연동 상태:</span> 
+          현재 월 목표 {currentMonthGoals.length}개 로드됨
+          {currentMonthGoals.length > 0 && (
+            <span className="ml-2">
+              ({currentMonthGoals.map(g => `${g.tag}:${g.targetHours}`).join(', ')})
+            </span>
+          )}
         </div>
       </div>
     </div>
