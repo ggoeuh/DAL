@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+// ✅ 하위태그별 목표 시간을 쉽게 찾는 함수 (수정됨)
+  const getTargetHoursForTag = useCallback((tag) => {
+    const goal = currentMonthGoals.find(g => g.tag === tag); // 하위태그로 검색
+    if (goal && goal.targetHours) {import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, addMonths, subMonths } from 'date-fns';
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
@@ -182,7 +185,7 @@ const MonthlyPlan = ({
     }
   }, [currentUser, saving, schedules, tags, tagItems, monthlyGoals, monthlyPlans]);
 
-  // ✅ 월간 목표 업데이트 및 저장 (중복 방지 + 완전 대체)
+  // ✅ 월간 목표 업데이트 및 저장 (상위태그를 tag_type에, 하위태그를 title에 저장)
   const updateAndSaveMonthlyGoals = useCallback(async (updatedPlans) => {
     if (!currentUser) return;
 
@@ -197,7 +200,10 @@ const MonthlyPlan = ({
     const goalsByTag = {};
     currentMonthFilteredPlans.forEach(plan => {
       const subTag = plan.tag; // 하위태그 (NGV, 포스코, 학위연구 등)
+      const parentTag = plan.tagType; // 상위태그 (프로젝트, LAB, 연구 등)
+      
       console.log('🏷️ 처리 중인 태그:', subTag, 'from plan:', plan);
+      console.log('🏷️ 상위태그:', parentTag);
       
       if (!subTag || subTag.trim() === '' || subTag === 'Unknown') {
         console.warn('⚠️ 잘못된 태그 무시:', plan);
@@ -205,9 +211,12 @@ const MonthlyPlan = ({
       }
       
       if (!goalsByTag[subTag]) {
-        goalsByTag[subTag] = 0;
+        goalsByTag[subTag] = {
+          totalHours: 0,
+          parentTag: parentTag // 상위태그 정보 보존
+        };
       }
-      goalsByTag[subTag] += plan.estimatedTime;
+      goalsByTag[subTag].totalHours += plan.estimatedTime;
     });
 
     console.log('📊 태그별 목표 시간:', goalsByTag);
@@ -221,9 +230,11 @@ const MonthlyPlan = ({
     }
 
     // ✅ 기존 목표를 완전히 대체 (중복 방지)
-    const newGoals = Object.entries(goalsByTag).map(([tag, totalHours]) => ({
-      tag, // 하위태그 (NGV, 포스코, 학위연구 등)
-      targetHours: `${totalHours.toString().padStart(2, '0')}:00`
+    const newGoals = Object.entries(goalsByTag).map(([subTag, data]) => ({
+      tag: subTag, // 하위태그 (NGV, 포스코, 학위연구 등) -> tag 컬럼
+      tagType: data.parentTag, // 상위태그 (프로젝트, LAB, 연구 등) -> tag_type 컬럼  
+      title: `${currentMonthKey} 월간목표`, // "2025-07 월간목표" -> title 컬럼
+      targetHours: `${data.totalHours.toString().padStart(2, '0')}:00`
     }));
 
     console.log('🎯 생성할 새 목표들:', newGoals);
@@ -232,10 +243,17 @@ const MonthlyPlan = ({
     currentMonthGoal.goals = newGoals;
     setMonthlyGoals(updatedGoals);
     
-    const saveResult = await saveUserDataToServer({
+    console.log('💾 저장 직전 전체 monthlyGoals:', updatedGoals);
+    console.log('💾 저장 직전 현재 월 목표:', currentMonthGoal);
+    
+    const dataToSave = {
       monthlyGoals: updatedGoals,
       monthlyPlans: updatedPlans
-    });
+    };
+    
+    console.log('💾 실제 저장할 데이터:', dataToSave);
+    
+    const saveResult = await saveUserDataToServer(dataToSave);
 
     return saveResult;
   }, [currentUser, currentMonthKey, safeMonthlyGoals, saveUserDataToServer]);
