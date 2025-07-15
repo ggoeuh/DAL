@@ -328,12 +328,38 @@ const CalendarPage = ({
     return totals;
   }, [currentMonthSchedules]);
 
-  // ✅ 하위 태그들 - useMemo로 최적화
+  // ✅ 상위 태그별 실제 시간 계산
+  const tagTypeTotals = useMemo(() => {
+    const totals = {};
+    
+    currentMonthSchedules.forEach(schedule => {
+      const tagType = schedule.tagType || "기타";
+      
+      if (!totals[tagType]) {
+        totals[tagType] = 0;
+      }
+      
+      const startMinutes = parseTimeToMinutes(schedule.start);
+      const endMinutes = parseTimeToMinutes(schedule.end);
+      const duration = endMinutes - startMinutes;
+      
+      totals[tagType] += duration;
+    });
+    
+    console.log('📊 상위 태그별 실제 시간:', totals);
+    return totals;
+  }, [currentMonthSchedules]);
+
+  // ✅ 하위 태그들 - useMemo로 최적화 (MONTHLY_PLAN 제외)
   const allSubTags = useMemo(() => {
     // ✅ 월간 목표에서 하위 태그들 추출 (수정됨 - tag 필드 사용)
     const goalSubTags = currentMonthGoals.map(goal => goal.tag);
-    // 현재 월 일정에서 사용된 하위 태그들 추출
-    const currentMonthUsedSubTags = [...new Set(currentMonthSchedules.map(schedule => schedule.tag || "기타"))];
+    // 현재 월 일정에서 사용된 하위 태그들 추출 (MONTHLY_PLAN 제외)
+    const currentMonthUsedSubTags = [...new Set(
+      currentMonthSchedules
+        .filter(schedule => schedule.title !== 'MONTHLY_PLAN') // MONTHLY_PLAN 제외
+        .map(schedule => schedule.tag || "기타")
+    )];
     const result = [...new Set([...goalSubTags, ...currentMonthUsedSubTags])];
     
     console.log('🏷️ 전체 하위 태그 목록:', {
@@ -342,6 +368,20 @@ const CalendarPage = ({
       result
     });
     
+    return result;
+  }, [currentMonthGoals, currentMonthSchedules]);
+
+  // ✅ 상위 태그들 추출
+  const allTagTypes = useMemo(() => {
+    const tagTypesFromGoals = currentMonthGoals.map(goal => goal.tagType || "기타");
+    const tagTypesFromSchedules = [...new Set(
+      currentMonthSchedules
+        .filter(schedule => schedule.title !== 'MONTHLY_PLAN') // MONTHLY_PLAN 제외
+        .map(schedule => schedule.tagType || "기타")
+    )];
+    const result = [...new Set([...tagTypesFromGoals, ...tagTypesFromSchedules])];
+    
+    console.log('🏷️ 전체 상위 태그 목록:', result);
     return result;
   }, [currentMonthGoals, currentMonthSchedules]);
 
@@ -548,68 +588,91 @@ const CalendarPage = ({
         </button>
       </div>
       
-      {/* 월별 하위 태그 요약 */}
+      {/* 월별 활동 요약 */}
       <div className="mb-8">
         <h2 className="text-xl font-semibold mb-4 text-gray-700">이번 달 활동 요약</h2>
-        {allSubTags.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {allSubTags.map((subTag) => {
-              const tagColor = getTagColor(subTag);
-              const actualMinutes = monthlyTagTotals[subTag] || 0;
-              const actualTime = minutesToTimeString(actualMinutes);
-              
-              // ✅ 목표 시간 찾기 (수정됨 - tag 필드로 검색)
-              const goalMinutes = getGoalHoursForSubTag(subTag);
-              const goalTime = goalMinutes > 0 ? minutesToTimeString(goalMinutes) : "00:00";
-              
-              // 퍼센테이지 계산
-              const percentage = calculatePercentage(actualMinutes, goalMinutes);
-              
-              // 진행률에 따른 색상 결정
-              const getProgressColor = (percent) => {
-                if (percent >= 100) return "text-green-600";
-                if (percent >= 75) return "text-blue-600";
-                if (percent >= 50) return "text-yellow-600";
-                return "text-red-600";
-              };
-              
-              console.log(`📊 ${subTag} 요약:`, {
-                actualMinutes,
-                goalMinutes,
-                actualTime,
-                goalTime,
-                percentage
-              });
-              
-              return (
-                <div
-                  key={subTag}
-                  className={`p-4 w-60 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow flex-shrink-0`}
-                >
-                  <div className="mb-2">
-                    <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
+        
+        {/* 상위 태그 요약 (작은 카드들) */}
+        {allTagTypes.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-md font-medium mb-3 text-gray-600">카테고리별 총 시간</h3>
+            <div className="flex flex-wrap gap-3">
+              {allTagTypes.map((tagType) => {
+                const tagColor = getTagColor(tagType);
+                const actualMinutes = tagTypeTotals[tagType] || 0;
+                const actualHours = Math.floor(actualMinutes / 60);
+                
+                return (
+                  <div
+                    key={tagType}
+                    className={`px-4 py-2 rounded-lg border ${tagColor.bg} ${tagColor.border} shadow-sm`}
+                  >
+                    <div className={`text-sm font-medium ${tagColor.text}`}>
+                      {tagType}: {actualHours}시간
+                    </div>
                   </div>
-                  
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">실제:</span>
-                      <span className={`font-semibold ${tagColor.text}`}>{actualTime}</span>
-                    </div>
-                    
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">목표:</span>
-                      <span className={`font-semibold ${tagColor.text}`}>{goalTime}</span>
-                    </div>
-                    
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">달성률:</span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 하위 태그 상세 (큰 카드들, 4개씩 한 행) */}
+        {allSubTags.length > 0 ? (
+          <div>
+            <h3 className="text-md font-medium mb-3 text-gray-600">세부 활동별 진행률</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {allSubTags.map((subTag) => {
+                const tagColor = getTagColor(subTag);
+                const actualMinutes = monthlyTagTotals[subTag] || 0;
+                const actualTime = minutesToTimeString(actualMinutes);
+                
+                // ✅ 목표 시간 찾기 (수정됨 - tag 필드로 검색)
+                const goalMinutes = getGoalHoursForSubTag(subTag);
+                const goalTime = goalMinutes > 0 ? minutesToTimeString(goalMinutes) : "00:00";
+                
+                // ✅ 목표가 없으면 100% 처리
+                const percentage = goalMinutes === 0 ? 100 : calculatePercentage(actualMinutes, goalMinutes);
+                
+                // 진행률에 따른 색상 결정
+                const getProgressColor = (percent) => {
+                  if (percent >= 100) return "text-green-600";
+                  if (percent >= 75) return "text-blue-600";
+                  if (percent >= 50) return "text-yellow-600";
+                  return "text-red-600";
+                };
+                
+                console.log(`📊 ${subTag} 요약:`, {
+                  actualMinutes,
+                  goalMinutes,
+                  actualTime,
+                  goalTime,
+                  percentage
+                });
+                
+                return (
+                  <div
+                    key={subTag}
+                    className={`p-4 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow`}
+                  >
+                    {/* 첫 번째 줄: 태그명과 진행률 */}
+                    <div className="flex justify-between items-center mb-3">
+                      <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
                       <span className={`font-bold text-lg ${getProgressColor(percentage)}`}>
                         {percentage}%
                       </span>
                     </div>
                     
+                    {/* 두 번째 줄: 실제시간/목표시간 */}
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600 text-sm">시간:</span>
+                      <span className={`font-semibold text-sm ${tagColor.text}`}>
+                        {actualTime} / {goalTime}
+                      </span>
+                    </div>
+                    
                     {/* 진행률 바 */}
-                    <div className="w-full bg-white rounded-full h-2 mt-2">
+                    <div className="w-full bg-white rounded-full h-2 mt-3">
                       <div 
                         className={`h-2 rounded-full transition-all duration-300 ${
                           percentage >= 100 ? 'bg-green-500' :
@@ -620,9 +683,9 @@ const CalendarPage = ({
                       ></div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         ) : (
           <div className="text-center py-8 text-gray-500">
@@ -687,7 +750,9 @@ const CalendarPage = ({
             const isToday = formatDate(day) === formatDate(today);
             const isWeekend = index % 7 === 0 || index % 7 === 6;
             const dateStr = formatDate(day);
-            const daySchedules = schedules.filter(schedule => schedule.date === dateStr);
+            const daySchedules = schedules.filter(schedule => 
+      schedule.date === dateStr && schedule.title !== 'MONTHLY_PLAN' // MONTHLY_PLAN 제외
+    );
             const dayTotalHours = getDayTotalHours(day);
         
             return (
@@ -720,6 +785,7 @@ const CalendarPage = ({
                 {/* 일정 목록 */}
                 <div className="space-y-1">
                   {[...daySchedules]
+                    .filter(schedule => schedule.title !== 'MONTHLY_PLAN') // MONTHLY_PLAN 제외
                     .sort((a, b) => {
                       const [aH, aM] = a.start.split(':').map(Number);
                       const [bH, bM] = b.start.split(':').map(Number);
