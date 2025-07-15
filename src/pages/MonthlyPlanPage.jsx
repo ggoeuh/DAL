@@ -1,7 +1,12 @@
 // ✅ 하위태그별 목표 시간을 쉽게 찾는 함수 (수정됨)
   const getTargetHoursForTag = useCallback((tag) => {
     const goal = currentMonthGoals.find(g => g.tag === tag); // 하위태그로 검색
-    if (goal && goal.targetHours) {import React, { useState, useEffect, useMemo, useCallback } from 'react';
+    if (goal && goal.targetHours) {
+      const [hours] = goal.targetHours.split(':').map(Number);
+      return hours;
+    }
+    return 0;
+  }, [currentMonthGoals]);import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, addMonths, subMonths } from 'date-fns';
 import { saveUserDataToDAL, loadUserDataFromDAL, supabase } from './utils/supabaseStorage.js';
