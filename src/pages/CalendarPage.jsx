@@ -255,8 +255,8 @@ const CalendarPage = ({
     const totals = {};
     
     currentMonthSchedules.forEach(schedule => {
-      // tag 속성을 우선 사용 (하위 태그), 없으면 tagType 사용
-      const subTag = schedule.tag || schedule.tagType || "기타";
+      // 원본 구조: schedule.tag가 하위 태그 (실제 활동명)
+      const subTag = schedule.tag || "기타";
       
       if (!totals[subTag]) {
         totals[subTag] = 0;
@@ -274,10 +274,10 @@ const CalendarPage = ({
 
   // ✅ 하위 태그들 - useMemo로 최적화
   const allSubTags = useMemo(() => {
-    // 월간 목표에서 하위 태그들 추출
-    const goalSubTags = currentMonthGoals.map(goal => goal.tag || goal.tagType);
-    // 현재 월 일정에서 사용된 하위 태그들 추출 (tag 우선, tagType 대체)
-    const currentMonthUsedSubTags = [...new Set(currentMonthSchedules.map(schedule => schedule.tag || schedule.tagType || "기타"))];
+    // 월간 목표에서 하위 태그들 추출 (원본 구조에 맞게)
+    const goalSubTags = currentMonthGoals.map(goal => goal.tagType); // 원본은 tagType 사용
+    // 현재 월 일정에서 사용된 하위 태그들 추출
+    const currentMonthUsedSubTags = [...new Set(currentMonthSchedules.map(schedule => schedule.tag || "기타"))];
     return [...new Set([...goalSubTags, ...currentMonthUsedSubTags])];
   }, [currentMonthGoals, currentMonthSchedules]);
 
@@ -632,8 +632,8 @@ const CalendarPage = ({
               const actualMinutes = monthlyTagTotals[subTag] || 0;
               const actualTime = minutesToTimeString(actualMinutes);
               
-              // 목표 시간 찾기 (tag 또는 tagType으로 검색)
-              const goal = currentMonthGoals.find(g => g.tag === subTag || g.tagType === subTag);
+              // 목표 시간 찾기 (원본 구조: goal.tagType으로 검색)
+              const goal = currentMonthGoals.find(g => g.tagType === subTag);
               const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
               const goalTime = goal ? goal.targetHours : "00:00";
               
@@ -807,7 +807,7 @@ const CalendarPage = ({
                             e.stopPropagation();
                             navigate(`/day/${formatDate(day)}`);
                           }}
-                          title={`${schedule.start} - ${schedule.end}\n${schedule.tag || schedule.tagType} - ${schedule.title}\n${schedule.description || ''}`}
+                          title={`${schedule.start} - ${schedule.end}\n${schedule.tag} - ${schedule.title}\n${schedule.description || ''}`}
                         >
                           <div className="space-y-1">
                             <div className={`font-bold ${tagColor.text} text-left`}>
@@ -816,7 +816,7 @@ const CalendarPage = ({
                             <div className="flex items-center gap-1">
                               <div className={`w-2 h-2 rounded-full ${tagColor.bg.replace('100', '500')} flex-shrink-0`}></div>
                               <div className={`font-medium ${tagColor.text} truncate flex-1`}>
-                                {schedule.tag || schedule.tagType} | {schedule.title}
+                                {schedule.tag} | {schedule.title}
                               </div>
                             </div>
                             {schedule.description && (
