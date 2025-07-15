@@ -53,6 +53,8 @@ export const saveUserDataToDAL = async (nickname, userData) => {
   try {
     console.log('🎯 사용자 데이터를 DAL에 저장 시작:', nickname);
     console.log('🔍 저장할 데이터:', userData);
+    console.log('🔍 monthlyPlans 개수:', userData.monthlyPlans?.length || 0);
+    console.log('🔍 monthlyPlans 내용:', userData.monthlyPlans);
     
     const activities = [];
     
@@ -72,20 +74,25 @@ export const saveUserDataToDAL = async (nickname, userData) => {
       });
     }
     
-    // 🆕 월간 계획 데이터를 DAL에 저장
+    // 🆕 월간 계획 데이터를 DAL에 저장 (수정됨)
     if (userData.monthlyPlans && userData.monthlyPlans.length > 0) {
-      userData.monthlyPlans.forEach(plan => {
+      console.log('💾 월간 계획 저장 시작:', userData.monthlyPlans.length, '개');
+      userData.monthlyPlans.forEach((plan, index) => {
+        console.log(`💾 월간 계획 ${index + 1}:`, plan);
         activities.push({
           user_name: nickname,
-          tag: 'MONTHLY_PLAN',
+          tag: plan.tag || 'Unknown', // ✅ 하위태그를 tag에 저장
           tag_type: plan.tagType || 'Unknown',
-          title: plan.tag || plan.name || 'Unknown Plan',
-          description: plan.description || '',
+          title: 'MONTHLY_PLAN', // 월간 계획임을 명시
+          description: plan.description || plan.name || '',
           start_time: '00:00',
           end_time: `${(plan.estimatedTime || 0).toString().padStart(2, '0')}:00`,
-          date: new Date().toISOString().split('T')[0]
+          date: plan.month ? `${plan.month}-01` : new Date().toISOString().split('T')[0]
         });
       });
+      console.log('💾 월간 계획 activities 추가 완료:', activities.filter(a => a.title === 'MONTHLY_PLAN').length, '개');
+    } else {
+      console.log('💾 저장할 월간 계획이 없습니다');
     }
     
     // 태그 데이터를 DAL에 저장
@@ -120,16 +127,16 @@ export const saveUserDataToDAL = async (nickname, userData) => {
       });
     }
     
-    // 월간 목표 데이터 변환
+    // 🆕 월간 목표 데이터 변환 (수정됨)
     if (userData.monthlyGoals && userData.monthlyGoals.length > 0) {
       userData.monthlyGoals.forEach(monthGoal => {
         if (monthGoal.goals && monthGoal.goals.length > 0) {
           monthGoal.goals.forEach(goal => {
             activities.push({
               user_name: nickname,
-              tag: 'MONTHLY_GOAL',
+              tag: goal.tag || 'Unknown', // ✅ 하위태그를 tag에 저장
               tag_type: goal.tagType || 'Unknown',
-              title: `${monthGoal.month} 월간목표`,
+              title: goal.title || `${monthGoal.month} 월간목표`,
               description: `목표 시간: ${goal.targetHours}`,
               start_time: '00:00',
               end_time: goal.targetHours || '00:00',
@@ -141,6 +148,9 @@ export const saveUserDataToDAL = async (nickname, userData) => {
     }
     
     if (activities.length > 0) {
+      console.log('💾 저장할 전체 activities:', activities.length, '개');
+      console.log('💾 MONTHLY_PLAN activities:', activities.filter(a => a.title === 'MONTHLY_PLAN').length, '개');
+      
       // 기존 데이터 삭제 (안전한 방식)
       const { error: deleteError } = await supabase
         .from('DAL')
@@ -159,10 +169,12 @@ export const saveUserDataToDAL = async (nickname, userData) => {
         .select();
 
       if (error) {
+        console.error('❌ 데이터 삽입 오류:', error);
         throw error;
       }
       
       console.log('✅ 사용자 데이터 DAL 저장 성공:', activities.length, '개 활동');
+      console.log('✅ 저장된 데이터:', data);
       return { success: true, data };
     } else {
       console.log('ℹ️ 저장할 데이터가 없습니다');
@@ -175,7 +187,7 @@ export const saveUserDataToDAL = async (nickname, userData) => {
   }
 };
 
-// ✨ 월간 계획 지원을 포함한 loadUserDataFromDAL
+// ✨ 월간 계획 지원을 포함한 loadUserDataFromDAL (수정됨)
 export const loadUserDataFromDAL = async (nickname) => {
   if (!supabase) {
     console.warn('⚠️ Supabase가 초기화되지 않았습니다');
@@ -211,42 +223,7 @@ export const loadUserDataFromDAL = async (nickname) => {
     
     if (data && data.length > 0) {
       data.forEach(activity => {
-        if (activity.tag === 'MONTHLY_GOAL') {
-          // 월간 목표 파싱
-          try {
-            const dateStr = activity.date;
-            const month = dateStr ? dateStr.substring(0, 7) : new Date().toISOString().slice(0, 7);
-            
-            let monthGoal = monthlyGoals.find(mg => mg.month === month);
-            if (!monthGoal) {
-              monthGoal = { month, goals: [] };
-              monthlyGoals.push(monthGoal);
-            }
-            
-            monthGoal.goals.push({
-              tagType: activity.tag_type || 'Unknown',
-              targetHours: activity.end_time || '00:00'
-            });
-          } catch (parseError) {
-            console.warn('월간 목표 파싱 실패:', parseError);
-          }
-        } else if (activity.tag === 'MONTHLY_PLAN') {
-          // 🆕 월간 계획 파싱
-          try {
-            const estimatedTime = activity.end_time ? parseInt(activity.end_time.split(':')[0]) : 0;
-            
-            monthlyPlans.push({
-              id: activity.id,
-              tagType: activity.tag_type || 'Unknown',
-              tag: activity.title || 'Unknown Plan',
-              name: activity.title || 'Unknown Plan',
-              description: activity.description || '',
-              estimatedTime: estimatedTime
-            });
-          } catch (parseError) {
-            console.warn('월간 계획 파싱 실패:', parseError);
-          }
-        } else if (activity.tag === 'TAG_DEFINITION') {
+        if (activity.tag === 'TAG_DEFINITION') {
           // 저장된 태그 정의 복원
           try {
             const tagType = activity.tag_type || 'Unknown';
@@ -278,6 +255,46 @@ export const loadUserDataFromDAL = async (nickname) => {
             }
           } catch (parseError) {
             console.warn('태그 아이템 파싱 실패:', parseError);
+          }
+        } else if (activity.description && activity.description.includes('목표 시간:')) {
+          // 🆕 월간 목표 파싱 (수정됨)
+          try {
+            const dateStr = activity.date;
+            const month = dateStr ? dateStr.substring(0, 7) : new Date().toISOString().slice(0, 7);
+            
+            let monthGoal = monthlyGoals.find(mg => mg.month === month);
+            if (!monthGoal) {
+              monthGoal = { month, goals: [] };
+              monthlyGoals.push(monthGoal);
+            }
+            
+            monthGoal.goals.push({
+              tag: activity.tag || 'Unknown', // ✅ 하위태그
+              tagType: activity.tag_type || 'Unknown',
+              title: activity.title || 'Monthly Goal',
+              targetHours: activity.end_time || '00:00'
+            });
+          } catch (parseError) {
+            console.warn('월간 목표 파싱 실패:', parseError);
+          }
+        } else if (activity.title === 'MONTHLY_PLAN') {
+          // 🆕 월간 계획 파싱 (수정됨)
+          try {
+            const estimatedTime = activity.end_time ? parseInt(activity.end_time.split(':')[0]) : 0;
+            const dateStr = activity.date;
+            const month = dateStr ? dateStr.substring(0, 7) : new Date().toISOString().slice(0, 7);
+            
+            monthlyPlans.push({
+              id: activity.id,
+              tagType: activity.tag_type || 'Unknown',
+              tag: activity.tag || 'Unknown Plan', // ✅ 하위태그
+              name: activity.description || 'Unknown Plan',
+              description: activity.description || '',
+              estimatedTime: estimatedTime,
+              month: month
+            });
+          } catch (parseError) {
+            console.warn('월간 계획 파싱 실패:', parseError);
           }
         } else {
           // 일반 일정 파싱
@@ -426,7 +443,8 @@ if (typeof window !== 'undefined') {
             tag: '웹 구축',
             name: '웹 구축',
             description: '프론트엔드 개발, 백엔드 API, 데이터베이스 설계',
-            estimatedTime: 10
+            estimatedTime: 10,
+            month: new Date().toISOString().slice(0, 7)
           },
           {
             id: Date.now() + 101,
@@ -434,7 +452,8 @@ if (typeof window !== 'undefined') {
             tag: '논문 작성',
             name: '논문 작성',
             description: '데이터 분석, 결과 정리, 초안 작성',
-            estimatedTime: 8
+            estimatedTime: 8,
+            month: new Date().toISOString().slice(0, 7)
           }
         ],
         tags: [
@@ -455,10 +474,10 @@ if (typeof window !== 'undefined') {
           {
             month: new Date().toISOString().slice(0, 7),
             goals: [
-              { tagType: 'LAB', targetHours: '100:00' },
-              { tagType: '연구', targetHours: '20:00' },
-              { tagType: '학습', targetHours: '15:00' },
-              { tagType: '운동', targetHours: '10:00' }
+              { tag: '웹 구축', tagType: 'LAB', targetHours: '100:00' },
+              { tag: '논문 작성', tagType: '연구', targetHours: '20:00' },
+              { tag: '영어공부', tagType: '학습', targetHours: '15:00' },
+              { tag: '헬스', tagType: '운동', targetHours: '10:00' }
             ]
           }
         ]
@@ -530,9 +549,9 @@ if (typeof window !== 'undefined') {
         
         const summary = {
           총_레코드: data?.length || 0,
-          일정: data?.filter(d => !['MONTHLY_GOAL', 'MONTHLY_PLAN', 'TAG_DEFINITION', 'TAG_ITEM'].includes(d.tag)).length || 0,
-          월간계획: data?.filter(d => d.tag === 'MONTHLY_PLAN').length || 0,
-          월간목표: data?.filter(d => d.tag === 'MONTHLY_GOAL').length || 0,
+          일정: data?.filter(d => !['TAG_DEFINITION', 'TAG_ITEM'].includes(d.tag) && d.title !== 'MONTHLY_PLAN' && (!d.description || !d.description.includes('목표 시간:'))).length || 0,
+          월간계획: data?.filter(d => d.title === 'MONTHLY_PLAN').length || 0,
+          월간목표: data?.filter(d => d.description && d.description.includes('목표 시간:')).length || 0,
           태그정의: data?.filter(d => d.tag === 'TAG_DEFINITION').length || 0,
           태그아이템: data?.filter(d => d.tag === 'TAG_ITEM').length || 0
         };
