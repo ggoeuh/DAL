@@ -243,10 +243,9 @@ const MonthlyPlan = ({
     console.log('💾 저장 직전 전체 monthlyGoals:', updatedGoals);
     console.log('💾 저장 직전 현재 월 목표:', currentMonthGoal);
     
-    // ✅ 월간 계획도 함께 저장하도록 수정
     const dataToSave = {
       monthlyGoals: updatedGoals,
-      monthlyPlans: updatedPlans // 전체 월간 계획 포함
+      monthlyPlans: updatedPlans
     };
     
     console.log('💾 실제 저장할 데이터:', dataToSave);
@@ -657,7 +656,7 @@ const MonthlyPlan = ({
               </div>
             </div>
 
-            {/* 서버 기반 안내 메시지 + 디버깅 정보 */}
+            {/* 서버 기반 안내 메시지 */}
             <div className="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
               <p className="text-green-800 text-sm">
                 <span className="font-medium">🎯 스마트 연동:</span> UI는 상위태그별로 보기 좋게 그룹화하되, 
@@ -669,10 +668,6 @@ const MonthlyPlan = ({
                   {currentMonthGoals.map(goal => `${goal.tag}(${goal.targetHours})`).join(', ')}
                 </div>
               )}
-              {/* 디버깅 정보 */}
-              <div className="mt-2 text-blue-600 text-xs">
-                <span>📊 전체 월간목표: {safeMonthlyGoals.length}개 | 현재월: {currentMonthGoals.length}개 | 현재월 계획: {currentMonthPlans.length}개</span>
-              </div>
             </div>
 
             {/* 상위태그별 그룹화된 목표들 (UI는 기존 방식 유지) */}
