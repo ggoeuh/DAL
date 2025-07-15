@@ -1,659 +1,571 @@
-// utils/unifiedStorage.js - 통합된 스토리지 시스템 (서버 연동 포함)
+// utils/supabaseStorage.js - 월간 계획 지원 버전
 
-const SERVER_URL = 'https://mellow-cobbler-97a3f1.netlify.app/.netlify/functions/save_data';
+import { createClient } from '@supabase/supabase-js'
 
-// =========================
-// 🌐 서버 연동 함수들 (최우선)
-// =========================
+// 환경변수 처리
+let supabaseUrl = '';
+let supabaseKey = '';
 
-// 서버에서 데이터 불러오기
-export const loadFromServer = async (nickname) => {
-  if (!nickname) {
-    console.error('❌ 서버 불러오기 실패: 사용자명이 없습니다');
-    return null;
+if (typeof import.meta !== 'undefined' && import.meta.env) {
+  supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+} else if (typeof process !== 'undefined' && process.env) {
+  supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+  supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+}
+
+let supabaseClient = null;
+
+try {
+  if (supabaseUrl && supabaseKey) {
+    supabaseClient = createClient(supabaseUrl, supabaseKey);
+    console.log('🌐 Supabase 초기화 성공');
+  } else {
+    console.warn('⚠️ Supabase 환경변수가 설정되지 않았습니다');
+  }
+} catch (error) {
+  console.error('❌ Supabase 초기화 실패:', error);
+}
+
+export const supabase = supabaseClient;
+
+// 파스텔 색상 팔레트 (태그 자동 색상 할당용)
+const PASTEL_COLORS = [
+  { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-200" },
+  { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-200" },
+  { bg: "bg-green-100", text: "text-green-800", border: "border-green-200" },
+  { bg: "bg-yellow-100", text: "text-yellow-800", border: "border-yellow-200" },
+  { bg: "bg-red-100", text: "text-red-800", border: "border-red-200" },
+  { bg: "bg-pink-100", text: "text-pink-800", border: "border-pink-200" },
+  { bg: "bg-indigo-100", text: "text-indigo-800", border: "border-indigo-200" },
+  { bg: "bg-cyan-100", text: "text-cyan-800", border: "border-cyan-200" },
+  { bg: "bg-teal-100", text: "text-teal-800", border: "border-teal-200" },
+  { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" },
+];
+
+// ✨ 월간 계획 지원을 포함한 saveUserDataToDAL
+export const saveUserDataToDAL = async (nickname, userData) => {
+  if (!supabase) {
+    console.warn('⚠️ Supabase가 초기화되지 않았습니다');
+    return { success: false, error: 'Supabase 초기화 실패' };
   }
 
   try {
-    console.log('🌐 서버에서 데이터 불러오기 시작:', nickname);
+    console.log('🎯 사용자 데이터를 DAL에 저장 시작:', nickname);
+    console.log('🔍 저장할 데이터:', userData);
     
-    const response = await fetch(`${SERVER_URL}?user_id=${encodeURIComponent(nickname)}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      mode: 'cors'
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+    const activities = [];
     
-    const data = await response.json();
-    console.log('✅ 서버에서 데이터 불러오기 성공:', nickname, data);
-    
-    // 데이터 구조 검증 및 기본값 보장
-    const validatedData = {
-      schedules: Array.isArray(data?.schedules) ? data.schedules : [],
-      tags: Array.isArray(data?.tags) ? data.tags : [],
-      tagItems: Array.isArray(data?.tagItems) ? data.tagItems : [],
-      monthlyPlans: Array.isArray(data?.monthlyPlans) ? data.monthlyPlans : [],
-      monthlyGoals: Array.isArray(data?.monthlyGoals) ? data.monthlyGoals : [],
-      lastUpdated: data?.lastUpdated || new Date().toISOString()
-    };
-    
-    return validatedData;
-    
-  } catch (error) {
-    console.error('❌ 서버에서 데이터 불러오기 실패:', error);
-    return null;
-  }
-};
-
-// 서버에 데이터 저장
-export const saveToServer = async (nickname, data) => {
-  if (!nickname) {
-    console.error('❌ 서버 저장 실패: 사용자명이 없습니다');
-    return false;
-  }
-
-  try {
-    console.log('🌐 서버에 데이터 저장 시작:', nickname);
-    
-    const dataToSave = {
-      schedules: data?.schedules || [],
-      tags: data?.tags || [],
-      tagItems: data?.tagItems || [],
-      monthlyPlans: data?.monthlyPlans || [],
-      monthlyGoals: data?.monthlyGoals || [],
-      lastUpdated: new Date().toISOString()
-    };
-    
-    const response = await fetch(`${SERVER_URL}?user_id=${encodeURIComponent(nickname)}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      mode: 'cors',
-      body: JSON.stringify(dataToSave)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(`HTTP ${response.status}: ${errorData.error || response.statusText}`);
-    }
-    
-    const result = await response.json();
-    console.log('✅ 서버에 데이터 저장 성공:', nickname, result);
-    
-    return true;
-    
-  } catch (error) {
-    console.error('❌ 서버에 데이터 저장 실패:', error);
-    return false;
-  }
-};
-
-// =========================
-// 💾 로컬 스토리지 함수들
-// =========================
-
-const saveToStorage = (key, data) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-    console.log(`💾 로컬 저장 완료: ${key}`);
-  } catch (error) {
-    console.error(`❌ 로컬 저장 실패: ${key}`, error);
-  }
-};
-
-const loadFromStorage = (key, defaultValue = []) => {
-  try {
-    const data = localStorage.getItem(key);
-    if (!data) {
-      return defaultValue;
-    }
-    
-    const result = JSON.parse(data);
-    return result;
-  } catch (error) {
-    console.error(`❌ 로컬 불러오기 실패: ${key}`, error);
-    
-    // 손상된 데이터 삭제
-    try {
-      localStorage.removeItem(key);
-      console.log(`🗑️ 손상된 데이터 삭제: ${key}`);
-    } catch (e) {
-      console.error('손상된 데이터 삭제 실패:', e);
-    }
-    
-    return defaultValue;
-  }
-};
-
-// 사용자별 키 생성
-const getUserKey = (nickname, type) => {
-  if (!nickname) return null;
-  return `${nickname}-${type}`;
-};
-
-// =========================
-// ✅ 통합 데이터 관리 함수들
-// =========================
-
-// 사용자의 모든 데이터 불러오기 (서버 우선, 로컬 백업)
-export const loadAllUserData = async (nickname) => {
-  if (!nickname) return null;
-  
-  console.log('📦 전체 사용자 데이터 불러오기 시작:', nickname);
-  
-  try {
-    // 1. 서버에서 데이터 시도
-    const serverData = await loadFromServer(nickname);
-    
-    if (serverData) {
-      console.log('✅ 서버 데이터 사용:', nickname);
-      
-      // 서버 데이터를 로컬에도 백업
-      saveToLocalStorage(nickname, serverData);
-      
-      return serverData;
-    } else {
-      console.log('⚠️ 서버 데이터 없음, 로컬 데이터 확인:', nickname);
-    }
-  } catch (error) {
-    console.error('❌ 서버 데이터 로드 실패:', error);
-  }
-  
-  // 2. 서버 실패 시 로컬 데이터 사용
-  try {
-    const localData = {
-      schedules: loadSchedulesFromStorage(nickname),
-      tags: loadTagsFromStorage(nickname),
-      tagItems: loadTagItemsFromStorage(nickname),
-      monthlyPlans: loadMonthlyPlansFromStorage(nickname),
-      monthlyGoals: loadMonthlyGoalsFromStorage(nickname)
-    };
-    
-    console.log('📦 로컬 데이터 사용:', nickname, localData);
-    return localData;
-  } catch (error) {
-    console.error('❌ 로컬 데이터 로드도 실패:', error);
-  }
-  
-  // 3. 모든 것 실패 시 기본 데이터
-  console.log('📦 기본 데이터 사용:', nickname);
-  return {
-    schedules: [],
-    tags: [],
-    tagItems: [],
-    monthlyPlans: [],
-    monthlyGoals: []
-  };
-};
-
-// 사용자의 핵심 데이터 저장하기 (서버 + 로컬)
-export const saveUserCoreData = async (nickname, { schedules, tags, tagItems, monthlyPlans, monthlyGoals }) => {
-  if (!nickname) return false;
-  
-  console.log('📦 핵심 사용자 데이터 저장 시작:', nickname);
-  
-  const dataToSave = {
-    schedules: schedules || [],
-    tags: tags || [],
-    tagItems: tagItems || [],
-    monthlyPlans: monthlyPlans || [],
-    monthlyGoals: monthlyGoals || []
-  };
-  
-  // 1. 로컬에 즉시 저장 (빠른 응답)
-  try {
-    saveSchedulesToStorage(nickname, dataToSave.schedules);
-    saveTagsToStorage(nickname, dataToSave.tags);
-    saveTagItemsToStorage(nickname, dataToSave.tagItems);
-    saveMonthlyPlansToStorage(nickname, dataToSave.monthlyPlans);
-    saveMonthlyGoalsToStorage(nickname, dataToSave.monthlyGoals);
-    console.log('✅ 로컬 저장 완료');
-  } catch (error) {
-    console.error('❌ 로컬 저장 실패:', error);
-  }
-  
-  // 2. 서버에 백그라운드 저장
-  try {
-    const serverSuccess = await saveToServer(nickname, dataToSave);
-    if (serverSuccess) {
-      console.log('✅ 서버 저장 완료');
-    } else {
-      console.log('⚠️ 서버 저장 실패, 로컬에만 저장됨');
-    }
-    return serverSuccess;
-  } catch (error) {
-    console.error('❌ 서버 저장 실패:', error);
-    return false;
-  }
-};
-
-// =========================
-// ✅ 개별 데이터 타입별 함수들
-// =========================
-
-export const saveSchedulesToStorage = (nickname, schedules) => {
-  const key = getUserKey(nickname, 'schedules');
-  if (key) saveToStorage(key, schedules || []);
-};
-
-export const loadSchedulesFromStorage = (nickname) => {
-  const key = getUserKey(nickname, 'schedules');
-  return key ? loadFromStorage(key, []) : [];
-};
-
-export const saveTagsToStorage = (nickname, tags) => {
-  const key = getUserKey(nickname, 'tags');
-  if (key) saveToStorage(key, tags || []);
-};
-
-export const loadTagsFromStorage = (nickname) => {
-  const key = getUserKey(nickname, 'tags');
-  return key ? loadFromStorage(key, []) : [];
-};
-
-export const saveTagItemsToStorage = (nickname, tagItems) => {
-  const key = getUserKey(nickname, 'tagItems');
-  if (key) saveToStorage(key, tagItems || []);
-};
-
-export const loadTagItemsFromStorage = (nickname) => {
-  const key = getUserKey(nickname, 'tagItems');
-  return key ? loadFromStorage(key, []) : [];
-};
-
-export const saveMonthlyPlansToStorage = (nickname, plans) => {
-  const key = getUserKey(nickname, 'monthlyPlans');
-  if (key) saveToStorage(key, plans || []);
-};
-
-export const loadMonthlyPlansFromStorage = (nickname) => {
-  const key = getUserKey(nickname, 'monthlyPlans');
-  return key ? loadFromStorage(key, []) : [];
-};
-
-export const saveMonthlyGoalsToStorage = (nickname, goals) => {
-  const key = getUserKey(nickname, 'monthlyGoals');
-  if (key) saveToStorage(key, goals || []);
-};
-
-export const loadMonthlyGoalsFromStorage = (nickname) => {
-  const key = getUserKey(nickname, 'monthlyGoals');
-  return key ? loadFromStorage(key, []) : [];
-};
-
-// =========================
-// 🔄 서버 백업/복원 함수들
-// =========================
-
-// 현재 로컬 데이터를 서버에 백업
-export const backupToServer = async (nickname) => {
-  if (!nickname) return false;
-
-  try {
-    console.log('📤 서버 백업 시작:', nickname);
-    
-    const localData = {
-      schedules: loadSchedulesFromStorage(nickname),
-      tags: loadTagsFromStorage(nickname),
-      tagItems: loadTagItemsFromStorage(nickname),
-      monthlyPlans: loadMonthlyPlansFromStorage(nickname),
-      monthlyGoals: loadMonthlyGoalsFromStorage(nickname)
-    };
-    
-    const success = await saveToServer(nickname, localData);
-    
-    if (success) {
-      console.log('✅ 서버 백업 완료:', nickname);
-      return true;
-    } else {
-      throw new Error('서버 저장 실패');
-    }
-  } catch (error) {
-    console.error('❌ 서버 백업 실패:', error);
-    return false;
-  }
-};
-
-// 서버에서 데이터를 복원하여 로컬에 덮어쓰기
-export const restoreFromServer = async (nickname) => {
-  if (!nickname) return false;
-
-  try {
-    console.log('📥 서버 복원 시작:', nickname);
-    
-    const serverData = await loadFromServer(nickname);
-    
-    if (!serverData) {
-      console.log('📭 서버에 백업된 데이터가 없습니다:', nickname);
-      return false;
-    }
-
-    // 로컬에 복원
-    if (serverData.schedules) saveSchedulesToStorage(nickname, serverData.schedules);
-    if (serverData.tags) saveTagsToStorage(nickname, serverData.tags);
-    if (serverData.tagItems) saveTagItemsToStorage(nickname, serverData.tagItems);
-    if (serverData.monthlyPlans) saveMonthlyPlansToStorage(nickname, serverData.monthlyPlans);
-    if (serverData.monthlyGoals) saveMonthlyGoalsToStorage(nickname, serverData.monthlyGoals);
-
-    console.log('✅ 서버에서 복원 완료:', nickname);
-    return true;
-  } catch (error) {
-    console.error('❌ 서버 복원 실패:', error);
-    return false;
-  }
-};
-
-// =========================
-// 🗑️ 데이터 초기화 함수들
-// =========================
-
-export const resetUserData = (nickname) => {
-  if (!nickname) return false;
-  
-  const keysToDelete = [
-    `${nickname}-schedules`,
-    `${nickname}-tags`,
-    `${nickname}-tagItems`,
-    `${nickname}-monthlyPlans`,
-    `${nickname}-monthlyGoals`,
-    `${nickname}-tagTotals`
-  ];
-  
-  keysToDelete.forEach(key => {
-    try {
-      localStorage.removeItem(key);
-      console.log(`✅ 삭제됨: ${key}`);
-    } catch (error) {
-      console.error(`❌ 삭제 실패: ${key}`, error);
-    }
-  });
-  
-  console.log(`🗑️ ${nickname} 사용자 데이터 초기화 완료`);
-  return true;
-};
-
-// =========================
-// 🌐 브라우저 콘솔 유틸리티
-// =========================
-
-if (typeof window !== 'undefined') {
-  window.storageUtils = {
-    // 서버 관련
-    backup: async (nickname) => {
-      if (!nickname) {
-        console.log('사용법: storageUtils.backup("사용자명")');
-        return;
-      }
-      const success = await backupToServer(nickname);
-      if (success) {
-        alert('✅ 서버 백업 완료!');
-      } else {
-        alert('❌ 서버 백업 실패!');
-      }
-      return success;
-    },
-    
-    restore: async (nickname) => {
-      if (!nickname) {
-        console.log('사용법: storageUtils.restore("사용자명")');
-        return;
-      }
-      if (confirm('⚠️ 서버에서 데이터를 복원하시겠습니까?\n현재 로컬 데이터가 덮어쓰여집니다.')) {
-        const success = await restoreFromServer(nickname);
-        if (success) {
-          alert('✅ 서버 복원 완료! 페이지를 새로고침합니다.');
-          window.location.reload();
-        } else {
-          alert('❌ 서버 복원 실패!');
-        }
-        return success;
-      }
-      return false;
-    },
-    
-    // 초기화
-    resetUser: (nickname) => {
-      if (!nickname) {
-        console.log('사용법: storageUtils.resetUser("사용자명")');
-        return;
-      }
-      if (confirm(`⚠️ ${nickname} 사용자의 모든 로컬 데이터를 삭제하시겠습니까?`)) {
-        const success = resetUserData(nickname);
-        if (success) {
-          alert('✅ 사용자 데이터 초기화 완료!');
-          window.location.reload();
-        }
-        return success;
-      }
-      return false;
-    },
-    
-    // 디버깅
-    showAllKeys: () => {
-      console.log('📋 현재 localStorage의 모든 키:');
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        const data = localStorage.getItem(key);
-        try {
-          console.log(`  ${key}:`, JSON.parse(data || 'null'));
-        } catch (e) {
-          console.log(`  ${key}: [파싱 실패] ${data}`);
-        }
-      }
-    },
-    
-    // 서버 상태 확인
-    checkServer: async () => {
-      try {
-        const response = await fetch(SERVER_URL, { 
-          method: 'OPTIONS',
-          mode: 'cors'
+    // 일정 데이터 변환
+    if (userData.schedules && userData.schedules.length > 0) {
+      userData.schedules.forEach(schedule => {
+        activities.push({
+          user_name: nickname,
+          tag: schedule.tag || 'Unknown',
+          tag_type: schedule.tagType || schedule.tag || 'Unknown',
+          title: schedule.title || 'No Title',
+          description: schedule.description || '',
+          start_time: schedule.start || '00:00',
+          end_time: schedule.end || '00:00',
+          date: schedule.date || new Date().toISOString().split('T')[0]
         });
-        console.log('🌐 서버 상태:', response.ok ? '✅ 정상' : '❌ 오류');
-        return response.ok;
+      });
+    }
+    
+    // 🆕 월간 계획 데이터를 DAL에 저장 (수정됨)
+    if (userData.monthlyPlans && userData.monthlyPlans.length > 0) {
+      userData.monthlyPlans.forEach(plan => {
+        activities.push({
+          user_name: nickname,
+          tag: plan.tag || 'Unknown', // ✅ 하위태그를 tag에 저장
+          tag_type: plan.tagType || 'Unknown',
+          title: plan.name || plan.description || 'Monthly Plan',
+          description: plan.description || '',
+          start_time: '00:00',
+          end_time: `${(plan.estimatedTime || 0).toString().padStart(2, '0')}:00`,
+          date: plan.month ? `${plan.month}-01` : new Date().toISOString().split('T')[0]
+        });
+      });
+    }
+    
+    // 태그 데이터를 DAL에 저장
+    if (userData.tags && userData.tags.length > 0) {
+      userData.tags.forEach(tag => {
+        activities.push({
+          user_name: nickname,
+          tag: 'TAG_DEFINITION',
+          tag_type: tag.tagType || 'Unknown',
+          title: 'Tag Definition',
+          description: JSON.stringify(tag.color || {}),
+          start_time: '00:00',
+          end_time: '00:00',
+          date: new Date().toISOString().split('T')[0]
+        });
+      });
+    }
+    
+    // 태그 아이템 데이터를 DAL에 저장
+    if (userData.tagItems && userData.tagItems.length > 0) {
+      userData.tagItems.forEach(tagItem => {
+        activities.push({
+          user_name: nickname,
+          tag: 'TAG_ITEM',
+          tag_type: tagItem.tagType || 'Unknown',
+          title: tagItem.tagName || 'Unknown',
+          description: 'Tag Item Definition',
+          start_time: '00:00',
+          end_time: '00:00',
+          date: new Date().toISOString().split('T')[0]
+        });
+      });
+    }
+    
+    // 🆕 월간 목표 데이터 변환 (수정됨)
+    if (userData.monthlyGoals && userData.monthlyGoals.length > 0) {
+      userData.monthlyGoals.forEach(monthGoal => {
+        if (monthGoal.goals && monthGoal.goals.length > 0) {
+          monthGoal.goals.forEach(goal => {
+            activities.push({
+              user_name: nickname,
+              tag: goal.tag || 'Unknown', // ✅ 하위태그를 tag에 저장
+              tag_type: goal.tagType || 'Unknown',
+              title: goal.title || `${monthGoal.month} 월간목표`,
+              description: `목표 시간: ${goal.targetHours}`,
+              start_time: '00:00',
+              end_time: goal.targetHours || '00:00',
+              date: `${monthGoal.month}-01`
+            });
+          });
+        }
+      });
+    }
+    
+    if (activities.length > 0) {
+      // 기존 데이터 삭제 (안전한 방식)
+      const { error: deleteError } = await supabase
+        .from('DAL')
+        .delete()
+        .eq('user_name', nickname);
+      
+      if (deleteError) {
+        console.warn('기존 데이터 삭제 중 오류:', deleteError);
+        // 삭제 오류가 있어도 계속 진행
+      }
+      
+      // 새 데이터 저장
+      const { data, error } = await supabase
+        .from('DAL')
+        .insert(activities)
+        .select();
+
+      if (error) {
+        throw error;
+      }
+      
+      console.log('✅ 사용자 데이터 DAL 저장 성공:', activities.length, '개 활동');
+      return { success: true, data };
+    } else {
+      console.log('ℹ️ 저장할 데이터가 없습니다');
+      return { success: true, data: [] };
+    }
+    
+  } catch (error) {
+    console.error('❌ 사용자 데이터 DAL 저장 실패:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// ✨ 월간 계획 지원을 포함한 loadUserDataFromDAL (수정됨)
+export const loadUserDataFromDAL = async (nickname) => {
+  if (!supabase) {
+    console.warn('⚠️ Supabase가 초기화되지 않았습니다');
+    return { success: false, data: null, error: 'Supabase 초기화 실패' };
+  }
+
+  try {
+    console.log('🎯 사용자 데이터를 DAL에서 불러오기 시작:', nickname);
+    
+    const { data, error } = await supabase
+      .from('DAL')
+      .select('*')
+      .eq('user_name', nickname)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+    
+    console.log(`✅ 사용자 데이터 DAL 불러오기 성공: ${data?.length || 0}개 활동`);
+    console.log('🔍 불러온 원본 데이터:', data);
+    
+    // DAL 데이터를 형식으로 변환
+    const schedules = [];
+    const monthlyGoals = [];
+    const monthlyPlans = [];
+    const tags = [];
+    const tagItems = [];
+    
+    // 태그 타입별로 수집하여 자동 생성
+    const uniqueTagTypes = new Set();
+    const uniqueTagNames = new Map();
+    
+    if (data && data.length > 0) {
+      data.forEach(activity => {
+        if (activity.tag === 'TAG_DEFINITION') {
+          // 저장된 태그 정의 복원
+          try {
+            const tagType = activity.tag_type || 'Unknown';
+            let color;
+            try {
+              color = JSON.parse(activity.description || '{}');
+              // border 속성이 없으면 추가
+              if (color && !color.border) {
+                color.border = color.bg ? color.bg.replace('bg-', 'border-') : 'border-gray-200';
+              }
+            } catch {
+              color = PASTEL_COLORS[tags.length % PASTEL_COLORS.length];
+            }
+            
+            if (!tags.find(t => t.tagType === tagType)) {
+              tags.push({ tagType, color });
+            }
+          } catch (parseError) {
+            console.warn('태그 정의 파싱 실패:', parseError);
+          }
+        } else if (activity.tag === 'TAG_ITEM') {
+          // 저장된 태그 아이템 복원
+          try {
+            const tagType = activity.tag_type || 'Unknown';
+            const tagName = activity.title || 'Unknown';
+            
+            if (!tagItems.find(t => t.tagType === tagType && t.tagName === tagName)) {
+              tagItems.push({ tagType, tagName });
+            }
+          } catch (parseError) {
+            console.warn('태그 아이템 파싱 실패:', parseError);
+          }
+        } else if (activity.description && activity.description.includes('목표 시간:')) {
+          // 🆕 월간 목표 파싱 (수정됨)
+          try {
+            const dateStr = activity.date;
+            const month = dateStr ? dateStr.substring(0, 7) : new Date().toISOString().slice(0, 7);
+            
+            let monthGoal = monthlyGoals.find(mg => mg.month === month);
+            if (!monthGoal) {
+              monthGoal = { month, goals: [] };
+              monthlyGoals.push(monthGoal);
+            }
+            
+            monthGoal.goals.push({
+              tag: activity.tag || 'Unknown', // ✅ 하위태그
+              tagType: activity.tag_type || 'Unknown',
+              title: activity.title || 'Monthly Goal',
+              targetHours: activity.end_time || '00:00'
+            });
+          } catch (parseError) {
+            console.warn('월간 목표 파싱 실패:', parseError);
+          }
+        } else if (activity.end_time && activity.end_time !== '00:00' && !activity.description?.includes('목표 시간:')) {
+          // 🆕 월간 계획 파싱 (수정됨)
+          // end_time이 있고 '00:00'이 아니면서 목표 시간 설명이 없으면 월간 계획으로 간주
+          try {
+            const estimatedTime = activity.end_time ? parseInt(activity.end_time.split(':')[0]) : 0;
+            const dateStr = activity.date;
+            const month = dateStr ? dateStr.substring(0, 7) : new Date().toISOString().slice(0, 7);
+            
+            monthlyPlans.push({
+              id: activity.id,
+              tagType: activity.tag_type || 'Unknown',
+              tag: activity.tag || 'Unknown Plan', // ✅ 하위태그
+              name: activity.title || 'Unknown Plan',
+              description: activity.description || '',
+              estimatedTime: estimatedTime,
+              month: month
+            });
+          } catch (parseError) {
+            console.warn('월간 계획 파싱 실패:', parseError);
+          }
+        } else {
+          // 일반 일정 파싱
+          try {
+            schedules.push({
+              id: activity.id,
+              title: activity.title || 'No Title',
+              description: activity.description || '',
+              tag: activity.tag || 'Unknown',
+              tagType: activity.tag_type || activity.tag || 'Unknown',
+              date: activity.date || new Date().toISOString().split('T')[0],
+              start: activity.start_time || '00:00',
+              end: activity.end_time || '00:00',
+              done: false
+            });
+            
+            // 일정에서 태그 정보 추출
+            const tagType = activity.tag_type || activity.tag || 'Unknown';
+            const tagName = activity.tag || 'Unknown';
+            
+            uniqueTagTypes.add(tagType);
+            
+            if (!uniqueTagNames.has(tagType)) {
+              uniqueTagNames.set(tagType, new Set());
+            }
+            uniqueTagNames.get(tagType).add(tagName);
+            
+          } catch (parseError) {
+            console.warn('일정 파싱 실패:', parseError);
+          }
+        }
+      });
+    }
+    
+    // 저장된 태그가 없으면 일정에서 자동 생성
+    if (tags.length === 0 && uniqueTagTypes.size > 0) {
+      console.log('🔧 저장된 태그가 없어서 일정에서 자동 생성');
+      let colorIndex = 0;
+      uniqueTagTypes.forEach(tagType => {
+        tags.push({
+          tagType,
+          color: PASTEL_COLORS[colorIndex % PASTEL_COLORS.length]
+        });
+        colorIndex++;
+      });
+    }
+    
+    // 저장된 태그 아이템이 없으면 일정에서 자동 생성
+    if (tagItems.length === 0 && uniqueTagNames.size > 0) {
+      console.log('🔧 저장된 태그 아이템이 없어서 일정에서 자동 생성');
+      uniqueTagNames.forEach((tagNameSet, tagType) => {
+        tagNameSet.forEach(tagName => {
+          tagItems.push({ tagType, tagName });
+        });
+      });
+    }
+    
+    console.log('🔍 최종 변환 결과:');
+    console.log('- schedules:', schedules.length, '개');
+    console.log('- tags:', tags.length, '개', tags);
+    console.log('- tagItems:', tagItems.length, '개', tagItems);
+    console.log('- monthlyPlans:', monthlyPlans.length, '개', monthlyPlans);
+    console.log('- monthlyGoals:', monthlyGoals.length, '개');
+    
+    return { 
+      success: true, 
+      data: {
+        schedules,
+        tags,
+        tagItems,
+        monthlyPlans,
+        monthlyGoals
+      }
+    };
+    
+  } catch (error) {
+    console.error('❌ 사용자 데이터 DAL 불러오기 실패:', error);
+    return { success: false, data: null, error: error.message };
+  }
+};
+
+// ✨ 월간 계획 포함 개발자 도구
+if (typeof window !== 'undefined') {
+  window.supabaseUtils = {
+    // 연결 테스트
+    testConnection: async () => {
+      if (!supabase) {
+        console.error('❌ Supabase 초기화 실패');
+        alert('❌ Supabase가 초기화되지 않았습니다. 환경변수를 확인하세요.');
+        return false;
+      }
+
+      try {
+        console.log('🔍 Supabase 연결 테스트 시작...');
+        
+        const { data, error } = await supabase
+          .from('DAL')
+          .select('id')
+          .limit(1);
+        
+        if (error) {
+          throw error;
+        }
+        
+        console.log('✅ Supabase 연결 성공:', data);
+        alert('✅ Supabase 연결 성공!');
+        return true;
       } catch (error) {
-        console.log('🌐 서버 상태: ❌ 연결 실패', error);
+        console.error('❌ Supabase 연결 실패:', error);
+        alert('❌ Supabase 연결 실패: ' + error.message);
+        return false;
+      }
+    },
+    
+    // 🆕 월간 계획 포함 테스트 데이터 생성
+    createSampleUserData: async (nickname = '테스트유저_' + Date.now()) => {
+      console.log('🧪 월간 계획 포함 샘플 데이터 생성:', nickname);
+      
+      const sampleData = {
+        schedules: [
+          {
+            id: Date.now(),
+            title: '영어 공부',
+            description: 'TOEIC 리스닝 연습',
+            tag: '영어공부',
+            tagType: '학습',
+            date: new Date().toISOString().split('T')[0],
+            start: '09:00',
+            end: '10:30'
+          },
+          {
+            id: Date.now() + 1,
+            title: '헬스장 운동',
+            description: '가슴, 삼두 운동',
+            tag: '헬스',
+            tagType: '운동',
+            date: new Date().toISOString().split('T')[0],
+            start: '18:00',
+            end: '19:30'
+          }
+        ],
+        monthlyPlans: [
+          {
+            id: Date.now() + 100,
+            tagType: 'LAB',
+            tag: '웹 구축',
+            name: '웹 구축',
+            description: '프론트엔드 개발, 백엔드 API, 데이터베이스 설계',
+            estimatedTime: 10,
+            month: new Date().toISOString().slice(0, 7)
+          },
+          {
+            id: Date.now() + 101,
+            tagType: '연구',
+            tag: '논문 작성',
+            name: '논문 작성',
+            description: '데이터 분석, 결과 정리, 초안 작성',
+            estimatedTime: 8,
+            month: new Date().toISOString().slice(0, 7)
+          }
+        ],
+        tags: [
+          { tagType: "학습", color: { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-200" } },
+          { tagType: "운동", color: { bg: "bg-green-100", text: "text-green-800", border: "border-green-200" } },
+          { tagType: "LAB", color: { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-200" } },
+          { tagType: "연구", color: { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-200" } }
+        ],
+        tagItems: [
+          { tagType: "학습", tagName: "영어공부" },
+          { tagType: "운동", tagName: "헬스" },
+          { tagType: "LAB", tagName: "웹 구축" },
+          { tagType: "LAB", tagName: "DAL" },
+          { tagType: "연구", tagName: "논문 작성" },
+          { tagType: "연구", tagName: "학위 연구" }
+        ],
+        monthlyGoals: [
+          {
+            month: new Date().toISOString().slice(0, 7),
+            goals: [
+              { tag: '웹 구축', tagType: 'LAB', targetHours: '100:00' },
+              { tag: '논문 작성', tagType: '연구', targetHours: '20:00' },
+              { tag: '영어공부', tagType: '학습', targetHours: '15:00' },
+              { tag: '헬스', tagType: '운동', targetHours: '10:00' }
+            ]
+          }
+        ]
+      };
+      
+      try {
+        const saveResult = await saveUserDataToDAL(nickname, sampleData);
+        if (!saveResult.success) {
+          throw new Error('저장 실패: ' + saveResult.error);
+        }
+        
+        // 잠깐 대기
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const loadResult = await loadUserDataFromDAL(nickname);
+        if (!loadResult.success) {
+          throw new Error('불러오기 실패: ' + loadResult.error);
+        }
+        
+        console.log('✅ 월간 계획 포함 샘플 데이터 생성 완료');
+        console.log('저장된 데이터:', saveResult.data);
+        console.log('불러온 데이터:', loadResult.data);
+        
+        alert(`✅ 월간 계획 포함 샘플 데이터 생성 완료!\n사용자: ${nickname}\n일정: ${loadResult.data.schedules?.length || 0}개\n월간계획: ${loadResult.data.monthlyPlans?.length || 0}개\n태그: ${loadResult.data.tags?.length || 0}개`);
+        
+        return { nickname, saveResult, loadResult };
+        
+      } catch (error) {
+        console.error('❌ 샘플 데이터 생성 실패:', error);
+        alert('❌ 샘플 데이터 생성 실패: ' + error.message);
+        return { success: false, error: error.message };
+      }
+    },
+    
+    // 환경변수 확인
+    checkEnv: () => {
+      console.log('🔍 환경변수 확인:');
+      console.log('SUPABASE_URL:', supabaseUrl || '❌ 없음');
+      console.log('SUPABASE_ANON_KEY:', supabaseKey ? '✅ 설정됨' : '❌ 없음');
+      console.log('Supabase 객체:', supabase ? '✅ 초기화됨' : '❌ 초기화 실패');
+      
+      const result = {
+        hasUrl: !!supabaseUrl,
+        hasKey: !!supabaseKey,
+        hasClient: !!supabase,
+        status: (supabaseUrl && supabaseKey && supabase) ? '✅ 정상' : '❌ 문제있음'
+      };
+      
+      console.table(result);
+      return result;
+    },
+    
+    // 사용자별 데이터 확인
+    checkUserData: async (nickname) => {
+      if (!supabase || !nickname) {
+        console.error('❌ Supabase 또는 nickname 없음');
+        return false;
+      }
+      
+      try {
+        const { data, error } = await supabase
+          .from('DAL')
+          .select('*')
+          .eq('user_name', nickname);
+        
+        if (error) throw error;
+        
+        console.log(`🔍 ${nickname} 사용자 데이터:`, data);
+        
+        const summary = {
+          총_레코드: data?.length || 0,
+          일정: data?.filter(d => !['TAG_DEFINITION', 'TAG_ITEM'].includes(d.tag) && (!d.description || !d.description.includes('목표 시간:'))).length || 0,
+          월간계획: data?.filter(d => d.end_time && d.end_time !== '00:00' && (!d.description || !d.description.includes('목표 시간:'))).length || 0,
+          월간목표: data?.filter(d => d.description && d.description.includes('목표 시간:')).length || 0,
+          태그정의: data?.filter(d => d.tag === 'TAG_DEFINITION').length || 0,
+          태그아이템: data?.filter(d => d.tag === 'TAG_ITEM').length || 0
+        };
+        
+        console.table(summary);
+        alert(`${nickname} 데이터 요약:\n${JSON.stringify(summary, null, 2)}`);
+        
+        return data;
+        
+      } catch (error) {
+        console.error('❌ 사용자 데이터 확인 실패:', error);
+        alert('❌ 사용자 데이터 확인 실패: ' + error.message);
         return false;
       }
     }
   };
   
-  console.log('🔧 서버 연동 스토리지 유틸리티가 준비되었습니다!');
-  console.log('사용법:');
-  console.log('  storageUtils.backup("사용자명") - 서버 백업');
-  console.log('  storageUtils.restore("사용자명") - 서버 복원');
-  console.log('  storageUtils.checkServer() - 서버 상태 확인');
-}
-
-// =========================
-// 🔗 기존 함수들 호환성 유지
-// =========================
-
-export const saveToLocalStorage = (nickname, data) => {
-  try {
-    const key = `${nickname}_backup`;
-    localStorage.setItem(key, JSON.stringify(data));
-    console.log('💾 로컬 백업 저장 완료');
-  } catch (error) {
-    console.error('❌ 로컬 백업 저장 실패:', error);
-  }
-};
-
-export const loadFromLocalStorage = (nickname) => {
-  try {
-    const key = `${nickname}_backup`;
-    const data = localStorage.getItem(key);
-    if (data) {
-      const parsed = JSON.parse(data);
-      console.log('✅ 로컬 백업에서 데이터 로드');
-      return parsed;
-    }
-  } catch (error) {
-    console.error('❌ 로컬 백업 로드 실패:', error);
-  }
-  return null;
-};
-
-// 월간 목표 관련 특별 함수들
-export const saveMonthlyGoalsForMonth = async (nickname, monthKey, goals) => {
-  if (!nickname || !monthKey) return false;
-  
-  console.log('🎯 월간 목표 저장 시도:', { nickname, monthKey, goals });
-  
-  const allGoals = loadMonthlyGoalsFromStorage(nickname);
-  const existingIndex = allGoals.findIndex(goal => goal.month === monthKey);
-  
-  if (existingIndex >= 0) {
-    allGoals[existingIndex] = { month: monthKey, goals: goals || [] };
+  if (supabase) {
+    console.log('🚀 월간 계획 기능이 포함된 Supabase 유틸리티가 준비되었습니다!');
+    console.log('사용법:');
+    console.log('  supabaseUtils.checkEnv() - 환경변수 확인');
+    console.log('  supabaseUtils.testConnection() - 연결 테스트');
+    console.log('  supabaseUtils.createSampleUserData() - 월간 계획 포함 샘플 데이터 생성');
+    console.log('  supabaseUtils.checkUserData("사용자명") - 특정 사용자 데이터 확인');
   } else {
-    allGoals.push({ month: monthKey, goals: goals || [] });
+    console.warn('⚠️ Supabase 초기화 실패 - 환경변수를 확인하세요');
   }
-  
-  // 로컬 저장
-  saveMonthlyGoalsToStorage(nickname, allGoals);
-  
-  // 서버 저장 (백그라운드)
-  try {
-    const currentData = await loadAllUserData(nickname);
-    currentData.monthlyGoals = allGoals;
-    await saveToServer(nickname, currentData);
-    console.log('🎯 월간 목표 서버 저장 완료');
-  } catch (error) {
-    console.error('❌ 월간 목표 서버 저장 실패:', error);
-  }
-  
-  console.log('🎯 월간 목표 저장 완료:', { nickname, monthKey, allGoals });
-  return true;
-};
-
-export const getMonthlyGoalsForMonth = (nickname, monthKey) => {
-  if (!nickname || !monthKey) return [];
-  
-  console.log('🎯 월간 목표 불러오기 시도:', { nickname, monthKey });
-  
-  const allGoals = loadMonthlyGoalsFromStorage(nickname);
-  const found = allGoals.find(goal => goal.month === monthKey);
-  const result = found?.goals || [];
-  
-  console.log('🎯 월간 목표 불러오기 완료:', { nickname, monthKey, resultCount: result.length });
-  
-  return result;
-};
-
-// 통합 데이터 로딩 (서버 우선, 로컬 백업)
-export const loadUserDataWithFallback = async (nickname) => {
-  try {
-    console.log('📦 통합 데이터 로딩 시작:', nickname);
-    
-    // 1. 서버에서 데이터 로드 시도
-    const serverData = await loadFromServer(nickname);
-    
-    if (serverData) {
-      console.log('✅ 서버 데이터 사용:', nickname);
-      
-      // 서버 데이터를 로컬에도 백업 저장
-      saveToLocalStorage(nickname, serverData);
-      return serverData;
-    }
-    
-    console.log('⚠️ 서버 데이터 없음, 로컬 데이터 확인:', nickname);
-  } catch (error) {
-    console.warn('⚠️ 서버 로드 실패, 로컬 백업 시도:', error);
-  }
-  
-  // 2. 서버 실패 시 로컬 백업 사용
-  const localBackup = loadFromLocalStorage(nickname);
-  if (localBackup) {
-    console.log('✅ 로컬 백업 데이터 사용:', nickname);
-    return localBackup;
-  }
-  
-  // 3. 로컬 개별 스토리지에서 로드
-  const localData = {
-    schedules: loadSchedulesFromStorage(nickname),
-    tags: loadTagsFromStorage(nickname),
-    tagItems: loadTagItemsFromStorage(nickname),
-    monthlyPlans: loadMonthlyPlansFromStorage(nickname),
-    monthlyGoals: loadMonthlyGoalsFromStorage(nickname)
-  };
-  
-  console.log('✅ 로컬 개별 데이터 사용:', nickname);
-  return localData;
-};
-
-// 데이터 정리 및 검증 함수
-export const cleanupCorruptedData = () => {
-  console.log('🧹 손상된 데이터 정리 시작');
-  
-  const keysToCheck = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    keysToCheck.push(localStorage.key(i));
-  }
-  
-  keysToCheck.forEach(key => {
-    if (!key) return;
-    
-    const rawData = localStorage.getItem(key);
-    if (!rawData) return;
-    
-    try {
-      JSON.parse(rawData);
-      // 파싱 성공하면 유효한 데이터
-    } catch (parseError) {
-      console.log(`🗑️ 손상된 데이터 삭제: ${key}`, { rawData, parseError });
-      localStorage.removeItem(key);
-    }
-  });
-  
-  console.log('🧹 손상된 데이터 정리 완료');
-};
-
-// 사용자별 키 목록 가져오기
-export const getUserKeys = (nickname) => {
-  if (!nickname) return [];
-  
-  const keys = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && key.startsWith(`${nickname}-`)) {
-      keys.push(key);
-    }
-  }
-  return keys;
-};
-
-// 디버깅용 함수
-export const debugStorage = (nickname) => {
-  console.log('🔍 스토리지 디버깅:', nickname);
-  
-  // 모든 localStorage 키 확인
-  console.log('📋 모든 localStorage 키들:');
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    const rawData = localStorage.getItem(key);
-    
-    try {
-      const parsedData = JSON.parse(rawData || 'null');
-      console.log(`  ✅ ${key}:`, parsedData);
-    } catch (parseError) {
-      console.log(`  ❌ ${key}: [JSON 파싱 실패]`, { rawData, parseError });
-      
-      // 손상된 데이터라면 삭제 여부 확인
-      if (rawData && rawData.length > 0) {
-        console.log(`  🗑️ 손상된 데이터 발견: ${key} - 삭제 권장`);
-      }
-    }
-  }
-  
-  // 사용자별 키들
-  const userKeys = getUserKeys(nickname);
-  console.log('👤 사용자별 키들:', userKeys);
-  
-  // 서버 상태 확인
-  window.storageUtils?.checkServer?.();
-};
+}
