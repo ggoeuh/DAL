@@ -375,37 +375,37 @@ const CalendarPage = ({
     }
   }, [tags, setTags, schedules, tagItems, monthlyGoals, currentUser]);
   
-  // 🔧 모든 정의된 태그에 색상을 일괄 할당하는 함수
+  // 🔧 모든 정의된 하위 태그에 색상을 일괄 할당하는 함수
   const assignColorsToAllDefinedTags = useCallback(async () => {
-    console.log('🎨 모든 정의된 태그에 색상 일괄 할당 시작');
+    console.log('🎨 모든 정의된 하위 태그에 색상 일괄 할당 시작');
     
     if (!tagItems || tagItems.length === 0) {
       console.log('⚠️ 정의된 태그가 없습니다');
       return;
     }
     
-    // 정의된 모든 tagType들 추출
-    const definedTagTypes = [...new Set(tagItems.map(item => item.tagType))];
-    console.log('🏷️ 정의된 태그 타입들:', definedTagTypes);
+    // 정의된 모든 하위 태그들 추출 (tag 또는 tagType)
+    const definedSubTags = [...new Set(tagItems.map(item => item.tag || item.tagType))];
+    console.log('🏷️ 정의된 하위 태그들:', definedSubTags);
     
-    // 현재 서버에 색상이 없는 태그들만 필터링
-    const tagsWithoutColors = definedTagTypes.filter(tagType => {
-      const serverTag = tags?.find(t => t.tagType === tagType);
+    // 현재 서버에 색상이 없는 하위 태그들만 필터링
+    const tagsWithoutColors = definedSubTags.filter(subTag => {
+      const serverTag = tags?.find(t => t.tag === subTag || t.tagType === subTag);
       return !serverTag || !serverTag.color;
     });
     
-    console.log('🎯 색상이 필요한 태그들:', tagsWithoutColors);
+    console.log('🎯 색상이 필요한 하위 태그들:', tagsWithoutColors);
     
     if (tagsWithoutColors.length === 0) {
-      console.log('✅ 모든 정의된 태그에 이미 색상이 있습니다');
+      console.log('✅ 모든 정의된 하위 태그에 이미 색상이 있습니다');
       return;
     }
     
-    // 각 태그에 색상 할당
+    // 각 하위 태그에 색상 할당
     const updatedTags = [...(tags || [])];
     const usedColors = new Set(updatedTags.map(t => t.color?.bg).filter(Boolean));
     
-    tagsWithoutColors.forEach((tagType, index) => {
+    tagsWithoutColors.forEach((subTag, index) => {
       // 사용되지 않은 색상 찾기
       let assignedColor;
       const availableColors = PASTEL_COLORS.filter(color => !usedColors.has(color.bg));
@@ -418,15 +418,15 @@ const CalendarPage = ({
         assignedColor = PASTEL_COLORS[index % PASTEL_COLORS.length];
       }
       
-      // 태그 목록에 추가
-      const existingIndex = updatedTags.findIndex(t => t.tagType === tagType);
+      // 태그 목록에 추가 (tag 속성으로 저장)
+      const existingIndex = updatedTags.findIndex(t => t.tag === subTag || t.tagType === subTag);
       if (existingIndex >= 0) {
         updatedTags[existingIndex] = { ...updatedTags[existingIndex], color: assignedColor };
       } else {
-        updatedTags.push({ tagType, color: assignedColor });
+        updatedTags.push({ tag: subTag, color: assignedColor });
       }
       
-      console.log(`🎨 ${tagType} → ${assignedColor.bg}`);
+      console.log(`🎨 ${subTag} → ${assignedColor.bg}`);
     });
     
     // 상태 업데이트
@@ -446,7 +446,7 @@ const CalendarPage = ({
       try {
         const result = await saveUserDataToDAL(currentUser, userData);
         if (result.success) {
-          console.log('✅ 모든 태그 색상 서버 저장 완료');
+          console.log('✅ 모든 하위 태그 색상 서버 저장 완료');
         } else {
           console.warn('⚠️ 서버 저장 실패:', result.error);
         }
@@ -455,31 +455,31 @@ const CalendarPage = ({
       }
     }
     
-    console.log(`🎨 총 ${tagsWithoutColors.length}개 태그에 색상 할당 완료`);
+    console.log(`🎨 총 ${tagsWithoutColors.length}개 하위 태그에 색상 할당 완료`);
   }, [tags, setTags, tagItems, schedules, monthlyGoals, currentUser]);
   
-  // 🚀 컴포넌트 마운트 시 자동으로 정의된 태그들에 색상 할당
+  // 🚀 컴포넌트 마운트 시 자동으로 정의된 하위 태그들에 색상 할당
   React.useEffect(() => {
     // 데이터가 모두 로드되고 tagItems가 있을 때 실행
     if (tagItems && tagItems.length > 0 && tags !== undefined) {
-      console.log('🔍 정의된 태그 색상 자동 할당 체크 시작');
+      console.log('🔍 정의된 하위 태그 색상 자동 할당 체크 시작');
       
-      // 색상이 없는 정의된 태그가 있는지 확인
-      const definedTagTypes = [...new Set(tagItems.map(item => item.tagType))];
-      const tagsWithoutColors = definedTagTypes.filter(tagType => {
-        const serverTag = tags?.find(t => t.tagType === tagType);
+      // 색상이 없는 정의된 하위 태그가 있는지 확인
+      const definedSubTags = [...new Set(tagItems.map(item => item.tag || item.tagType))];
+      const tagsWithoutColors = definedSubTags.filter(subTag => {
+        const serverTag = tags?.find(t => t.tag === subTag || t.tagType === subTag);
         return !serverTag || !serverTag.color;
       });
       
       if (tagsWithoutColors.length > 0) {
-        console.log('🎯 색상이 없는 정의된 태그들 발견:', tagsWithoutColors);
+        console.log('🎯 색상이 없는 정의된 하위 태그들 발견:', tagsWithoutColors);
         
         // 약간의 지연 후 자동 할당 (UI 로딩 완료 후)
         setTimeout(() => {
           assignColorsToAllDefinedTags();
         }, 1000);
       } else {
-        console.log('✅ 모든 정의된 태그에 색상이 이미 할당되어 있음');
+        console.log('✅ 모든 정의된 하위 태그에 색상이 이미 할당되어 있음');
       }
     }
   }, [tagItems, tags, assignColorsToAllDefinedTags]);
