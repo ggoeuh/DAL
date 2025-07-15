@@ -66,7 +66,7 @@ const MonthlyPlan = ({
 
   // ✅ 하위태그별 목표 시간을 쉽게 찾는 함수 (수정됨)
   const getTargetHoursForTag = useCallback((tag) => {
-    const goal = currentMonthGoals.find(g => g.tag === tag); // tagType -> tag로 변경
+    const goal = currentMonthGoals.find(g => g.tag === tag); // 하위태그로 검색
     if (goal && goal.targetHours) {
       const [hours] = goal.targetHours.split(':').map(Number);
       return hours;
@@ -182,7 +182,7 @@ const MonthlyPlan = ({
     }
   }, [currentUser, saving, schedules, tags, tagItems, monthlyGoals, monthlyPlans]);
 
-  // ✅ 월간 목표 업데이트 및 저장 (상위태그를 tag_type에, 하위태그를 title에 저장)
+  // ✅ 월간 목표 업데이트 및 저장 (상위태그를 tag_type에, 하위태그를 tag에 저장)
   const updateAndSaveMonthlyGoals = useCallback(async (updatedPlans) => {
     if (!currentUser) return;
 
@@ -926,7 +926,7 @@ const MonthlyPlan = ({
       {editingPlan && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
-                          <div className="flex justify-between items-center mb-4">
+            <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">계획 수정</h3>
               <button
                 onClick={() => setEditingPlan(null)}
