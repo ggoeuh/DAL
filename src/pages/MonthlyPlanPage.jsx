@@ -182,7 +182,7 @@ const MonthlyPlan = ({
     }
   }, [currentUser, saving, schedules, tags, tagItems, monthlyGoals, monthlyPlans]);
 
-  // ✅ 월간 목표 업데이트 및 저장 (하위태그 기준으로 완전 수정)
+  // ✅ 월간 목표 업데이트 및 저장 (디버깅 강화)
   const updateAndSaveMonthlyGoals = useCallback(async (updatedPlans) => {
     if (!currentUser) return;
 
@@ -191,15 +191,26 @@ const MonthlyPlan = ({
       return planMonth === currentMonthKey;
     });
 
+    console.log('🔍 현재 월 계획들:', currentMonthFilteredPlans);
+
     // ✅ 하위태그(tag)별로 그룹화하여 목표 생성
     const goalsByTag = {};
     currentMonthFilteredPlans.forEach(plan => {
       const subTag = plan.tag; // 하위태그 (NGV, 포스코, 학위연구 등)
+      console.log('🏷️ 처리 중인 태그:', subTag, 'from plan:', plan);
+      
+      if (!subTag || subTag.trim() === '') {
+        console.warn('⚠️ 빈 태그 발견:', plan);
+        return;
+      }
+      
       if (!goalsByTag[subTag]) {
         goalsByTag[subTag] = 0;
       }
       goalsByTag[subTag] += plan.estimatedTime;
     });
+
+    console.log('📊 태그별 목표 시간:', goalsByTag);
 
     let updatedGoals = [...safeMonthlyGoals];
     let currentMonthGoal = updatedGoals.find(goal => goal.month === currentMonthKey);
@@ -219,13 +230,10 @@ const MonthlyPlan = ({
       targetHours: `${totalHours.toString().padStart(2, '0')}:00`
     }));
 
+    console.log('🎯 생성할 새 목표들:', newGoals);
+
     currentMonthGoal.goals = [...existingGoals, ...newGoals];
     setMonthlyGoals(updatedGoals);
-    
-    console.log('🎯 저장할 월간목표:', {
-      month: currentMonthKey,
-      goals: newGoals
-    });
     
     const saveResult = await saveUserDataToServer({
       monthlyGoals: updatedGoals,
@@ -416,7 +424,7 @@ const MonthlyPlan = ({
     return totalPlannedHours;
   }, [currentMonthPlans]);
 
-  // ✨ 계획 추가 함수
+  // ✨ 계획 추가 함수 (디버깅 강화)
   const handleAddPlan = useCallback(async () => {
     const firstDesc = form.descriptions[0]?.trim();
 
@@ -433,12 +441,16 @@ const MonthlyPlan = ({
     const newPlan = {
       id: Date.now(),
       tagType: form.tagType,
-      tag: form.tag,
+      tag: form.tag, // 이 값이 하위태그여야 함 (NGV, 포스코, 학위연구 등)
       name: form.name || '',
       description: combinedDescription,
       estimatedTime: parseInt(form.estimatedTime) || 0,
       month: currentMonthKey
     };
+    
+    console.log('📝 생성할 계획:', newPlan);
+    console.log('📝 form.tag 값:', form.tag);
+    console.log('📝 form.tagType 값:', form.tagType);
     
     const updatedPlans = [...plans, newPlan];
     setPlans(updatedPlans);
