@@ -79,8 +79,8 @@ export const saveUserDataToDAL = async (nickname, userData) => {
           user_name: nickname,
           tag: plan.tag || 'Unknown', // ✅ 하위태그를 tag에 저장
           tag_type: plan.tagType || 'Unknown',
-          title: plan.name || plan.description || 'Monthly Plan',
-          description: plan.description || '',
+          title: 'MONTHLY_PLAN', // 월간 계획임을 명시
+          description: plan.description || plan.name || '',
           start_time: '00:00',
           end_time: `${(plan.estimatedTime || 0).toString().padStart(2, '0')}:00`,
           date: plan.month ? `${plan.month}-01` : new Date().toISOString().split('T')[0]
@@ -265,9 +265,8 @@ export const loadUserDataFromDAL = async (nickname) => {
           } catch (parseError) {
             console.warn('월간 목표 파싱 실패:', parseError);
           }
-        } else if (activity.end_time && activity.end_time !== '00:00' && !activity.description?.includes('목표 시간:')) {
+        } else if (activity.title === 'MONTHLY_PLAN') {
           // 🆕 월간 계획 파싱 (수정됨)
-          // end_time이 있고 '00:00'이 아니면서 목표 시간 설명이 없으면 월간 계획으로 간주
           try {
             const estimatedTime = activity.end_time ? parseInt(activity.end_time.split(':')[0]) : 0;
             const dateStr = activity.date;
@@ -277,7 +276,7 @@ export const loadUserDataFromDAL = async (nickname) => {
               id: activity.id,
               tagType: activity.tag_type || 'Unknown',
               tag: activity.tag || 'Unknown Plan', // ✅ 하위태그
-              name: activity.title || 'Unknown Plan',
+              name: activity.description || 'Unknown Plan',
               description: activity.description || '',
               estimatedTime: estimatedTime,
               month: month
@@ -538,8 +537,8 @@ if (typeof window !== 'undefined') {
         
         const summary = {
           총_레코드: data?.length || 0,
-          일정: data?.filter(d => !['TAG_DEFINITION', 'TAG_ITEM'].includes(d.tag) && (!d.description || !d.description.includes('목표 시간:'))).length || 0,
-          월간계획: data?.filter(d => d.end_time && d.end_time !== '00:00' && (!d.description || !d.description.includes('목표 시간:'))).length || 0,
+          일정: data?.filter(d => !['TAG_DEFINITION', 'TAG_ITEM'].includes(d.tag) && d.title !== 'MONTHLY_PLAN' && (!d.description || !d.description.includes('목표 시간:'))).length || 0,
+          월간계획: data?.filter(d => d.title === 'MONTHLY_PLAN').length || 0,
           월간목표: data?.filter(d => d.description && d.description.includes('목표 시간:')).length || 0,
           태그정의: data?.filter(d => d.tag === 'TAG_DEFINITION').length || 0,
           태그아이템: data?.filter(d => d.tag === 'TAG_ITEM').length || 0
