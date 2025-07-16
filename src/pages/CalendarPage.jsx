@@ -243,6 +243,75 @@ const CalendarPage = ({
     return goals;
   }, [monthlyGoals, currentDate]);
 
+  // ✅ 서버 태그 색상을 우선 사용하고, 없으면 기본 색상 생성하는 함수 (수정됨)
+  const getTagColor = useCallback((tagOrSubTag) => {
+    // 1. 먼저 해당 태그가 직접적으로 서버에 색상 정보가 있는지 확인
+    const directServerTag = tags?.find(t => 
+      t.tagType === tagOrSubTag || t.tag === tagOrSubTag
+    );
+    if (directServerTag && directServerTag.color) {
+      return directServerTag.color;
+    }
+    
+    // 2. 하위 태그인 경우, tagItems에서 해당 태그의 상위 태그(tagType)를 찾아서 색상 가져오기
+    const tagItem = tagItems?.find(item => 
+      item.tagName === tagOrSubTag || item.tag === tagOrSubTag
+    );
+    
+    if (tagItem && tagItem.tagType) {
+      // 상위 태그의 색상 정보 찾기
+      const parentTagColor = tags?.find(t => t.tagType === tagItem.tagType);
+      if (parentTagColor && parentTagColor.color) {
+        return parentTagColor.color;
+      }
+    }
+    
+    // 3. 현재 월 목표에서 해당 하위 태그의 상위 태그 찾기
+    const goalWithTag = currentMonthGoals?.find(goal => goal.tag === tagOrSubTag);
+    if (goalWithTag && goalWithTag.tagType) {
+      const parentTagColor = tags?.find(t => t.tagType === goalWithTag.tagType);
+      if (parentTagColor && parentTagColor.color) {
+        return parentTagColor.color;
+      }
+    }
+    
+    // 4. 일정에서 해당 하위 태그의 상위 태그 찾기
+    const scheduleWithTag = schedules?.find(schedule => schedule.tag === tagOrSubTag);
+    if (scheduleWithTag && scheduleWithTag.tagType) {
+      const parentTagColor = tags?.find(t => t.tagType === scheduleWithTag.tagType);
+      if (parentTagColor && parentTagColor.color) {
+        return parentTagColor.color;
+      }
+    }
+    
+    // 5. 서버에 정의된 태그인지 확인
+    const isDefinedTag = tagItems?.some(item => 
+      item.tagType === tagOrSubTag || item.tagName === tagOrSubTag || item.tag === tagOrSubTag
+    );
+    
+    if (isDefinedTag) {
+      // 사용된 색상들 찾기
+      const usedColors = tags?.map(t => t.color?.bg).filter(Boolean) || [];
+      const availableColors = PASTEL_COLORS.filter(
+        color => !usedColors.includes(color.bg)
+      );
+      
+      let assignedColor;
+      if (availableColors.length > 0) {
+        assignedColor = availableColors[0];
+      } else {
+        const hash = tagOrSubTag.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        assignedColor = PASTEL_COLORS[Math.abs(hash) % PASTEL_COLORS.length];
+      }
+      
+      return assignedColor;
+    }
+    
+    // 6. 기본 색상 할당 (해시 기반)
+    const index = Math.abs(tagOrSubTag.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+    return PASTEL_COLORS[index];
+  }, [tags, tagItems, currentMonthGoals, schedules]);
+
   // ✅ 상위 태그별 실제 시간 계산 (모든 일정 포함)
   const tagTypeTotals = useMemo(() => {
     const totals = {};
@@ -311,38 +380,6 @@ const CalendarPage = ({
     console.log('🏷️ 전체 상위 태그 목록:', result);
     return result;
   }, [currentMonthGoals, currentMonthSchedules]);
-
-  // ✅ 서버 태그 색상을 우선 사용하고, 없으면 기본 색상 생성하는 함수
-  const getTagColor = useCallback((tagType) => {
-    const serverTag = tags?.find(t => t.tagType === tagType || t.tag === tagType);
-    if (serverTag && serverTag.color) {
-      return serverTag.color;
-    }
-    
-    const isDefinedTag = tagItems?.some(item => 
-      item.tagType === tagType || item.tagName === tagType || item.tag === tagType
-    );
-    
-    if (isDefinedTag) {
-      const usedColors = tags?.map(t => t.color?.bg).filter(Boolean) || [];
-      const availableColors = PASTEL_COLORS.filter(
-        color => !usedColors.includes(color.bg)
-      );
-      
-      let assignedColor;
-      if (availableColors.length > 0) {
-        assignedColor = availableColors[0];
-      } else {
-        const hash = tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        assignedColor = PASTEL_COLORS[Math.abs(hash) % PASTEL_COLORS.length];
-      }
-      
-      return assignedColor;
-    }
-    
-    const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
-    return PASTEL_COLORS[index];
-  }, [tags, tagItems]);
 
   // 퍼센테이지 계산 함수
   const calculatePercentage = useCallback((actual, goal) => {
