@@ -1,7 +1,7 @@
-// AdminDashboard.jsx - 월간 네비게이션 추가 버전
+// AdminDashboard.jsx - 하위 태그별 세부 활동 진행률 표시 버전
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { format, addMonths, subMonths, isSameMonth } from 'date-fns'; // ✅ date-fns 함수 추가
+import { format, addMonths, subMonths, isSameMonth } from 'date-fns';
 import { 
   saveUserDataToDAL, 
   loadUserDataFromDAL,
@@ -60,43 +60,77 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     return isSameMonth(currentDashboardMonth, today);
   }, [currentDashboardMonth]);
 
-  // ✅ 서버 기반 태그 색상 가져오기 함수 개선
-  const getTagColor = useCallback((tagType, memberName = null) => {
-    if (!tagType) {
+  // ✅ 서버 기반 태그 색상 가져오기 함수 개선 (하위 태그 지원)
+  const getTagColor = useCallback((tagOrSubTag, memberName = null) => {
+    if (!tagOrSubTag) {
       return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-200" };
     }
 
     try {
-      // 1. 특정 멤버의 서버 데이터에서 태그 색상 찾기
+      // 1. 특정 멤버의 서버 데이터에서 태그 색상 찾기 (직접 매칭)
       if (memberName && memberData[memberName]?.tags) {
-        const serverTag = memberData[memberName].tags.find(tag => tag.tagType === tagType);
-        if (serverTag?.color && typeof serverTag.color === 'object') {
-          console.log(`✅ ${memberName}의 ${tagType} 서버 색상 사용:`, serverTag.color);
-          return serverTag.color;
+        const directTag = memberData[memberName].tags.find(tag => 
+          tag.tagType === tagOrSubTag || tag.tag === tagOrSubTag
+        );
+        if (directTag?.color && typeof directTag.color === 'object') {
+          console.log(`✅ ${memberName}의 ${tagOrSubTag} 직접 서버 색상 사용:`, directTag.color);
+          return directTag.color;
         }
       }
 
-      // 2. 모든 멤버 데이터에서 해당 태그 타입 찾기
+      // 2. 하위 태그인 경우, tagItems에서 상위 태그 찾아서 색상 가져오기
+      if (memberName && memberData[memberName]?.tagItems) {
+        const tagItem = memberData[memberName].tagItems.find(item => 
+          item.tagName === tagOrSubTag || item.tag === tagOrSubTag
+        );
+        
+        if (tagItem && tagItem.tagType) {
+          const parentTagColor = memberData[memberName].tags?.find(t => t.tagType === tagItem.tagType);
+          if (parentTagColor?.color && typeof parentTagColor.color === 'object') {
+            console.log(`✅ ${memberName}의 ${tagOrSubTag} 상위 태그(${tagItem.tagType}) 색상 사용:`, parentTagColor.color);
+            return parentTagColor.color;
+          }
+        }
+      }
+
+      // 3. 월간 목표에서 하위 태그의 상위 태그 찾기
+      if (memberName && memberData[memberName]?.monthlyGoals) {
+        const targetMonth = format(currentDashboardMonth, 'yyyy-MM');
+        const currentGoal = memberData[memberName].monthlyGoals.find(mg => mg.month === targetMonth);
+        
+        if (currentGoal?.goals) {
+          const goalWithTag = currentGoal.goals.find(goal => goal.tag === tagOrSubTag);
+          if (goalWithTag && goalWithTag.tagType) {
+            const parentTagColor = memberData[memberName].tags?.find(t => t.tagType === goalWithTag.tagType);
+            if (parentTagColor?.color && typeof parentTagColor.color === 'object') {
+              console.log(`✅ ${memberName}의 ${tagOrSubTag} 목표 기반 상위 태그(${goalWithTag.tagType}) 색상 사용:`, parentTagColor.color);
+              return parentTagColor.color;
+            }
+          }
+        }
+      }
+
+      // 4. 모든 멤버 데이터에서 해당 태그 타입 찾기
       for (const [member, data] of Object.entries(memberData)) {
         if (data?.tags) {
-          const serverTag = data.tags.find(tag => tag.tagType === tagType);
+          const serverTag = data.tags.find(tag => tag.tagType === tagOrSubTag);
           if (serverTag?.color && typeof serverTag.color === 'object') {
-            console.log(`✅ ${member}의 ${tagType} 서버 색상 사용:`, serverTag.color);
+            console.log(`✅ ${member}의 ${tagOrSubTag} 서버 색상 사용:`, serverTag.color);
             return serverTag.color;
           }
         }
       }
 
-      // 3. 서버에 색상 정보가 없으면 해시 기반으로 생성
-      console.log(`⚠️ ${tagType} 서버 색상 없음, 해시 기반 생성`);
-      const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+      // 5. 서버에 색상 정보가 없으면 해시 기반으로 생성
+      console.log(`⚠️ ${tagOrSubTag} 서버 색상 없음, 해시 기반 생성`);
+      const index = Math.abs(tagOrSubTag.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
       return PASTEL_COLORS[index];
 
     } catch (error) {
-      console.warn('태그 색상 조회 실패:', { tagType, memberName, error });
+      console.warn('태그 색상 조회 실패:', { tagOrSubTag, memberName, error });
       return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-200" };
     }
-  }, [memberData]);
+  }, [memberData, currentDashboardMonth]);
 
   // ✨ 서버에서 모든 사용자 목록 가져오기
   const getServerUsers = async () => {
@@ -218,14 +252,14 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   }, [memberData]);
 
-  // ✅ 비동기 태그별 목표 달성률 계산 함수 - 선택된 월 기준으로 수정
-  const calculateTagProgress = useCallback(async (member) => {
-    console.log('📊 태그 진행률 계산 시작:', member, '대상 월:', format(currentDashboardMonth, 'yyyy-MM'));
+  // ✅ 하위 태그별 세부 진행률 계산 함수 (CalendarPage 스타일)
+  const calculateSubTagProgress = useCallback(async (member) => {
+    console.log('📊 하위 태그별 진행률 계산 시작:', member, '대상 월:', format(currentDashboardMonth, 'yyyy-MM'));
     
     // 캐시 키에 월 정보 포함
-    const cacheKey = `${member}-${format(currentDashboardMonth, 'yyyy-MM')}`;
+    const cacheKey = `${member}-subtags-${format(currentDashboardMonth, 'yyyy-MM')}`;
     if (progressData[cacheKey]) {
-      console.log(`📊 ${member} (${format(currentDashboardMonth, 'yyyy-MM')}) 캐시된 진행률 사용`);
+      console.log(`📊 ${member} (${format(currentDashboardMonth, 'yyyy-MM')}) 캐시된 하위 태그 진행률 사용`);
       return progressData[cacheKey];
     }
     
@@ -235,146 +269,95 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
       return [];
     }
 
-    console.log('📊 사용자 데이터 확인:', {
-      member,
-      schedules: userData.schedules?.length || 0,
-      tags: userData.tags?.length || 0,
-      tagItems: userData.tagItems?.length || 0,
-      monthlyGoals: userData.monthlyGoals?.length || 0
-    });
-
     const { schedules = [], monthlyGoals = [] } = userData;
+    const targetMonth = format(currentDashboardMonth, 'yyyy-MM');
     
-    // ✅ 선택된 월 기준으로 수정
-    const targetMonth = format(currentDashboardMonth, 'yyyy-MM'); // YYYY-MM 형식
-    
-    // 시간을 분으로 변환하는 함수
+    // 시간 변환 함수들
     const parseTimeToMinutes = (time) => {
       const [h, m] = time.split(":").map(Number);
       return h * 60 + m;
     };
 
-    // 분을 시간 형식으로 변환하는 함수
     const minutesToTimeString = (totalMinutes) => {
       const hours = Math.floor(totalMinutes / 60);
       const minutes = totalMinutes % 60;
       return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
     };
 
-    // 퍼센테이지 계산
     const calculatePercentage = (actual, goal) => {
       if (goal === 0) return 0;
       return Math.round((actual / goal) * 100);
     };
 
-    // ✅ 선택된 월의 일정들만 필터링
+    // 선택된 월의 일정들만 필터링
     const targetMonthSchedules = schedules.filter(schedule => {
       const scheduleDate = new Date(schedule.date);
       const scheduleMonth = scheduleDate.toISOString().slice(0, 7);
       return scheduleMonth === targetMonth;
     });
 
-    console.log('📊 대상 월 일정:', {
-      targetMonth,
-      totalSchedules: schedules.length,
-      targetMonthSchedules: targetMonthSchedules.length
-    });
-
-    // 태그별 총 시간 계산 (실제 사용 시간)
-    const monthlyTagTotals = {};
-    
+    // 하위 태그별 총 시간 계산
+    const monthlySubTagTotals = {};
     targetMonthSchedules.forEach(schedule => {
-      const tagType = schedule.tagType || "기타";
+      const subTag = schedule.tag || "기타";
       
-      if (!monthlyTagTotals[tagType]) {
-        monthlyTagTotals[tagType] = 0;
+      if (!monthlySubTagTotals[subTag]) {
+        monthlySubTagTotals[subTag] = 0;
       }
       
       const startMinutes = parseTimeToMinutes(schedule.start);
       const endMinutes = parseTimeToMinutes(schedule.end);
       const duration = endMinutes - startMinutes;
       
-      monthlyTagTotals[tagType] += duration;
+      monthlySubTagTotals[subTag] += duration;
     });
 
-    console.log('📊 월간 태그 총계:', monthlyTagTotals);
+    // 선택된 월의 월간 목표 불러오기
+    const targetMonthGoalsData = (() => {
+      const found = monthlyGoals.find(goal => goal.month === targetMonth);
+      return found?.goals || [];
+    })();
 
-    // ✅ 선택된 월의 월간 목표 불러오기
-    const loadMonthlyGoals = () => {
-      try {
-        console.log('🎯 목표 검색:', { targetMonth, monthlyGoals });
-        
-        if (!monthlyGoals || monthlyGoals.length === 0) {
-          console.log('❌ 월간 목표 배열이 비어있음');
-          return [];
-        }
-        
-        const found = monthlyGoals.find(goal => {
-          console.log('🔍 목표 월 비교:', { goalMonth: goal.month, targetMonth, match: goal.month === targetMonth });
-          return goal.month === targetMonth;
-        });
-        
-        const result = found?.goals || [];
-        console.log('🎯 최종 월간 목표:', result);
-        return result;
-      } catch (error) {
-        console.error('월간 목표 불러오기 실패:', error);
-        return [];
-      }
-    };
-
-    const targetMonthGoalsData = loadMonthlyGoals();
-    console.log('📊 대상 월 목표:', targetMonthGoalsData);
-    
-    // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
-    const goalTagTypes = targetMonthGoalsData.map(goal => goal.tagType);
-    const targetMonthUsedTagTypes = [...new Set(targetMonthSchedules.map(schedule => schedule.tagType || "기타"))];
-    
-    const allTagTypes = [...new Set([...goalTagTypes, ...targetMonthUsedTagTypes])];
-
-    console.log('📊 처리할 태그 타입들:', {
-      goalTagTypes,
-      targetMonthUsedTagTypes,
-      allTagTypes
+    console.log('📊 하위 태그 데이터:', {
+      targetMonth,
+      monthlySubTagTotals,
+      targetMonthGoalsData
     });
 
-    // 결과 생성 - ✅ 서버 기반 색상 사용
-    const result = allTagTypes.map((tagType) => {
-      // ✅ 서버에서 태그 색상 가져오기
-      const tagColor = getTagColor(tagType, member);
+    // 목표가 설정된 하위 태그들만 처리
+    const subTagsWithGoals = targetMonthGoalsData.filter(goal => goal.tag && goal.targetHours);
+
+    // 결과 생성
+    const result = subTagsWithGoals.map((goal) => {
+      const subTag = goal.tag;
+      const tagColor = getTagColor(subTag, member);
       
-      const actualMinutes = monthlyTagTotals[tagType] || 0;
+      const actualMinutes = monthlySubTagTotals[subTag] || 0;
       const actualTime = minutesToTimeString(actualMinutes);
       
-      // 목표 시간 찾기
-      const goal = targetMonthGoalsData.find(g => g.tagType === tagType);
-      const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
-      const goalTime = goal ? goal.targetHours : "00:00";
+      const goalMinutes = parseTimeToMinutes(goal.targetHours);
+      const goalTime = goal.targetHours;
       
-      // 퍼센테이지 계산
       const percentage = calculatePercentage(actualMinutes, goalMinutes);
       
       return {
-        tagName: tagType,
-        tagColor: tagColor, // ✅ 서버 기반 색상
+        tagName: subTag,
+        tagColor: tagColor,
         targetTime: goalTime,
         actualTime: actualTime,
         percentage: percentage
       };
-    }).filter(progress => {
-      // 목표가 설정되었거나 실제 시간이 있는 것만 표시
-      return progress.targetTime !== "00:00" || progress.actualTime !== "00:00";
     });
 
-    console.log('📊 최종 진행률 결과 (서버 색상 포함):', result);
+    console.log('📊 최종 하위 태그 진행률 결과:', result);
     
-    // ✅ 월별 진행률 데이터 캐시
+    // 진행률 데이터 캐시
     setProgressData(prev => ({...prev, [cacheKey]: result}));
     
     return result;
   }, [getUserData, progressData, getTagColor, currentDashboardMonth]);
 
-  // ✨ 서버 기반 통계 계산
+  // ✅ 서버 기반 통계 계산
   const getServerStats = useCallback(async (userList) => {
     console.log('📊 서버 기반 통계 계산');
     
@@ -507,118 +490,13 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
     }
   };
 
-  // 관리자용 데이터 관리 함수들
-  const handleDataDebug = () => {
-    const result = window.confirm('⚠️ 모든 서버 데이터를 콘솔에 출력하시겠습니까?');
-    if (result) {
-      console.log('=== 캐시된 멤버 데이터 ===');
-      console.log(memberData);
-      
-      console.log('=== 캐시된 진행률 데이터 ===');
-      console.log(progressData);
-      
-      console.log('=== 멤버 통계 ===');
-      console.log(memberStats);
-
-      // ✅ 태그 색상 디버그 정보 추가
-      console.log('=== 태그 색상 디버그 ===');
-      Object.entries(memberData).forEach(([member, data]) => {
-        if (data?.tags) {
-          console.log(`${member}의 태그들:`, data.tags.map(tag => ({
-            tagType: tag.tagType,
-            hasColor: !!tag.color,
-            color: tag.color
-          })));
-        }
-      });
-      
-      alert('✅ 콘솔에 서버 데이터가 출력되었습니다. 개발자 도구를 확인하세요.');
-    }
-  };
-
-  const handleUserDataReset = async (memberName) => {
-    if (!supabase) {
-      alert('❌ Supabase 연결이 없습니다.');
-      return;
-    }
-
-    const result = window.confirm(`⚠️ ${memberName}님의 모든 서버 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`);
-    if (result) {
-      try {
-        // 서버에서 사용자 데이터 삭제
-        const { error } = await supabase
-          .from('DAL')
-          .delete()
-          .eq('user_name', memberName);
-        
-        if (error) {
-          throw error;
-        }
-
-        // 캐시에서도 제거
-        setMemberData(prev => {
-          const newData = { ...prev };
-          delete newData[memberName];
-          return newData;
-        });
-        
-        setProgressData(prev => {
-          const newData = { ...prev };
-          delete newData[memberName];
-          return newData;
-        });
-        
-        alert(`✅ ${memberName}님의 서버 데이터가 삭제되었습니다.`);
-        
-        await refreshMemberData();
-      } catch (error) {
-        console.error('서버 데이터 삭제 실패:', error);
-        alert('❌ 서버 데이터 삭제 실패: ' + error.message);
-      }
-    }
-  };
-
-  const handleAllServerDataReset = async () => {
-    if (!supabase) {
-      alert('❌ Supabase 연결이 없습니다.');
-      return;
-    }
-
-    const result = window.confirm('⚠️ 모든 사용자의 서버 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.');
-    if (result) {
-      try {
-        const { error } = await supabase
-          .from('DAL')
-          .delete()
-          .neq('id', 0); // 모든 레코드 삭제
-        
-        if (error) {
-          throw error;
-        }
-
-        // 캐시 초기화
-        setMemberData({});
-        setProgressData({});
-        setMembers([]);
-        setMemberStats({});
-        
-        alert('✅ 모든 서버 데이터가 삭제되었습니다.');
-        
-        await refreshMemberData();
-      } catch (error) {
-        console.error('전체 서버 데이터 삭제 실패:', error);
-        alert('❌ 전체 서버 데이터 삭제 실패: ' + error.message);
-      }
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
           <p className="text-gray-600">서버에서 멤버 데이터를 불러오는 중...</p>
-          <p className="text-sm text-gray-500 mt-2">완전 서버 기반 시스템 (태그 색상 포함)</p>
+          <p className="text-sm text-gray-500 mt-2">완전 서버 기반 시스템 (하위 태그별 진행률 포함)</p>
         </div>
       </div>
     );
@@ -707,7 +585,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             <span>•</span>
             <span>마지막 업데이트: {lastSyncTime ? lastSyncTime.toLocaleString('ko-KR') : '로딩 중'}</span>
             <span>•</span>
-            <span className="text-blue-600 font-medium">🌐 서버 기반 시스템 (태그 색상 포함)</span>
+            <span className="text-blue-600 font-medium">🌐 서버 기반 시스템 (하위 태그별 진행률)</span>
             {!isCurrentMonth() && (
               <>
                 <span>•</span>
@@ -731,7 +609,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                 <li>• 모든 데이터가 Supabase 서버에 저장됩니다</li>
                 <li>• 실시간 서버 동기화로 최신 데이터 보장</li>
                 <li>• 로컬 저장소 의존성 완전 제거</li>
-                <li>• 태그 색상도 서버에서 동기화</li>
+                <li>• 하위 태그별 세부 진행률 추적</li>
                 <li>• 자동 5분마다 새로고침</li>
                 <li>• 월별 목표 달성률 히스토리 조회</li>
               </ul>
@@ -800,11 +678,11 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                     ) : (
                       <>
                         <h4 className="font-semibold text-gray-700 mb-3">
-                          🎯 {format(currentDashboardMonth, 'M월')} 목표 달성률
+                          🎯 {format(currentDashboardMonth, 'M월')} 세부 활동별 진행률
                         </h4>
-                        <MemberProgressDisplay 
+                        <MemberSubTagProgressDisplay 
                           member={member} 
-                          calculateTagProgress={calculateTagProgress}
+                          calculateSubTagProgress={calculateSubTagProgress}
                           targetMonth={format(currentDashboardMonth, 'yyyy-MM')}
                         />
                       </>
@@ -829,24 +707,24 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
                       {!isNewUser && (
                         <button
                           onClick={async () => {
-                            const tagProgress = await calculateTagProgress(member);
+                            const subTagProgress = await calculateSubTagProgress(member);
                             const monthText = format(currentDashboardMonth, 'yyyy년 M월');
                             
-                            if (tagProgress.length === 0) {
-                              alert(`📊 ${member}님 ${monthText} 상세 정보\n\n• 설정된 월간 목표가 없습니다\n• 목표를 설정하면 달성률을 확인할 수 있습니다`);
+                            if (subTagProgress.length === 0) {
+                              alert(`📊 ${member}님 ${monthText} 상세 정보\n\n• 설정된 하위 태그 목표가 없습니다\n• 세부 활동별 목표를 설정하면 달성률을 확인할 수 있습니다`);
                             } else {
-                              const avgProgress = Math.round(tagProgress.reduce((sum, p) => sum + p.percentage, 0) / tagProgress.length);
-                              const progressDetails = tagProgress.map(p => 
+                              const avgProgress = Math.round(subTagProgress.reduce((sum, p) => sum + p.percentage, 0) / subTagProgress.length);
+                              const progressDetails = subTagProgress.map(p => 
                                 `• ${p.tagName}: ${p.actualTime}/${p.targetTime} (${p.percentage}%)`
                               ).join('\n');
                               
-                              alert(`📊 ${member}님 ${monthText} 목표 달성 현황 (서버 기반)\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
+                              alert(`📊 ${member}님 ${monthText} 세부 활동별 달성 현황 (서버 기반)\n\n${progressDetails}\n\n평균 달성률: ${avgProgress}%\n조회 시간: ${new Date().toLocaleString('ko-KR')}`);
                             }
                           }}
                           className="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg transition duration-200 text-sm font-medium flex items-center justify-center"
                         >
                           <span className="mr-2">📈</span>
-                          {format(currentDashboardMonth, 'M월')} 상세 달성률 보기
+                          {format(currentDashboardMonth, 'M월')} 세부 달성률 보기
                         </button>
                       )}
                     </div>
@@ -857,9 +735,9 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
           </div>
         )}
         
-        {/* ✅ 시스템 정보 푸터 - 월간 네비게이션 정보 추가 */}
+        {/* ✅ 시스템 정보 푸터 - 하위 태그 정보 추가 */}
         <div className="mt-8 text-center text-xs text-gray-500 space-y-1">
-          <div>관리자 대시보드 v6.0 | 완전 서버 기반 시스템 + 월간 네비게이션</div>
+          <div>관리자 대시보드 v7.0 | 완전 서버 기반 시스템 + 하위 태그별 세부 진행률</div>
           <div>마지막 빌드: {new Date().toLocaleString('ko-KR')} | 데이터 소스: Supabase 서버</div>
           <div>조회 대상 월: {format(currentDashboardMonth, 'yyyy년 M월')} {isCurrentMonth() ? '(현재 월)' : '(과거 월)'}</div>
           <div className="flex justify-center items-center space-x-4 mt-2">
@@ -873,7 +751,7 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
             </span>
             <span className="flex items-center">
               <span className="w-2 h-2 bg-purple-500 rounded-full mr-1"></span>
-              자동 새로고침
+              하위 태그별 진행률
             </span>
             <span className="flex items-center">
               <span className="w-2 h-2 bg-orange-500 rounded-full mr-1"></span>
@@ -886,53 +764,54 @@ const AdminDashboard = ({ currentUser, onLogout }) => {
   );
 };
 
-// ✅ 멤버 진행률 표시 컴포넌트 - 월별 대상 추가
-const MemberProgressDisplay = ({ member, calculateTagProgress, targetMonth }) => {
-  const [tagProgress, setTagProgress] = useState([]);
+// ✅ 하위 태그별 세부 진행률 표시 컴포넌트
+const MemberSubTagProgressDisplay = ({ member, calculateSubTagProgress, targetMonth }) => {
+  const [subTagProgress, setSubTagProgress] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadProgress = async () => {
       try {
         setLoading(true);
-        const progress = await calculateTagProgress(member);
-        setTagProgress(progress);
-        console.log(`🎨 ${member} (${targetMonth}) 진행률 색상 확인:`, progress.map(p => ({
+        const progress = await calculateSubTagProgress(member);
+        setSubTagProgress(progress);
+        console.log(`🎨 ${member} (${targetMonth}) 하위 태그 진행률 색상 확인:`, progress.map(p => ({
           tag: p.tagName,
           color: p.tagColor
         })));
       } catch (error) {
-        console.error(`❌ ${member} (${targetMonth}) 진행률 로딩 실패:`, error);
-        setTagProgress([]);
+        console.error(`❌ ${member} (${targetMonth}) 하위 태그 진행률 로딩 실패:`, error);
+        setSubTagProgress([]);
       } finally {
         setLoading(false);
       }
     };
 
     loadProgress();
-  }, [member, calculateTagProgress, targetMonth]);
+  }, [member, calculateSubTagProgress, targetMonth]);
 
   if (loading) {
     return (
       <div className="text-center py-4">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2"></div>
-        <p className="text-gray-500 text-sm">서버에서 목표 달성률 계산 중...</p>
+        <p className="text-gray-500 text-sm">서버에서 세부 활동별 달성률 계산 중...</p>
       </div>
     );
   }
 
-  if (tagProgress.length === 0) {
+  if (subTagProgress.length === 0) {
     return (
       <div className="text-center py-4">
-        <div className="text-gray-400 text-3xl mb-2">📊</div>
-        <p className="text-gray-500 text-sm">설정된 목표가 없습니다</p>
+        <div className="text-gray-400 text-3xl mb-2">🎯</div>
+        <p className="text-gray-500 text-sm mb-2">설정된 하위 태그 목표가 없습니다</p>
+        <p className="text-gray-400 text-xs">세부 활동별 목표를 설정해보세요</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      {tagProgress.map((progress, index) => (
+      {subTagProgress.map((progress, index) => (
         <div key={index} className={`${progress.tagColor.bg} ${progress.tagColor.border} rounded-lg p-4 border-2`}>
           <div className="flex items-center justify-between mb-3">
             <span className={`text-sm font-semibold ${progress.tagColor.text}`}>
@@ -969,9 +848,9 @@ const MemberProgressDisplay = ({ member, calculateTagProgress, targetMonth }) =>
             ></div>
           </div>
           
-          {/* ✅ 태그 색상 소스 표시 (디버그용) */}
+          {/* ✅ 하위 태그 색상 소스 표시 (디버그용) */}
           <div className="mt-2 text-xs text-gray-500 opacity-70">
-            🎨 서버 기반 색상
+            🎨 서버 기반 하위 태그 색상
           </div>
         </div>
       ))}
@@ -983,10 +862,13 @@ const MemberProgressDisplay = ({ member, calculateTagProgress, targetMonth }) =>
             평균 달성률
           </span>
           <span className="font-bold text-gray-800">
-            {tagProgress.length > 0 
-              ? Math.round(tagProgress.reduce((sum, p) => sum + p.percentage, 0) / tagProgress.length)
+            {subTagProgress.length > 0 
+              ? Math.round(subTagProgress.reduce((sum, p) => sum + p.percentage, 0) / subTagProgress.length)
               : 0}%
           </span>
+        </div>
+        <div className="mt-1 text-xs text-gray-500">
+          목표가 설정된 {subTagProgress.length}개 활동 기준
         </div>
       </div>
     </div>
