@@ -526,9 +526,10 @@ const CalendarPage = ({
                 const actualTime = minutesToTimeString(actualMinutes);
                 
                 const goalMinutes = getGoalHoursForSubTag(subTag);
-                const goalTime = goalMinutes > 0 ? minutesToTimeString(goalMinutes) : "00:00";
+                const goalTime = goalMinutes > 0 ? minutesToTimeString(goalMinutes) : null;
+                const hasGoal = goalMinutes > 0;
                 
-                const percentage = calculatePercentage(actualMinutes, goalMinutes);
+                const percentage = hasGoal ? calculatePercentage(actualMinutes, goalMinutes) : 0;
                 
                 const getProgressColor = (percent) => {
                   if (percent >= 100) return "text-green-600";
@@ -542,33 +543,53 @@ const CalendarPage = ({
                     key={subTag}
                     className={`p-4 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow`}
                   >
-                    {/* 첫 번째 줄: 태그명과 진행률 */}
-                    <div className="flex justify-between items-center mb-3">
-                      <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
-                      <span className={`font-bold text-lg ${getProgressColor(percentage)}`}>
-                        {percentage}%
-                      </span>
-                    </div>
-                    
-                    {/* 두 번째 줄: 실제시간/목표시간 */}
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600 text-sm">시간:</span>
-                      <span className={`font-semibold text-sm ${tagColor.text}`}>
-                        {actualTime} / {goalTime}
-                      </span>
-                    </div>
-                    
-                    {/* 진행률 바 */}
-                    <div className="w-full bg-white rounded-full h-2 mt-3">
-                      <div 
-                        className={`h-2 rounded-full transition-all duration-300 ${
-                          percentage >= 100 ? 'bg-green-500' :
-                          percentage >= 75 ? 'bg-blue-500' :
-                          percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}
-                        style={{ width: `${Math.min(percentage, 100)}%` }}
-                      ></div>
-                    </div>
+                    {hasGoal ? (
+                      // 목표가 있는 경우: 진행률 표시
+                      <>
+                        {/* 첫 번째 줄: 태그명과 진행률 */}
+                        <div className="flex justify-between items-center mb-3">
+                          <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
+                          <span className={`font-bold text-lg ${getProgressColor(percentage)}`}>
+                            {percentage}%
+                          </span>
+                        </div>
+                        
+                        {/* 두 번째 줄: 실제시간/목표시간 */}
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-600 text-sm">시간:</span>
+                          <span className={`font-semibold text-sm ${tagColor.text}`}>
+                            {actualTime} / {goalTime}
+                          </span>
+                        </div>
+                        
+                        {/* 진행률 바 */}
+                        <div className="w-full bg-white rounded-full h-2 mt-3">
+                          <div 
+                            className={`h-2 rounded-full transition-all duration-300 ${
+                              percentage >= 100 ? 'bg-green-500' :
+                              percentage >= 75 ? 'bg-blue-500' :
+                              percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                            }`}
+                            style={{ width: `${Math.min(percentage, 100)}%` }}
+                          ></div>
+                        </div>
+                      </>
+                    ) : (
+                      // 목표가 없는 경우: 시간만 표시
+                      <>
+                        {/* 태그명 */}
+                        <div className="mb-3">
+                          <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
+                        </div>
+                        
+                        {/* 시간 표시 */}
+                        <div className="text-center">
+                          <span className={`font-semibold text-lg ${tagColor.text}`}>
+                            {actualTime}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 );
               })}
