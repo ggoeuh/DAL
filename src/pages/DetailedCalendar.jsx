@@ -34,6 +34,8 @@ const formatDate = (date, format) => {
       return day.toString();
     case 'M':
       return month.toString();
+    case 'yyyy-MM':
+      return `${year}-${month.toString().padStart(2, '0')}`;
     default:
       return date.toString();
   }
@@ -324,32 +326,66 @@ const DetailedCalendar = ({
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const navigate = useNavigate();
 
-  // ✅ 서버 기반 태그 색상 가져오기 함수
-  const getTagColor = useCallback((tagType) => {
-    if (!tagType) {
+  // ✅ 서버 기반 태그 색상 가져오기 함수 (하위 태그 지원)
+  const getTagColor = useCallback((tagOrSubTag) => {
+    if (!tagOrSubTag) {
       return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-200" };
     }
 
     try {
-      // 1. 서버 데이터에서 태그 색상 찾기
-      if (tags && Array.isArray(tags)) {
-        const serverTag = tags.find(tag => tag.tagType === tagType);
-        if (serverTag?.color && typeof serverTag.color === 'object') {
-          console.log(`✅ ${tagType} 서버 색상 사용:`, serverTag.color);
-          return serverTag.color;
+      // 1. 직접 태그 색상 확인
+      const directServerTag = tags?.find(t => 
+        t.tagType === tagOrSubTag || t.tag === tagOrSubTag
+      );
+      if (directServerTag && directServerTag.color) {
+        return directServerTag.color;
+      }
+      
+      // 2. 하위 태그인 경우, tagItems에서 상위 태그 찾기
+      const tagItem = tagItems?.find(item => 
+        item.tagName === tagOrSubTag || item.tag === tagOrSubTag
+      );
+      
+      if (tagItem && tagItem.tagType) {
+        const parentTagColor = tags?.find(t => t.tagType === tagItem.tagType);
+        if (parentTagColor && parentTagColor.color) {
+          return parentTagColor.color;
+        }
+      }
+      
+      // 3. 현재 월 목표에서 상위 태그 찾기
+      const currentMonth = formatDate(currentDate, 'yyyy-MM');
+      const currentGoal = monthlyGoals?.find(mg => mg.month === currentMonth);
+      
+      if (currentGoal?.goals) {
+        const goalWithTag = currentGoal.goals.find(goal => goal.tag === tagOrSubTag);
+        if (goalWithTag && goalWithTag.tagType) {
+          const parentTagColor = tags?.find(t => t.tagType === goalWithTag.tagType);
+          if (parentTagColor && parentTagColor.color) {
+            return parentTagColor.color;
+          }
+        }
+      }
+      
+      // 4. 일정에서 상위 태그 찾기
+      const scheduleWithTag = schedules?.find(schedule => schedule.tag === tagOrSubTag);
+      if (scheduleWithTag && scheduleWithTag.tagType) {
+        const parentTagColor = tags?.find(t => t.tagType === scheduleWithTag.tagType);
+        if (parentTagColor && parentTagColor.color) {
+          return parentTagColor.color;
         }
       }
 
-      // 2. 서버에 색상 정보가 없으면 해시 기반으로 생성
-      console.log(`⚠️ ${tagType} 서버 색상 없음, 해시 기반 생성`);
-      const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
+      // 5. 서버에 색상 정보가 없으면 해시 기반으로 생성
+      console.log(`⚠️ ${tagOrSubTag} 서버 색상 없음, 해시 기반 생성`);
+      const index = Math.abs(tagOrSubTag.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
       return PASTEL_COLORS[index];
 
     } catch (error) {
-      console.warn('태그 색상 조회 실패:', { tagType, error });
+      console.warn('태그 색상 조회 실패:', { tagOrSubTag, error });
       return { bg: "bg-gray-100", text: "text-gray-800", border: "border-gray-200" };
     }
-  }, [tags]);
+  }, [tags, tagItems, monthlyGoals, schedules, currentDate]);
 
   // ✨ 서버에서 데이터 로드
   const loadDataFromServer = async () => {
@@ -609,15 +645,6 @@ const DetailedCalendar = ({
       const scheduleYear = scheduleDate.getFullYear();
       const scheduleMonth = scheduleDate.getMonth();
       
-      console.log('일정 필터링:', {
-        schedule: schedule.date,
-        currentYear,
-        currentMonth,
-        scheduleYear,
-        scheduleMonth,
-        match: currentYear === scheduleYear && currentMonth === scheduleMonth
-      });
-      
       return currentYear === scheduleYear && currentMonth === scheduleMonth;
     } catch (error) {
       console.warn('일정 날짜 파싱 실패:', schedule.date, error);
@@ -625,46 +652,69 @@ const DetailedCalendar = ({
     }
   });
 
-  // 태그별 총 시간 계산
-  const calculateMonthlyTagTotals = () => {
+  // 현재 월의 월간 목표 가져오기
+  const getCurrentMonthGoals = () => {
+    const currentMonth = formatDate(currentDate, 'yyyy-MM');
+    const currentGoal = safeMonthlyGoals.find(mg => mg.month === currentMonth);
+    return currentGoal?.goals || [];
+  };
+
+  // 상위 태그별 총 시간 계산
+  const getTagTypeTotals = () => {
     const totals = {};
-    
     currentMonthSchedules.forEach(schedule => {
       const tagType = schedule.tagType || "기타";
-      
-      if (!totals[tagType]) {
-        totals[tagType] = 0;
-      }
-      
+      if (!totals[tagType]) totals[tagType] = 0;
       const startMinutes = parseTimeToMinutes(schedule.start);
       const endMinutes = parseTimeToMinutes(schedule.end);
-      const duration = endMinutes - startMinutes;
-      
-      totals[tagType] += duration;
+      totals[tagType] += (endMinutes - startMinutes);
     });
-    
     return totals;
   };
 
-  // 월간 목표 불러오기 - 수정된 로직
-  const getCurrentMonthGoals = () => {
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth();
-    const currentMonthKey = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}`;
-    
-    console.log('월간 목표 조회:', {
-      currentMonthKey,
-      monthlyGoals: safeMonthlyGoals,
-      found: safeMonthlyGoals.find(goal => goal.month === currentMonthKey)
+  // 하위 태그별 총 시간 계산
+  const getMonthlyTagTotals = () => {
+    const totals = {};
+    currentMonthSchedules.forEach(schedule => {
+      const subTag = schedule.tag || "기타";
+      if (!totals[subTag]) totals[subTag] = 0;
+      const startMinutes = parseTimeToMinutes(schedule.start);
+      const endMinutes = parseTimeToMinutes(schedule.end);
+      totals[subTag] += (endMinutes - startMinutes);
     });
-    
-    const found = safeMonthlyGoals.find(goal => goal.month === currentMonthKey);
-    return found?.goals || [];
+    return totals;
+  };
+
+  // 전체 상위 태그들 추출
+  const getAllTagTypes = () => {
+    const currentMonthGoals = getCurrentMonthGoals();
+    const tagTypesFromGoals = currentMonthGoals.map(goal => goal.tagType || "기타");
+    const tagTypesFromSchedules = [...new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"))];
+    return [...new Set([...tagTypesFromGoals, ...tagTypesFromSchedules])];
+  };
+
+  // 전체 하위 태그들 추출
+  const getAllSubTags = () => {
+    const currentMonthGoals = getCurrentMonthGoals();
+    const goalSubTags = currentMonthGoals.map(goal => goal.tag);
+    const currentMonthUsedSubTags = [...new Set(currentMonthSchedules.map(schedule => schedule.tag || "기타"))];
+    return [...new Set([...goalSubTags, ...currentMonthUsedSubTags])];
+  };
+
+  // 특정 하위 태그의 목표 시간 찾기
+  const getGoalHoursForSubTag = (subTag) => {
+    const currentMonthGoals = getCurrentMonthGoals();
+    const goal = currentMonthGoals.find(g => g.tag === subTag);
+    if (goal && goal.targetHours) {
+      const [hours] = goal.targetHours.split(':').map(Number);
+      return hours * 60;
+    }
+    return 0;
   };
 
   // 퍼센테이지 계산
   const calculatePercentage = (actual, goal) => {
-    if (goal === 0) return 0;
+    if (goal === 0) return 100;
     return Math.round((actual / goal) * 100);
   };
 
@@ -696,23 +746,22 @@ const DetailedCalendar = ({
     setCurrentDate(new Date());
   };
 
-  const monthlyTagTotals = calculateMonthlyTagTotals();
-  const currentMonthGoalsData = getCurrentMonthGoals();
+  // 데이터 계산
+  const tagTypeTotals = getTagTypeTotals();
+  const monthlyTagTotals = getMonthlyTagTotals();
+  const allTagTypes = getAllTagTypes();
+  const allSubTags = getAllSubTags();
   
   // 디버깅 로그 추가
   console.log('📊 활동 요약 데이터:', {
     currentMonthSchedules: currentMonthSchedules.length,
+    tagTypeTotals,
     monthlyTagTotals,
-    currentMonthGoalsData,
+    allTagTypes,
+    allSubTags,
     safeSchedules: safeSchedules.length,
     currentDate: formatDate(currentDate, 'yyyy년 M월')
   });
-  
-  // 목표가 있거나 이번 달에 실제 사용된 태그타입만 표시
-  const goalTagTypes = currentMonthGoalsData.map(goal => goal.tagType);
-  const currentMonthUsedTagTypes = [...new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"))];
-  
-  const allTagTypes = [...new Set([...goalTagTypes, ...currentMonthUsedTagTypes])];
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -840,76 +889,116 @@ const DetailedCalendar = ({
             )}
           </h2>
           
-          {allTagTypes.length > 0 ? (
-            <div className="flex flex-wrap gap-4">
-              {allTagTypes.map((tagType) => {
-                const tagColor = getTagColor(tagType); // ✅ 서버 기반 색상 함수 사용
-                const actualMinutes = monthlyTagTotals[tagType] || 0;
-                const actualTime = minutesToTimeString(actualMinutes);
-                
-                // 목표 시간 찾기
-                const goal = currentMonthGoalsData.find(g => g.tagType === tagType);
-                const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
-                const goalTime = goal ? goal.targetHours : "00:00";
-                
-                // 퍼센테이지 계산
-                const percentage = calculatePercentage(actualMinutes, goalMinutes);
-                
-                // 진행률에 따른 색상 결정
-                const getProgressColor = (percent) => {
-                  if (percent >= 100) return "text-green-600";
-                  if (percent >= 75) return "text-blue-600";
-                  if (percent >= 50) return "text-yellow-600";
-                  return "text-red-600";
-                };
-                
-                return (
-                  <div
-                    key={tagType}
-                    className={`p-4 w-60 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow flex-shrink-0`}
-                  >
-                    <div className="mb-2">
-                      <span className={`font-medium ${tagColor.text}`}>{tagType}</span>
-                    </div>
-                    
-                    <div className="space-y-1 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">실제:</span>
-                        <span className={`font-semibold ${tagColor.text}`}>{actualTime}</span>
-                      </div>
-                      
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">목표:</span>
-                        <span className={`font-semibold ${tagColor.text}`}>{goalTime}</span>
-                      </div>
-                      
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-600">달성률:</span>
-                        <span className={`font-bold text-lg ${getProgressColor(percentage)}`}>
-                          {percentage}%
-                        </span>
-                      </div>
-                      
-                      {/* 진행률 바 */}
-                      <div className="w-full bg-white rounded-full h-2 mt-2">
-                        <div 
-                          className={`h-2 rounded-full transition-all duration-300 ${
-                            percentage >= 100 ? 'bg-green-500' :
-                            percentage >= 75 ? 'bg-blue-500' :
-                            percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500'
-                          }`}
-                          style={{ width: `${Math.min(percentage, 100)}%` }}
-                        ></div>
+          {/* 상위 태그 요약 (작은 카드들) */}
+          {allTagTypes.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-md font-medium mb-3 text-gray-600">카테고리별 총 시간</h3>
+              <div className="flex flex-wrap gap-3">
+                {allTagTypes.map((tagType) => {
+                  const tagColor = getTagColor(tagType);
+                  const actualMinutes = tagTypeTotals[tagType] || 0;
+                  const actualHours = Math.floor(actualMinutes / 60);
+                  
+                  return (
+                    <div
+                      key={tagType}
+                      className={`px-4 py-2 rounded-lg border ${tagColor.bg} ${tagColor.border} shadow-sm`}
+                    >
+                      <div className={`text-sm font-medium ${tagColor.text}`}>
+                        {tagType}: {actualHours}시간
                       </div>
                     </div>
-                    
-                    {/* ✅ 서버 색상 표시 */}
-                    <div className="mt-2 text-xs text-gray-500 opacity-70 text-center">
-                      🌐 서버 기반 색상
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 하위 태그 상세 */}
+          {allSubTags.length > 0 ? (
+            <div>
+              <h3 className="text-md font-medium mb-3 text-gray-600">세부 활동별 진행률</h3>
+              
+              {/* 목표가 있는 태그들 (큰 카드들, 4개씩 한 행) */}
+              {allSubTags.filter(subTag => getGoalHoursForSubTag(subTag) > 0).length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
+                  {allSubTags
+                    .filter(subTag => getGoalHoursForSubTag(subTag) > 0)
+                    .map((subTag) => {
+                      const tagColor = getTagColor(subTag);
+                      const actualMinutes = monthlyTagTotals[subTag] || 0;
+                      const actualTime = minutesToTimeString(actualMinutes);
+                      
+                      const goalMinutes = getGoalHoursForSubTag(subTag);
+                      const goalTime = minutesToTimeString(goalMinutes);
+                      
+                      const percentage = calculatePercentage(actualMinutes, goalMinutes);
+                      
+                      const getProgressColor = (percent) => {
+                        if (percent >= 100) return "text-green-600";
+                        if (percent >= 75) return "text-blue-600";
+                        if (percent >= 50) return "text-yellow-600";
+                        return "text-red-600";
+                      };
+                      
+                      return (
+                        <div
+                          key={subTag}
+                          className={`p-4 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow`}
+                        >
+                          <div className="flex justify-between items-center mb-3">
+                            <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
+                            <span className={`font-bold text-lg ${getProgressColor(percentage)}`}>
+                              {percentage}%
+                            </span>
+                          </div>
+                          
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-600 text-sm">시간:</span>
+                            <span className={`font-semibold text-sm ${tagColor.text}`}>
+                              {actualTime} / {goalTime}
+                            </span>
+                          </div>
+                          
+                          <div className="w-full bg-white rounded-full h-2 mt-3">
+                            <div 
+                              className={`h-2 rounded-full transition-all duration-300 ${
+                                percentage >= 100 ? 'bg-green-500' :
+                                percentage >= 75 ? 'bg-blue-500' :
+                                percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                              }`}
+                              style={{ width: `${Math.min(percentage, 100)}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+              
+              {/* 목표가 없는 태그들 (작은 카드들) */}
+              {allSubTags.filter(subTag => getGoalHoursForSubTag(subTag) === 0).length > 0 && (
+                <div className="flex flex-wrap gap-3">
+                  {allSubTags
+                    .filter(subTag => getGoalHoursForSubTag(subTag) === 0)
+                    .map((subTag) => {
+                      const tagColor = getTagColor(subTag);
+                      const actualMinutes = monthlyTagTotals[subTag] || 0;
+                      const actualHours = Math.floor(actualMinutes / 60);
+                      
+                      return (
+                        <div
+                          key={subTag}
+                          className={`px-4 py-2 rounded-lg border ${tagColor.bg} ${tagColor.border} shadow-sm`}
+                        >
+                          <div className={`text-sm font-medium ${tagColor.text}`}>
+                            {subTag}: {actualHours}시간
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500 bg-white rounded-lg shadow-sm">
@@ -970,8 +1059,8 @@ const DetailedCalendar = ({
                   {/* 일정 목록 - ✅ 서버 기반 색상 사용 */}
                   <div className="space-y-1">
                     {daySchedules.map((schedule) => {
-                      const tagType = schedule.tagType || "기타";
-                      const tagColor = getTagColor(tagType); // ✅ 서버 기반 색상 함수 사용
+                      const tag = schedule.tag || "기타";
+                      const tagColor = getTagColor(tag); // ✅ 하위 태그 색상 함수 사용
                       
                       return (
                         <div
@@ -1042,6 +1131,7 @@ const DetailedCalendar = ({
             <div className="text-green-700 text-sm space-y-1">
               <div>총 일정: {currentMonthSchedules.length}개</div>
               <div>활동 유형: {allTagTypes.length}개</div>
+              <div>세부 활동: {allSubTags.length}개</div>
               <div>태그 색상: 서버 동기화</div>
               {lastRefresh && (
                 <div className="text-xs text-green-600">
@@ -1065,21 +1155,21 @@ const DetailedCalendar = ({
           </button>
           <button
             onClick={() => {
-              const totalMinutes = Object.values(monthlyTagTotals).reduce((sum, minutes) => sum + minutes, 0);
+              const totalMinutes = Object.values(tagTypeTotals).reduce((sum, minutes) => sum + minutes, 0);
               const totalTime = minutesToTimeString(totalMinutes);
               
               alert(`📊 ${currentUser}님 ${formatDate(currentDate, 'yyyy년 M월')} 요약 (서버 데이터 - 색상 동기화)\n\n` +
                 `• 총 일정: ${safeSchedules.length}개\n` +
                 `• 이번 달 일정: ${currentMonthSchedules.length}개\n` +
                 `• 총 활동 시간: ${totalTime}\n` +
-                `• 태그 타입: ${allTagTypes.length}개\n` +
-                `• 평균 달성률: ${allTagTypes.length > 0 ? Math.round(allTagTypes.reduce((sum, tagType) => {
-                  const actualMinutes = monthlyTagTotals[tagType] || 0;
-                  const goal = currentMonthGoalsData.find(g => g.tagType === tagType);
-                  const goalMinutes = goal ? parseTimeToMinutes(goal.targetHours) : 0;
+                `• 카테고리: ${allTagTypes.length}개\n` +
+                `• 세부 활동: ${allSubTags.length}개\n` +
+                `• 평균 달성률: ${allSubTags.filter(subTag => getGoalHoursForSubTag(subTag) > 0).length > 0 ? Math.round(allSubTags.filter(subTag => getGoalHoursForSubTag(subTag) > 0).reduce((sum, subTag) => {
+                  const actualMinutes = monthlyTagTotals[subTag] || 0;
+                  const goalMinutes = getGoalHoursForSubTag(subTag);
                   const percentage = calculatePercentage(actualMinutes, goalMinutes);
                   return sum + percentage;
-                }, 0) / allTagTypes.length) : 0}%\n\n` +
+                }, 0) / allSubTags.filter(subTag => getGoalHoursForSubTag(subTag) > 0).length) : 0}%\n\n` +
                 `• 태그 색상: 서버에서 동기화\n` +
                 `• 색상 데이터 소스: Supabase 서버\n\n` +
                 `조회 시간: ${new Date().toLocaleString('ko-KR')}\n` +
@@ -1104,14 +1194,20 @@ const DetailedCalendar = ({
             onClick={() => {
               console.log('🎨 태그 색상 디버그 정보:');
               console.log('서버 태그 데이터:', safeTags);
+              console.log('하위 태그 데이터:', safeTagItems);
               console.log('색상 함수 테스트:', allTagTypes.map(tagType => ({
                 tagType,
                 color: getTagColor(tagType)
               })));
+              console.log('하위 태그 색상 테스트:', allSubTags.map(subTag => ({
+                subTag,
+                color: getTagColor(subTag)
+              })));
               
               alert(`🎨 태그 색상 디버그 정보\n\n` +
-                `• 총 태그 타입: ${safeTags.length}개\n` +
-                `• 활성 태그 타입: ${allTagTypes.length}개\n` +
+                `• 총 상위 태그: ${safeTags.length}개\n` +
+                `• 활성 상위 태그: ${allTagTypes.length}개\n` +
+                `• 활성 하위 태그: ${allSubTags.length}개\n` +
                 `• 서버 색상 동기화: ✅ 활성\n` +
                 `• 색상 소스: Supabase 서버\n\n` +
                 `자세한 정보는 개발자 도구 콘솔을 확인하세요.`
