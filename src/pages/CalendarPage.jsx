@@ -665,9 +665,9 @@ const CalendarPage = ({
         <div className="grid grid-cols-7">
           {days.map((day, index) => {
             const isToday = formatDate(day) === formatDate(today);
+            const isCurrentMonth = day.getMonth() === currentDate.getMonth();
             const isWeekend = index % 7 === 0 || index % 7 === 6;
             const dateStr = formatDate(day);
-            // ✅ 모든 일정 표시 (필터링 없음)
             const daySchedules = schedules.filter(schedule => schedule.date === dateStr);
             const dayTotalHours = getDayTotalHours(day);
         
@@ -675,9 +675,10 @@ const CalendarPage = ({
               <div
                 key={day.toISOString()}
                 className={`
-                  relative cursor-pointer p-2 min-h-[100px] border-r border-b hover:bg-gray-50 transition-colors
+                  relative cursor-pointer p-2 min-h-[140px] border-r border-b hover:bg-gray-50 transition-colors
                   ${isToday ? 'bg-blue-50' : ''}
-                  ${isWeekend ? 'bg-gray-25' : ''}
+                  ${!isCurrentMonth ? 'bg-gray-50 text-gray-400' : ''}
+                  ${isWeekend && isCurrentMonth ? 'bg-gray-25' : ''}
                 `}
                 onClick={() => navigate(`/day/${formatDate(day)}`)}
               >
@@ -688,6 +689,7 @@ const CalendarPage = ({
                     ${isToday ? 'bg-blue-500 text-white' :
                       index % 7 === 0 ? 'text-red-600' :
                       index % 7 === 6 ? 'text-blue-600' : 'text-gray-700'}
+                    ${!isCurrentMonth ? 'text-gray-400' : ''}
                   `}>
                     {day.getDate()}
                   </div>
@@ -700,7 +702,7 @@ const CalendarPage = ({
         
                 {/* 일정 목록 */}
                 <div className="space-y-1">
-                  {[...daySchedules]
+                  {daySchedules
                     .sort((a, b) => {
                       const [aH, aM] = a.start.split(':').map(Number);
                       const [bH, bM] = b.start.split(':').map(Number);
