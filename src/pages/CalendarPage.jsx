@@ -71,125 +71,58 @@ const SyncStatus = React.memo(({ lastSyncTime, isLoading, isSaving }) => (
   </div>
 ));
 
-// ✅ 서버 데이터 리셋 버튼 컴포넌트
-const ServerDataResetButton = React.memo(({ currentUser, onDataChanged, className = "" }) => {
-  const [showModal, setShowModal] = useState(false);
-  const [resetType, setResetType] = useState('user');
-  const [isResetting, setIsResetting] = useState(false);
+// ✅ 데이터 복구 버튼 컴포넌트
+const DataRecoveryButton = React.memo(({ currentUser, onDataChanged, className = "" }) => {
+  const [isRecovering, setIsRecovering] = useState(false);
 
-  const handleReset = useCallback(async () => {
+  const handleRecovery = useCallback(async () => {
     if (!currentUser) {
       alert('❌ 사용자 정보가 없습니다.');
       return;
     }
 
-    setIsResetting(true);
+    setIsRecovering(true);
     
     try {
-      if (resetType === 'user') {
-        const confirmMessage = `⚠️ ${currentUser} 사용자의 모든 서버 데이터를 삭제하시겠습니까?\n- 모든 일정\n- 모든 월간 목표\n\n이 작업은 되돌릴 수 없습니다.`;
-        if (window.confirm(confirmMessage)) {
-          alert(`✅ ${currentUser} 사용자의 모든 서버 데이터가 삭제되었습니다.`);
-          if (onDataChanged) onDataChanged();
-        }
-      } else if (resetType === 'all') {
-        const confirmMessage = '⚠️ 모든 사용자의 서버 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.';
-        if (window.confirm(confirmMessage)) {
-          alert('✅ 모든 서버 데이터가 삭제되었습니다.');
-          if (onDataChanged) onDataChanged();
-        }
+      console.log('🔄 데이터 복구 시작...');
+      
+      // 모든 데이터를 다시 불러오기 (필터링 없이)
+      const { data, error } = await supabase
+        .from('DAL')
+        .select('*')
+        .eq('user_name', currentUser)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw error;
       }
+      
+      console.log('📥 복구된 원본 데이터:', data);
+      
+      if (data && data.length > 0) {
+        alert(`✅ ${data.length}개의 레코드를 발견했습니다. 데이터를 복구합니다.`);
+        if (onDataChanged) onDataChanged();
+      } else {
+        alert('❌ 복구할 데이터를 찾을 수 없습니다.');
+      }
+      
     } catch (error) {
-      console.error('서버 데이터 삭제 실패:', error);
-      alert('❌ 서버 데이터 삭제 실패: ' + error.message);
+      console.error('❌ 데이터 복구 실패:', error);
+      alert('❌ 데이터 복구 실패: ' + error.message);
     }
     
-    setIsResetting(false);
-    setShowModal(false);
-  }, [currentUser, resetType, onDataChanged]);
+    setIsRecovering(false);
+  }, [currentUser, onDataChanged]);
 
   return (
-    <>
-      <button
-        onClick={() => setShowModal(true)}
-        className={`bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded-lg text-sm font-medium transition-colors ${className}`}
-        title="서버 데이터 삭제"
-      >
-        🗑️ 서버 삭제
-      </button>
-
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-            <h3 className="text-lg font-bold mb-4 text-red-600">⚠️ 서버 데이터 삭제</h3>
-            
-            <div className="mb-4">
-              <p className="text-gray-600 mb-3">삭제할 범위를 선택해주세요:</p>
-              
-              <div className="space-y-3">
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="resetType"
-                    value="user"
-                    checked={resetType === 'user'}
-                    onChange={(e) => setResetType(e.target.value)}
-                    className="mr-2"
-                  />
-                  <div>
-                    <div className="font-medium">내 모든 서버 데이터 삭제</div>
-                    <div className="text-sm text-gray-500">
-                      {currentUser} 사용자의 모든 일정과 월간목표 삭제
-                    </div>
-                  </div>
-                </label>
-                
-                <label className="flex items-center">
-                  <input
-                    type="radio"
-                    name="resetType"
-                    value="all"
-                    checked={resetType === 'all'}
-                    onChange={(e) => setResetType(e.target.value)}
-                    className="mr-2"
-                  />
-                  <div>
-                    <div className="font-medium text-red-600">모든 서버 데이터 삭제</div>
-                    <div className="text-sm text-red-500">
-                      모든 사용자의 서버 데이터 삭제 (복구 불가능)
-                    </div>
-                  </div>
-                </label>
-              </div>
-            </div>
-            
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
-              <p className="text-yellow-800 text-sm">
-                <strong>주의:</strong> 서버 데이터는 한번 삭제되면 복구할 수 없습니다.
-                신중하게 선택하세요.
-              </p>
-            </div>
-            
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowModal(false)}
-                disabled={isResetting}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleReset}
-                disabled={isResetting}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
-              >
-                {isResetting ? '삭제 중...' : '삭제 실행'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    <button
+      onClick={handleRecovery}
+      disabled={isRecovering}
+      className={`bg-yellow-100 hover:bg-yellow-200 text-yellow-700 px-3 py-1 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${className}`}
+      title="데이터 복구 시도"
+    >
+      {isRecovering ? '🔄 복구 중...' : '🔧 데이터 복구'}
+    </button>
   );
 });
 
@@ -209,7 +142,7 @@ const CalendarPage = ({
   const [tagItems, setTagItems] = useState([]);
   const [monthlyGoals, setMonthlyGoals] = useState([]);
 
-  // ✅ 서버에서 사용자 데이터 로드
+  // ✅ 서버에서 사용자 데이터 로드 (필터링 제거)
   const loadUserDataFromServer = useCallback(async () => {
     if (!currentUser || !supabase) return;
 
@@ -227,12 +160,14 @@ const CalendarPage = ({
           monthlyGoals: result.data.monthlyGoals?.length || 0
         });
         
+        // ✅ 필터링 없이 모든 일정 표시
         setSchedules(result.data.schedules || []);
         setTags(result.data.tags || []);
         setTagItems(result.data.tagItems || []);
         setMonthlyGoals(result.data.monthlyGoals || []);
         setLastSyncTime(new Date());
 
+        console.log('📥 실제 일정 데이터:', result.data.schedules);
         console.log('📥 monthlyGoals 데이터 상세:', result.data.monthlyGoals);
       } else {
         console.warn('⚠️ 서버에서 데이터를 받아오지 못했습니다');
@@ -277,17 +212,20 @@ const CalendarPage = ({
     });
   }, [currentDate]);
   
-  // 현재 월의 일정들만 필터링
+  // ✅ 현재 월의 일정들만 필터링 (모든 일정 포함)
   const currentMonthSchedules = useMemo(() => {
     const currentMonth = formatMonth(currentDate);
-    return schedules.filter(schedule => {
+    const filtered = schedules.filter(schedule => {
       const scheduleDate = new Date(schedule.date);
       const scheduleMonth = formatMonth(scheduleDate);
       return scheduleMonth === currentMonth;
     });
+    
+    console.log('📅 현재 월 일정들:', filtered);
+    return filtered;
   }, [schedules, currentDate]);
 
-  // ✅ 현재 월의 월간 목표 가져오기 (수정됨 - tag 필드로 검색)
+  // ✅ 현재 월의 월간 목표 가져오기
   const currentMonthGoals = useMemo(() => {
     if (!monthlyGoals) return [];
     
@@ -305,12 +243,33 @@ const CalendarPage = ({
     return goals;
   }, [monthlyGoals, currentDate]);
 
-  // ✅ 하위 태그별 총 시간 계산 - useMemo로 최적화
+  // ✅ 상위 태그별 실제 시간 계산 (모든 일정 포함)
+  const tagTypeTotals = useMemo(() => {
+    const totals = {};
+    
+    currentMonthSchedules.forEach(schedule => {
+      const tagType = schedule.tagType || "기타";
+      
+      if (!totals[tagType]) {
+        totals[tagType] = 0;
+      }
+      
+      const startMinutes = parseTimeToMinutes(schedule.start);
+      const endMinutes = parseTimeToMinutes(schedule.end);
+      const duration = endMinutes - startMinutes;
+      
+      totals[tagType] += duration;
+    });
+    
+    console.log('📊 상위 태그별 실제 시간:', totals);
+    return totals;
+  }, [currentMonthSchedules]);
+
+  // ✅ 하위 태그별 총 시간 계산 (모든 일정 포함)
   const monthlyTagTotals = useMemo(() => {
     const totals = {};
     
     currentMonthSchedules.forEach(schedule => {
-      // 원본 구조: schedule.tag가 하위 태그 (실제 활동명)
       const subTag = schedule.tag || "기타";
       
       if (!totals[subTag]) {
@@ -328,11 +287,9 @@ const CalendarPage = ({
     return totals;
   }, [currentMonthSchedules]);
 
-  // ✅ 하위 태그들 - useMemo로 최적화
+  // ✅ 하위 태그들 (모든 일정 포함)
   const allSubTags = useMemo(() => {
-    // ✅ 월간 목표에서 하위 태그들 추출 (수정됨 - tag 필드 사용)
     const goalSubTags = currentMonthGoals.map(goal => goal.tag);
-    // 현재 월 일정에서 사용된 하위 태그들 추출
     const currentMonthUsedSubTags = [...new Set(currentMonthSchedules.map(schedule => schedule.tag || "기타"))];
     const result = [...new Set([...goalSubTags, ...currentMonthUsedSubTags])];
     
@@ -345,113 +302,57 @@ const CalendarPage = ({
     return result;
   }, [currentMonthGoals, currentMonthSchedules]);
 
+  // ✅ 상위 태그들 추출 (모든 일정 포함)
+  const allTagTypes = useMemo(() => {
+    const tagTypesFromGoals = currentMonthGoals.map(goal => goal.tagType || "기타");
+    const tagTypesFromSchedules = [...new Set(currentMonthSchedules.map(schedule => schedule.tagType || "기타"))];
+    const result = [...new Set([...tagTypesFromGoals, ...tagTypesFromSchedules])];
+    
+    console.log('🏷️ 전체 상위 태그 목록:', result);
+    return result;
+  }, [currentMonthGoals, currentMonthSchedules]);
+
   // ✅ 서버 태그 색상을 우선 사용하고, 없으면 기본 색상 생성하는 함수
   const getTagColor = useCallback((tagType) => {
-    // 1. 서버에서 받아온 태그 색상 정보 확인 (tag 또는 tagType으로 검색)
     const serverTag = tags?.find(t => t.tagType === tagType || t.tag === tagType);
     if (serverTag && serverTag.color) {
-      console.log(`🎨 서버에서 받은 색상 사용: ${tagType}`, serverTag.color);
       return serverTag.color;
     }
     
-    // 2. ✨ 새로운 로직: tagItems에 정의된 태그인지 확인
     const isDefinedTag = tagItems?.some(item => 
       item.tagType === tagType || item.tagName === tagType || item.tag === tagType
     );
     
     if (isDefinedTag) {
-      // 정의된 태그라면 서버에 색상이 없어도 자동으로 색상 할당
-      console.log(`🎯 정의된 태그 발견: ${tagType}, 자동 색상 할당 중...`);
-      
-      // 이미 사용된 색상들 확인
       const usedColors = tags?.map(t => t.color?.bg).filter(Boolean) || [];
-      
-      // 사용되지 않은 색상 찾기
       const availableColors = PASTEL_COLORS.filter(
         color => !usedColors.includes(color.bg)
       );
       
       let assignedColor;
       if (availableColors.length > 0) {
-        // 사용 가능한 색상이 있으면 첫 번째 사용
         assignedColor = availableColors[0];
       } else {
-        // 모든 색상이 사용되었으면 tagType 해시로 색상 선택
         const hash = tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
         assignedColor = PASTEL_COLORS[Math.abs(hash) % PASTEL_COLORS.length];
       }
       
-      console.log(`🎨 정의된 태그 자동 색상 할당: ${tagType}`, assignedColor);
-      
-      // 🔄 서버에 즉시 저장 (비동기로 백그라운드에서)
-      saveTagColorToServer(tagType, assignedColor);
-      
       return assignedColor;
     }
     
-    // 3. 정의되지 않은 태그는 기본 색상 (기존 로직)
     const index = Math.abs(tagType.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % PASTEL_COLORS.length;
-    const defaultColor = PASTEL_COLORS[index];
-    console.log(`🎨 정의되지 않은 태그, 기본 색상 사용: ${tagType}`, defaultColor);
-    return defaultColor;
+    return PASTEL_COLORS[index];
   }, [tags, tagItems]);
-  
-  // 🔄 서버에 태그 색상을 저장하는 함수
-  const saveTagColorToServer = useCallback(async (tagType, color) => {
-    try {
-      console.log(`💾 서버에 태그 색상 저장 시작: ${tagType}`, color);
-      
-      // 현재 tags 배열에 새 태그 추가
-      const updatedTags = [...(tags || [])];
-      const existingIndex = updatedTags.findIndex(t => t.tagType === tagType || t.tag === tagType);
-      
-      if (existingIndex >= 0) {
-        // 기존 태그 업데이트
-        updatedTags[existingIndex] = { ...updatedTags[existingIndex], color };
-      } else {
-        // 새 태그 추가
-        updatedTags.push({ tag: tagType, tagType, color });
-      }
-      
-      // 로컬 상태 즉시 업데이트
-      setTags(updatedTags);
-      
-      // 서버 저장 (비동기)
-      if (currentUser) {
-        const userData = {
-          schedules: schedules || [],
-          tags: updatedTags,
-          tagItems: tagItems || [],
-          monthlyGoals: monthlyGoals || []
-        };
-        
-        const result = await saveUserDataToDAL(currentUser, userData);
-        if (result.success) {
-          console.log(`✅ 태그 색상 서버 저장 성공: ${tagType}`);
-        } else {
-          console.warn(`⚠️ 태그 색상 서버 저장 실패: ${tagType}`, result.error);
-        }
-      }
-    } catch (error) {
-      console.error(`❌ 태그 색상 저장 중 오류: ${tagType}`, error);
-    }
-  }, [tags, schedules, tagItems, monthlyGoals, currentUser]);
 
   // 퍼센테이지 계산 함수
   const calculatePercentage = useCallback((actual, goal) => {
-    if (goal === 0) return 0;
+    if (goal === 0) return 100; // 목표가 없으면 100%
     return Math.round((actual / goal) * 100);
   }, []);
 
-  // ✅ 특정 하위 태그의 목표 시간 찾기 (수정됨 - tag 필드로 검색)
+  // ✅ 특정 하위 태그의 목표 시간 찾기
   const getGoalHoursForSubTag = useCallback((subTag) => {
     const goal = currentMonthGoals.find(g => g.tag === subTag);
-    console.log(`🎯 ${subTag} 태그의 목표 찾기:`, {
-      subTag,
-      currentMonthGoals,
-      foundGoal: goal,
-      targetHours: goal?.targetHours
-    });
     
     if (goal && goal.targetHours) {
       const [hours] = goal.targetHours.split(':').map(Number);
@@ -460,7 +361,7 @@ const CalendarPage = ({
     return 0;
   }, [currentMonthGoals]);
 
-  // 특정 날짜의 총 시간 계산
+  // ✅ 특정 날짜의 총 시간 계산 (모든 일정 포함)
   const getDayTotalHours = useCallback((date) => {
     const dateString = formatDate(date);
     const daySchedules = currentMonthSchedules.filter(schedule => schedule.date === dateString);
@@ -522,6 +423,11 @@ const CalendarPage = ({
                 {isLoading || isSaving ? '🔄 로딩...' : '🔄 새로고침'}
               </button>
               
+              <DataRecoveryButton 
+                currentUser={currentUser} 
+                onDataChanged={handleDataChanged}
+              />
+              
               <div className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-sm">
                 🌐 서버 연동
               </div>
@@ -530,11 +436,6 @@ const CalendarPage = ({
                 lastSyncTime={lastSyncTime}
                 isLoading={isLoading}
                 isSaving={isSaving}
-              />
-              
-              <ServerDataResetButton 
-                currentUser={currentUser} 
-                onDataChanged={handleDataChanged}
               />
             </div>
           )}
@@ -548,68 +449,80 @@ const CalendarPage = ({
         </button>
       </div>
       
-      {/* 월별 하위 태그 요약 */}
+      {/* 월별 활동 요약 */}
       <div className="mb-8">
         <h2 className="text-xl font-semibold mb-4 text-gray-700">이번 달 활동 요약</h2>
-        {allSubTags.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {allSubTags.map((subTag) => {
-              const tagColor = getTagColor(subTag);
-              const actualMinutes = monthlyTagTotals[subTag] || 0;
-              const actualTime = minutesToTimeString(actualMinutes);
-              
-              // ✅ 목표 시간 찾기 (수정됨 - tag 필드로 검색)
-              const goalMinutes = getGoalHoursForSubTag(subTag);
-              const goalTime = goalMinutes > 0 ? minutesToTimeString(goalMinutes) : "00:00";
-              
-              // 퍼센테이지 계산
-              const percentage = calculatePercentage(actualMinutes, goalMinutes);
-              
-              // 진행률에 따른 색상 결정
-              const getProgressColor = (percent) => {
-                if (percent >= 100) return "text-green-600";
-                if (percent >= 75) return "text-blue-600";
-                if (percent >= 50) return "text-yellow-600";
-                return "text-red-600";
-              };
-              
-              console.log(`📊 ${subTag} 요약:`, {
-                actualMinutes,
-                goalMinutes,
-                actualTime,
-                goalTime,
-                percentage
-              });
-              
-              return (
-                <div
-                  key={subTag}
-                  className={`p-4 w-60 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow flex-shrink-0`}
-                >
-                  <div className="mb-2">
-                    <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
+        
+        {/* 상위 태그 요약 (작은 카드들) */}
+        {allTagTypes.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-md font-medium mb-3 text-gray-600">카테고리별 총 시간</h3>
+            <div className="flex flex-wrap gap-3">
+              {allTagTypes.map((tagType) => {
+                const tagColor = getTagColor(tagType);
+                const actualMinutes = tagTypeTotals[tagType] || 0;
+                const actualHours = Math.floor(actualMinutes / 60);
+                
+                return (
+                  <div
+                    key={tagType}
+                    className={`px-4 py-2 rounded-lg border ${tagColor.bg} ${tagColor.border} shadow-sm`}
+                  >
+                    <div className={`text-sm font-medium ${tagColor.text}`}>
+                      {tagType}: {actualHours}시간
+                    </div>
                   </div>
-                  
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">실제:</span>
-                      <span className={`font-semibold ${tagColor.text}`}>{actualTime}</span>
-                    </div>
-                    
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">목표:</span>
-                      <span className={`font-semibold ${tagColor.text}`}>{goalTime}</span>
-                    </div>
-                    
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">달성률:</span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 하위 태그 상세 (큰 카드들, 4개씩 한 행) */}
+        {allSubTags.length > 0 ? (
+          <div>
+            <h3 className="text-md font-medium mb-3 text-gray-600">세부 활동별 진행률</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {allSubTags.map((subTag) => {
+                const tagColor = getTagColor(subTag);
+                const actualMinutes = monthlyTagTotals[subTag] || 0;
+                const actualTime = minutesToTimeString(actualMinutes);
+                
+                const goalMinutes = getGoalHoursForSubTag(subTag);
+                const goalTime = goalMinutes > 0 ? minutesToTimeString(goalMinutes) : "00:00";
+                
+                const percentage = calculatePercentage(actualMinutes, goalMinutes);
+                
+                const getProgressColor = (percent) => {
+                  if (percent >= 100) return "text-green-600";
+                  if (percent >= 75) return "text-blue-600";
+                  if (percent >= 50) return "text-yellow-600";
+                  return "text-red-600";
+                };
+                
+                return (
+                  <div
+                    key={subTag}
+                    className={`p-4 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow`}
+                  >
+                    {/* 첫 번째 줄: 태그명과 진행률 */}
+                    <div className="flex justify-between items-center mb-3">
+                      <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
                       <span className={`font-bold text-lg ${getProgressColor(percentage)}`}>
                         {percentage}%
                       </span>
                     </div>
                     
+                    {/* 두 번째 줄: 실제시간/목표시간 */}
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600 text-sm">시간:</span>
+                      <span className={`font-semibold text-sm ${tagColor.text}`}>
+                        {actualTime} / {goalTime}
+                      </span>
+                    </div>
+                    
                     {/* 진행률 바 */}
-                    <div className="w-full bg-white rounded-full h-2 mt-2">
+                    <div className="w-full bg-white rounded-full h-2 mt-3">
                       <div 
                         className={`h-2 rounded-full transition-all duration-300 ${
                           percentage >= 100 ? 'bg-green-500' :
@@ -620,9 +533,9 @@ const CalendarPage = ({
                       ></div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         ) : (
           <div className="text-center py-8 text-gray-500">
@@ -687,6 +600,7 @@ const CalendarPage = ({
             const isToday = formatDate(day) === formatDate(today);
             const isWeekend = index % 7 === 0 || index % 7 === 6;
             const dateStr = formatDate(day);
+            // ✅ 모든 일정 표시 (필터링 없음)
             const daySchedules = schedules.filter(schedule => schedule.date === dateStr);
             const dayTotalHours = getDayTotalHours(day);
         
@@ -816,6 +730,13 @@ const CalendarPage = ({
               ({currentMonthGoals.map(g => `${g.tag}:${g.targetHours}`).join(', ')})
             </span>
           )}
+        </div>
+        
+        {/* ✅ 데이터 복구 상태 표시 */}
+        <div className="mt-2 text-xs text-orange-600">
+          <span className="font-medium">🔧 복구 기능:</span> 
+          데이터가 보이지 않으면 "데이터 복구" 버튼을 클릭하여 모든 데이터를 다시 불러올 수 있습니다.
+          필터링 없이 모든 일정을 표시합니다.
         </div>
       </div>
     </div>
