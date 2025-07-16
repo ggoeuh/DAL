@@ -204,12 +204,32 @@ const CalendarPage = ({
     setCurrentDate(new Date());
   }, []);
 
-  // 현재 월의 날짜들
+  // 현재 월의 날짜들 - DetailedCalendar 방식으로 수정
   const days = useMemo(() => {
-    return eachDayOfInterval({
-      start: startOfMonth(currentDate),
-      end: endOfMonth(currentDate),
-    });
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    
+    // 월의 첫째 날과 마지막 날
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    
+    // 캘린더 시작일 (일요일부터 시작)
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
+    
+    // 캘린더 마지막일 (토요일까지)
+    const endDate = new Date(lastDay);
+    endDate.setDate(endDate.getDate() + (6 - lastDay.getDay()));
+    
+    const days = [];
+    const current = new Date(startDate);
+    
+    while (current <= endDate) {
+      days.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+    
+    return days;
   }, [currentDate]);
   
   // ✅ 현재 월의 일정들만 필터링 (모든 일정 포함)
