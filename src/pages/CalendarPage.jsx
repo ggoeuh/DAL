@@ -515,37 +515,38 @@ const CalendarPage = ({
           </div>
         )}
 
-        {/* 하위 태그 상세 (큰 카드들, 4개씩 한 행) */}
+        {/* 하위 태그 상세 */}
         {allSubTags.length > 0 ? (
           <div>
             <h3 className="text-md font-medium mb-3 text-gray-600">세부 활동별 진행률</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {allSubTags.map((subTag) => {
-                const tagColor = getTagColor(subTag);
-                const actualMinutes = monthlyTagTotals[subTag] || 0;
-                const actualTime = minutesToTimeString(actualMinutes);
-                
-                const goalMinutes = getGoalHoursForSubTag(subTag);
-                const goalTime = goalMinutes > 0 ? minutesToTimeString(goalMinutes) : null;
-                const hasGoal = goalMinutes > 0;
-                
-                const percentage = hasGoal ? calculatePercentage(actualMinutes, goalMinutes) : 0;
-                
-                const getProgressColor = (percent) => {
-                  if (percent >= 100) return "text-green-600";
-                  if (percent >= 75) return "text-blue-600";
-                  if (percent >= 50) return "text-yellow-600";
-                  return "text-red-600";
-                };
-                
-                return (
-                  <div
-                    key={subTag}
-                    className={`p-4 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow`}
-                  >
-                    {hasGoal ? (
-                      // 목표가 있는 경우: 진행률 표시
-                      <>
+            
+            {/* 목표가 있는 태그들 (큰 카드들, 4개씩 한 행) */}
+            {allSubTags.filter(subTag => getGoalHoursForSubTag(subTag) > 0).length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
+                {allSubTags
+                  .filter(subTag => getGoalHoursForSubTag(subTag) > 0)
+                  .map((subTag) => {
+                    const tagColor = getTagColor(subTag);
+                    const actualMinutes = monthlyTagTotals[subTag] || 0;
+                    const actualTime = minutesToTimeString(actualMinutes);
+                    
+                    const goalMinutes = getGoalHoursForSubTag(subTag);
+                    const goalTime = minutesToTimeString(goalMinutes);
+                    
+                    const percentage = calculatePercentage(actualMinutes, goalMinutes);
+                    
+                    const getProgressColor = (percent) => {
+                      if (percent >= 100) return "text-green-600";
+                      if (percent >= 75) return "text-blue-600";
+                      if (percent >= 50) return "text-yellow-600";
+                      return "text-red-600";
+                    };
+                    
+                    return (
+                      <div
+                        key={subTag}
+                        className={`p-4 rounded-lg border-2 ${tagColor.bg} ${tagColor.border} shadow-sm hover:shadow-md transition-shadow`}
+                      >
                         {/* 첫 번째 줄: 태그명과 진행률 */}
                         <div className="flex justify-between items-center mb-3">
                           <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
@@ -573,27 +574,35 @@ const CalendarPage = ({
                             style={{ width: `${Math.min(percentage, 100)}%` }}
                           ></div>
                         </div>
-                      </>
-                    ) : (
-                      // 목표가 없는 경우: 시간만 표시
-                      <>
-                        {/* 태그명 */}
-                        <div className="mb-3">
-                          <span className={`font-medium ${tagColor.text}`}>{subTag}</span>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+            
+            {/* 목표가 없는 태그들 (작은 카드들) */}
+            {allSubTags.filter(subTag => getGoalHoursForSubTag(subTag) === 0).length > 0 && (
+              <div className="flex flex-wrap gap-3">
+                {allSubTags
+                  .filter(subTag => getGoalHoursForSubTag(subTag) === 0)
+                  .map((subTag) => {
+                    const tagColor = getTagColor(subTag);
+                    const actualMinutes = monthlyTagTotals[subTag] || 0;
+                    const actualHours = Math.floor(actualMinutes / 60);
+                    
+                    return (
+                      <div
+                        key={subTag}
+                        className={`px-4 py-2 rounded-lg border ${tagColor.bg} ${tagColor.border} shadow-sm`}
+                      >
+                        <div className={`text-sm font-medium ${tagColor.text}`}>
+                          {subTag}: {actualHours}시간
                         </div>
-                        
-                        {/* 시간 표시 */}
-                        <div className="text-center">
-                          <span className={`font-semibold text-lg ${tagColor.text}`}>
-                            {actualTime}
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-8 text-gray-500">
